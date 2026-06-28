@@ -60,6 +60,8 @@ DispatchResult BattleDispatcher::Dispatch(
         : PayloadTypeName(header.payload_type);
     if (plaintext_payload.empty() && header.payload_type == BattlePayloadType::Input) {
         result.response_kind = "input_empty_payload";
+    } else if (plaintext_payload.empty() && header.payload_type == BattlePayloadType::ModeAction) {
+        result.response_kind = "mode_action_empty_payload";
     }
     return result;
 }
@@ -82,6 +84,8 @@ std::string PayloadTypeName(BattlePayloadType type) {
             return "reconnect";
         case BattlePayloadType::Result:
             return "result";
+        case BattlePayloadType::ModeAction:
+            return "mode_action";
         default:
             return "unspecified";
     }
