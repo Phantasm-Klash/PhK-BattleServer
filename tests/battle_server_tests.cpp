@@ -184,6 +184,38 @@ bool TestSharedSnapshotEventFixtures() {
     return true;
 }
 
+bool TestGoldenReplaySummaryFixture() {
+    phk::battle::ReplaySummary summary;
+    summary.match_id = std::string(phk::v1::kGoldenReplaySummaryMatchId);
+    summary.input_count = phk::v1::kGoldenReplaySummaryInputCount;
+    summary.event_count = phk::v1::kGoldenReplaySummaryEventCount;
+    summary.input_stream_hash = std::string(phk::v1::kGoldenReplaySummaryInputStreamHash);
+    summary.event_stream_hash = std::string(phk::v1::kGoldenReplaySummaryEventStreamHash);
+    summary.final_state_hash = std::string(phk::v1::kGoldenReplaySummaryFinalStateHash);
+    summary.final_tick = phk::v1::kGoldenReplaySummaryFinalTick;
+
+    CHECK_EQ(std::string(phk::v1::kGoldenReplaySummaryReplayId), std::string(phk::v1::kBattleResultCallbackReplayId));
+    CHECK_EQ(summary.match_id, std::string(phk::v1::kBattleResultCallbackMatchId));
+    CHECK_EQ(std::string(phk::v1::kGoldenReplaySummaryOwnerUserId), std::string("user-alice"));
+    CHECK_EQ(summary.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(summary.final_tick, phk::v1::kBattleSnapshotSnapshotTick);
+    CHECK_EQ(summary.final_state_hash, std::string(phk::v1::kBattleSnapshotStateHash));
+    CHECK_TRUE(summary.input_stream_hash.rfind("sha256:", 0) == 0);
+    CHECK_TRUE(summary.event_stream_hash.rfind("sha256:", 0) == 0);
+    CHECK_TRUE(summary.final_state_hash.rfind("sha256:", 0) == 0);
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "input_stream_hash"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "final_tick"));
+
+    phk::battle::SimulationConfig config;
+    config.match_id = summary.match_id;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
+    CHECK_TRUE(simulation.Summary().event_stream_hash.rfind("fnv64:", 0) == 0);
+    CHECK_TRUE(!simulation.Summary().final_state_hash.empty());
+    return true;
+}
+
 bool TestServerAndHandshake() {
 	phk::battle::BattleServerConfig config;
 	config.now_ms = 1782489605000;
@@ -470,6 +502,7 @@ int main() {
 	const std::vector<std::pair<std::string, bool (*)()>> tests = {
 		{"ProtocolManifest", TestProtocolManifest},
 		{"SharedSnapshotEventFixtures", TestSharedSnapshotEventFixtures},
+		{"GoldenReplaySummaryFixture", TestGoldenReplaySummaryFixture},
 		{"TicketVerifier", TestTicketVerifier},
 		{"ServerAndHandshake", TestServerAndHandshake},
 		{"BattleResultSubmission", TestBattleResultSubmission},
