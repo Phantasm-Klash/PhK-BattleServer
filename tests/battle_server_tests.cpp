@@ -274,6 +274,17 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().event_stream_hash, second.Summary().event_stream_hash);
     CHECK_EQ(first.Summary().final_state_hash, first_snapshot.state_hash);
     CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(first.Summary().last_mode_action_id, action.action_id);
+    CHECK_EQ(first.Summary().last_mode_action_type, action.action_type);
+    CHECK_EQ(first.Summary().last_mode_action_player_id, action.player_id);
+    CHECK_EQ(first.Summary().last_mode_action_tick, action.tick);
+    CHECK_EQ(first.Summary().last_mode_action_seq, action.seq);
+    CHECK_EQ(first.Summary().last_mode_action_id, second.Summary().last_mode_action_id);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
     return true;
 }
 
@@ -306,6 +317,17 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     const auto mode_action_summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(mode_action_summary.event_count, replay_summary.event_count + 1);
     CHECK_TRUE(mode_action_summary.event_stream_hash != replay_summary.event_stream_hash);
+    CHECK_EQ(mode_action_summary.last_mode_action_id, action.action_id);
+    CHECK_EQ(mode_action_summary.last_mode_action_type, action.action_type);
+    CHECK_EQ(mode_action_summary.last_mode_action_player_id, action.player_id);
+    CHECK_EQ(mode_action_summary.last_mode_action_tick, action.tick);
+    CHECK_EQ(mode_action_summary.last_mode_action_seq, action.seq);
+    const auto after_action_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
+    CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
+    CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
+    CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
+    CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
 
     auto forged_action = MakeModeAction(3);
     forged_action.tick = 3;
@@ -313,6 +335,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     const auto forged_result = server.AcceptModeAction(forged_action);
     CHECK_TRUE(!forged_result.ok);
     CHECK_EQ(forged_result.reason, std::string("mode_action_client_result_forbidden"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, action.action_id);
 
     auto wrong_match = MakeInput("p1", 1, 1, 0);
     wrong_match.match_id = "missing-match";
