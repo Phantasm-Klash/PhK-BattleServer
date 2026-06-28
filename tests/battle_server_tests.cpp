@@ -301,16 +301,34 @@ bool TestDispatcher() {
     CHECK_EQ(replay.reason, std::string("seq_replay"));
 
     phk::battle::BattlePacketHeader mode_action = ping;
-    mode_action.seq = 2;
-    mode_action.tick = 11;
+    mode_action.match_id = std::string(phk::v1::kBattleModeActionMatchId);
+    mode_action.player_id = std::string(phk::v1::kBattleModeActionPlayerId);
+    mode_action.seq = phk::v1::kBattleModeActionSeq;
+    mode_action.tick = phk::v1::kBattleModeActionTick;
     mode_action.payload_type = phk::battle::BattlePayloadType::ModeAction;
-    const auto mode_action_result = dispatcher.Dispatch(mode_action, {});
+    phk::battle::BattleModeAction action;
+    action.match_id = std::string(phk::v1::kBattleModeActionMatchId);
+    action.player_id = std::string(phk::v1::kBattleModeActionPlayerId);
+    action.tick = phk::v1::kBattleModeActionTick;
+    action.seq = phk::v1::kBattleModeActionSeq;
+    action.action_id = std::string(phk::v1::kBattleModeActionActionId);
+    action.action_type = std::string(phk::v1::kBattleModeActionActionType);
+    action.payload_json = std::string(phk::v1::kBattleModeActionPayloadJson);
+    CHECK_TRUE(!action.client_result_authoritative);
+    const auto mode_action_result = dispatcher.Dispatch(mode_action, {'{', '}'});
     CHECK_TRUE(mode_action_result.ok);
-    CHECK_EQ(mode_action_result.response_kind, std::string("mode_action_empty_payload"));
+    CHECK_EQ(mode_action_result.response_kind, std::string("mode_action"));
     CHECK_EQ(phk::battle::PayloadTypeName(phk::battle::BattlePayloadType::ModeAction), std::string("mode_action"));
 
+    phk::battle::BattlePacketHeader empty_mode_action = mode_action;
+    empty_mode_action.seq = phk::v1::kBattleModeActionSeq + 1;
+    empty_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
+    const auto empty_mode_action_result = dispatcher.Dispatch(empty_mode_action, {});
+    CHECK_TRUE(empty_mode_action_result.ok);
+    CHECK_EQ(empty_mode_action_result.response_kind, std::string("mode_action_empty_payload"));
+
     phk::battle::BattlePacketHeader forbidden = ping;
-    forbidden.seq = 3;
+    forbidden.seq = phk::v1::kBattleModeActionSeq + 2;
     forbidden.payload_type = phk::battle::BattlePayloadType::Result;
     const auto forbidden_result = dispatcher.Dispatch(forbidden, {});
     CHECK_TRUE(!forbidden_result.ok);
