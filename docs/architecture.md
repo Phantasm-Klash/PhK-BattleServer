@@ -15,7 +15,7 @@ Status: v0.1 skeleton.
 | `handshake` | Holds the ECDHE/AEAD handshake boundary. The current implementation derives deterministic development session ids and selects ChaCha20-Poly1305-compatible labels. |
 | `kcp_endpoint` | Holds the KCP/UDP endpoint boundary. The current implementation is an echo placeholder for tests. |
 | `protocol` | Holds battle packet headers and dispatcher guards until generated protobuf bindings are wired. |
-| `simulation` | Holds the v0.1 deterministic battle-core slice: fixed 60Hz tick, authoritative input validation, milli-unit movement, simplified bullet generation/movement, canonical state hash, and replay summary hashes. |
+| `simulation` | Holds the v0.1 deterministic battle-core slice: fixed 60Hz tick, authoritative input and mode-action validation, milli-unit movement, simplified bullet generation/movement, canonical state hash, replay summary hashes, and lightweight last accepted mode-action projection. |
 | `result` | Holds the battle result shape and development verifier. It checks match/mode binding, player ids, result hash, replay id, settled time, and Ed25519 signature field shape before Gensoulkyo accepts a battle result. |
 | `server` | Composes ticket verification, session creation, handshake acceptance, packet dispatch, match simulation input/tick/snapshot calls, and idempotent battle result submission. |
 

@@ -40,9 +40,14 @@ struct ReplaySummary {
     std::string input_stream_hash;
     std::string event_stream_hash;
     std::string final_state_hash;
+    std::string last_mode_action_id;
+    std::string last_mode_action_type;
+    std::string last_mode_action_player_id;
     std::uint64_t final_tick = 0;
     std::uint64_t input_count = 0;
     std::uint64_t event_count = 0;
+    std::uint64_t last_mode_action_tick = 0;
+    std::uint64_t last_mode_action_seq = 0;
 };
 
 struct SimulationConfig {
@@ -109,6 +114,8 @@ private:
     std::uint64_t input_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_count_ = 0;
+    bool has_last_mode_action_ = false;
+    BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::vector<BulletState> bullets_;

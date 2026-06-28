@@ -270,6 +270,13 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.event_cursor = event_count_;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
+    if (has_last_mode_action_) {
+        snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
+        snapshot.mode_state["last_mode_action_type"] = last_mode_action_.action_type;
+        snapshot.mode_state["last_mode_action_player_id"] = last_mode_action_.player_id;
+        snapshot.mode_state["last_mode_action_tick"] = std::to_string(last_mode_action_.tick);
+        snapshot.mode_state["last_mode_action_seq"] = std::to_string(last_mode_action_.seq);
+    }
 
     for (const auto& item : players_) {
         BattlePlayerSnapshot player;
@@ -307,6 +314,13 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.final_tick = current_tick_;
     summary.input_count = accepted_input_count_;
     summary.event_count = event_count_;
+    if (has_last_mode_action_) {
+        summary.last_mode_action_id = last_mode_action_.action_id;
+        summary.last_mode_action_type = last_mode_action_.action_type;
+        summary.last_mode_action_player_id = last_mode_action_.player_id;
+        summary.last_mode_action_tick = last_mode_action_.tick;
+        summary.last_mode_action_seq = last_mode_action_.seq;
+    }
     return summary;
 }
 
@@ -435,6 +449,8 @@ void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {
 }
 
 void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& action) {
+    has_last_mode_action_ = true;
+    last_mode_action_ = action;
     event_stream_hash_ = HashAppend(event_stream_hash_, action.match_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.player_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.tick);
