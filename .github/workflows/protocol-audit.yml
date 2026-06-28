@@ -1,0 +1,52 @@
+name: Battle Server Protocol Audit
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "tools/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/protocol-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  battle-server-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PhK-BattleServer
+        uses: actions/checkout@v4
+        with:
+          path: PhK-BattleServer
+      - name: Checkout PhK-Protocol
+        uses: actions/checkout@v4
+        with:
+          repository: Phantasm-Klash/PhK-Protocol
+          path: PhK-Protocol
+      - name: Run repository checker
+        run: python3 PhK-BattleServer/tools/check_battle_server.py
+      - name: Build and test with g++
+        working-directory: PhK-BattleServer
+        run: |
+          g++ -std=c++17 \
+            -Iinclude \
+            -I../PhK-Protocol/gen/cpp \
+            src/protocol.cpp \
+            src/result.cpp \
+            src/ticket.cpp \
+            src/handshake.cpp \
+            src/kcp_endpoint.cpp \
+            src/server.cpp \
+            src/simulation.cpp \
+            tests/battle_server_tests.cpp \
+            -o /tmp/phk_battle_tests
+          /tmp/phk_battle_tests
+      - name: Check whitespace
+        working-directory: PhK-BattleServer
+        run: git diff --check HEAD

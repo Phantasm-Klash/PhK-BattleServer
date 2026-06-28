@@ -1,0 +1,7 @@
+# Battle transport, simulation, protocol boundary, and result verification changes require owner review.
+/apps/ @Phantasm-Klash
+/include/ @Phantasm-Klash
+/src/ @Phantasm-Klash
+/tests/ @Phantasm-Klash
+/tools/ @Phantasm-Klash
+/CMakeLists.txt @Phantasm-Klash

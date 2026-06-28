@@ -1,0 +1,399 @@
+#include "phk/battle/simulation.hpp"
+
+#include <algorithm>
+#include <array>
+#include <iomanip>
+#include <sstream>
+#include <string_view>
+#include <utility>
+
+namespace phk::battle {
+
+namespace {
+
+constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppendSigned(std::uint64_t hash, std::int64_t value) {
+    return HashAppend(hash, static_cast<std::uint64_t>(value));
+}
+
+std::string HexHash(std::uint64_t hash) {
+    std::ostringstream out;
+    out << "fnv64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::int32_t ClampMilli(std::int32_t value, std::int32_t min_value, std::int32_t max_value) {
+    return std::max(min_value, std::min(value, max_value));
+}
+
+std::int32_t DirectionAxis(bool negative, bool positive) {
+    if (negative == positive) {
+        return 0;
+    }
+    return positive ? 1 : -1;
+}
+
+}  // namespace
+
+BattleSimulation::BattleSimulation(SimulationConfig config)
+    : config_(std::move(config)) {
+    if (config_.tick_rate_hz == 0) {
+        config_.tick_rate_hz = kBattleTickRateHz;
+    }
+    if (config_.max_input_ahead_ticks == 0) {
+        config_.max_input_ahead_ticks = 1;
+    }
+    if (config_.spawn_period_ticks == 0) {
+        config_.spawn_period_ticks = 1;
+    }
+}
+
+const SimulationConfig& BattleSimulation::Config() const {
+    return config_;
+}
+
+std::uint64_t BattleSimulation::CurrentTick() const {
+    return current_tick_;
+}
+
+std::size_t BattleSimulation::PlayerCount() const {
+    return players_.size();
+}
+
+std::size_t BattleSimulation::BulletCount() const {
+    return bullets_.size();
+}
+
+std::uint64_t BattleSimulation::AcceptedInputCount() const {
+    return accepted_input_count_;
+}
+
+bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
+    if (player_id.empty() || players_.find(player_id) != players_.end()) {
+        return false;
+    }
+
+    PlayerState player;
+    player.player_id = player_id;
+    player.x_milli = ClampMilli(x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
+    player.y_milli = ClampMilli(y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+    player.last_input.match_id = config_.match_id;
+    player.last_input.player_id = player_id;
+    players_[player_id] = player;
+    return true;
+}
+
+InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) const {
+    InputValidationResult result;
+    if (!input.version.IsCompatible()) {
+        result.code = InputValidationCode::VersionIncompatible;
+        result.reason = "version_incompatible";
+        return result;
+    }
+    if (input.match_id != config_.match_id) {
+        result.code = InputValidationCode::MatchMismatch;
+        result.reason = "match_mismatch";
+        return result;
+    }
+    const auto player_it = players_.find(input.player_id);
+    if (player_it == players_.end()) {
+        result.code = InputValidationCode::PlayerUnknown;
+        result.reason = "player_unknown";
+        return result;
+    }
+    if (input.seq == 0) {
+        result.code = InputValidationCode::SeqMissing;
+        result.reason = "seq_missing";
+        return result;
+    }
+    if (input.seq <= player_it->second.last_seq) {
+        result.code = InputValidationCode::SeqReplay;
+        result.reason = "seq_replay";
+        return result;
+    }
+    if (input.tick <= current_tick_) {
+        result.code = InputValidationCode::TickTooOld;
+        result.reason = "input_tick_too_old";
+        return result;
+    }
+    if (input.tick > current_tick_ + config_.max_input_ahead_ticks) {
+        result.code = InputValidationCode::TickTooFarAhead;
+        result.reason = "input_tick_too_far_ahead";
+        return result;
+    }
+    if ((input.direction_bits & ~0x0fu) != 0) {
+        result.code = InputValidationCode::InvalidDirectionBits;
+        result.reason = "invalid_direction_bits";
+        return result;
+    }
+    if (input.card_slot < -1 || input.card_slot > 7) {
+        result.code = InputValidationCode::InvalidCardSlot;
+        result.reason = "invalid_card_slot";
+        return result;
+    }
+
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
+InputValidationResult BattleSimulation::AcceptInput(const BattleInput& input) {
+    auto result = ValidateInput(input);
+    if (!result.ok) {
+        return result;
+    }
+
+    pending_inputs_by_tick_[input.tick][input.player_id] = input;
+    players_[input.player_id].last_seq = input.seq;
+    AccumulateAcceptedInput(input);
+    return result;
+}
+
+BattleSnapshot BattleSimulation::Tick() {
+    const std::uint64_t tick_to_apply = current_tick_ + 1;
+    const auto pending_it = pending_inputs_by_tick_.find(tick_to_apply);
+
+    for (auto& item : players_) {
+        PlayerState& player = item.second;
+        BattleInput input = InputForTick(player);
+        if (pending_it != pending_inputs_by_tick_.end()) {
+            const auto input_it = pending_it->second.find(player.player_id);
+            if (input_it != pending_it->second.end()) {
+                input = input_it->second;
+                player.last_input = input;
+            }
+        }
+        ApplyInput(player, input);
+    }
+
+    if (pending_it != pending_inputs_by_tick_.end()) {
+        pending_inputs_by_tick_.erase(pending_it);
+    }
+
+    current_tick_ = tick_to_apply;
+    SpawnBulletsForTick();
+    AdvanceBullets();
+    return Snapshot("full");
+}
+
+BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
+    BattleSnapshot snapshot;
+    snapshot.match_id = config_.match_id;
+    snapshot.snapshot_tick = current_tick_;
+    snapshot.snapshot_kind = std::move(snapshot_kind);
+    snapshot.state_hash = CanonicalStateHash();
+    snapshot.event_cursor = event_count_;
+    snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
+    snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
+
+    for (const auto& item : players_) {
+        BattlePlayerSnapshot player;
+        player.player_id = item.second.player_id;
+        player.x_milli = item.second.x_milli;
+        player.y_milli = item.second.y_milli;
+        player.connected = true;
+        player.hand_size = 0;
+        snapshot.players.push_back(player);
+    }
+
+    for (const auto& item : bullets_) {
+        BattleBulletDelta bullet;
+        bullet.bullet_id = item.bullet_id;
+        bullet.op = "upsert";
+        bullet.x_milli = item.x_milli;
+        bullet.y_milli = item.y_milli;
+        bullet.vx_milli = item.vx_milli;
+        bullet.vy_milli = item.vy_milli;
+        bullet.radius_milli = item.radius_milli;
+        bullet.pattern_id = item.pattern_id;
+        bullet.color = item.color;
+        snapshot.bullets_delta.push_back(bullet);
+    }
+
+    return snapshot;
+}
+
+ReplaySummary BattleSimulation::Summary() const {
+    ReplaySummary summary;
+    summary.match_id = config_.match_id;
+    summary.input_stream_hash = HexHash(input_stream_hash_);
+    summary.event_stream_hash = HexHash(event_stream_hash_);
+    summary.final_state_hash = CanonicalStateHash();
+    summary.final_tick = current_tick_;
+    summary.input_count = accepted_input_count_;
+    summary.event_count = event_count_;
+    return summary;
+}
+
+std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, config_.match_seed);
+    hash = HashAppend(hash, value);
+    return hash;
+}
+
+std::string BattleSimulation::CanonicalStateHash() const {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, config_.match_id);
+    hash = HashAppend(hash, current_tick_);
+    hash = HashAppend(hash, config_.match_seed);
+    hash = HashAppend(hash, config_.tick_rate_hz);
+
+    for (const auto& item : players_) {
+        const PlayerState& player = item.second;
+        hash = HashAppend(hash, player.player_id);
+        hash = HashAppendSigned(hash, player.x_milli);
+        hash = HashAppendSigned(hash, player.y_milli);
+        hash = HashAppend(hash, player.last_seq);
+        hash = HashAppend(hash, player.last_input.direction_bits);
+        hash = HashAppend(hash, player.last_input.slow ? 1u : 0u);
+        hash = HashAppend(hash, player.last_input.shoot ? 1u : 0u);
+        hash = HashAppend(hash, player.last_input.bomb ? 1u : 0u);
+        hash = HashAppendSigned(hash, player.last_input.card_slot);
+    }
+
+    std::vector<BulletState> bullets = bullets_;
+    std::sort(bullets.begin(), bullets.end(), [](const BulletState& left, const BulletState& right) {
+        return left.bullet_id < right.bullet_id;
+    });
+    for (const auto& bullet : bullets) {
+        hash = HashAppend(hash, bullet.bullet_id);
+        hash = HashAppendSigned(hash, bullet.x_milli);
+        hash = HashAppendSigned(hash, bullet.y_milli);
+        hash = HashAppendSigned(hash, bullet.vx_milli);
+        hash = HashAppendSigned(hash, bullet.vy_milli);
+        hash = HashAppend(hash, bullet.radius_milli);
+        hash = HashAppend(hash, bullet.pattern_id);
+        hash = HashAppend(hash, bullet.color);
+    }
+    return HexHash(hash);
+}
+
+BattleInput BattleSimulation::InputForTick(const PlayerState& player) const {
+    BattleInput input = player.last_input;
+    input.tick = current_tick_ + 1;
+    return input;
+}
+
+void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input) {
+    constexpr std::uint32_t kUp = 1u << 0;
+    constexpr std::uint32_t kDown = 1u << 1;
+    constexpr std::uint32_t kLeft = 1u << 2;
+    constexpr std::uint32_t kRight = 1u << 3;
+    const std::int32_t axis_x = DirectionAxis((input.direction_bits & kLeft) != 0, (input.direction_bits & kRight) != 0);
+    const std::int32_t axis_y = DirectionAxis((input.direction_bits & kUp) != 0, (input.direction_bits & kDown) != 0);
+    const std::int32_t speed = input.slow ? 2500 : 5000;
+
+    player.x_milli = ClampMilli(player.x_milli + axis_x * speed, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
+    player.y_milli = ClampMilli(player.y_milli + axis_y * speed, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+}
+
+void BattleSimulation::SpawnBulletsForTick() {
+    if (current_tick_ == 0 || (current_tick_ % config_.spawn_period_ticks) != 0 || bullets_.size() >= config_.max_bullets) {
+        return;
+    }
+
+    const std::uint64_t mixed = MixSeed(current_tick_);
+    const std::int32_t drift = static_cast<std::int32_t>(mixed % 7000u) - 3500;
+    const std::array<std::pair<std::int32_t, std::int32_t>, 4> velocities = {{
+        {0, 3000},
+        {3000, 0},
+        {0, -3000},
+        {-3000, 0},
+    }};
+
+    for (std::size_t i = 0; i < velocities.size() && bullets_.size() < config_.max_bullets; ++i) {
+        BulletState bullet;
+        bullet.bullet_id = "b" + std::to_string(next_bullet_id_++);
+        bullet.x_milli = i % 2 == 0 ? drift : 0;
+        bullet.y_milli = i % 2 == 0 ? 0 : drift;
+        bullet.vx_milli = velocities[i].first;
+        bullet.vy_milli = velocities[i].second;
+        bullet.radius_milli = 4000;
+        bullet.pattern_id = "basic_radial";
+        bullet.color = (i % 2 == 0) ? "red" : "blue";
+        bullets_.push_back(bullet);
+    }
+
+    event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
+    event_stream_hash_ = HashAppend(event_stream_hash_, next_bullet_id_);
+    ++event_count_;
+}
+
+void BattleSimulation::AdvanceBullets() {
+    for (auto& bullet : bullets_) {
+        bullet.x_milli += bullet.vx_milli;
+        bullet.y_milli += bullet.vy_milli;
+    }
+
+    bullets_.erase(
+        std::remove_if(bullets_.begin(), bullets_.end(), [](const BulletState& bullet) {
+            return bullet.x_milli < -kArenaHalfWidthMilli || bullet.x_milli > kArenaHalfWidthMilli ||
+                bullet.y_milli < -kArenaHalfHeightMilli || bullet.y_milli > kArenaHalfHeightMilli;
+        }),
+        bullets_.end()
+    );
+}
+
+void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.match_id);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.player_id);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.tick);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.seq);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.direction_bits);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.slow ? 1u : 0u);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.shoot ? 1u : 0u);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.bomb ? 1u : 0u);
+    input_stream_hash_ = HashAppendSigned(input_stream_hash_, input.card_slot);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.mode_action_id);
+    ++accepted_input_count_;
+}
+
+std::string InputValidationCodeName(InputValidationCode code) {
+    switch (code) {
+        case InputValidationCode::Ok:
+            return "ok";
+        case InputValidationCode::VersionIncompatible:
+            return "version_incompatible";
+        case InputValidationCode::MatchUnknown:
+            return "match_unknown";
+        case InputValidationCode::MatchMismatch:
+            return "match_mismatch";
+        case InputValidationCode::PlayerUnknown:
+            return "player_unknown";
+        case InputValidationCode::SeqMissing:
+            return "seq_missing";
+        case InputValidationCode::SeqReplay:
+            return "seq_replay";
+        case InputValidationCode::TickTooOld:
+            return "input_tick_too_old";
+        case InputValidationCode::TickTooFarAhead:
+            return "input_tick_too_far_ahead";
+        case InputValidationCode::InvalidDirectionBits:
+            return "invalid_direction_bits";
+        case InputValidationCode::InvalidCardSlot:
+            return "invalid_card_slot";
+    }
+    return "unknown";
+}
+
+}  // namespace phk::battle
