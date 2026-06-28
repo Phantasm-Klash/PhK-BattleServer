@@ -26,6 +26,7 @@ enum class InputValidationCode {
     TickTooFarAhead,
     InvalidDirectionBits,
     InvalidCardSlot,
+    InvalidModeAction,
 };
 
 struct InputValidationResult {
@@ -66,6 +67,8 @@ public:
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     [[nodiscard]] InputValidationResult ValidateInput(const BattleInput& input) const;
     InputValidationResult AcceptInput(const BattleInput& input);
+    [[nodiscard]] InputValidationResult ValidateModeAction(const BattleModeAction& action) const;
+    InputValidationResult AcceptModeAction(const BattleModeAction& action);
     BattleSnapshot Tick();
     [[nodiscard]] BattleSnapshot Snapshot(std::string snapshot_kind = "full") const;
     [[nodiscard]] ReplaySummary Summary() const;
@@ -97,6 +100,7 @@ private:
     void SpawnBulletsForTick();
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
+    void AccumulateAcceptedModeAction(const BattleModeAction& action);
 
     SimulationConfig config_;
     std::uint64_t current_tick_ = 0;

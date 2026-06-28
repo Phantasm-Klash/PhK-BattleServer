@@ -180,13 +180,13 @@ def main() -> int:
         return 1
 
     simulation_text = (ROOT / "include" / "phk" / "battle" / "simulation.hpp").read_text(encoding="utf-8")
-    if "kBattleTickRateHz = 60" not in simulation_text or "BattleSimulation" not in simulation_text or "ReplaySummary" not in simulation_text:
-        print("simulation boundary missing fixed tick, simulation, or replay summary", file=sys.stderr)
+    if "kBattleTickRateHz = 60" not in simulation_text or "BattleSimulation" not in simulation_text or "ReplaySummary" not in simulation_text or "AcceptModeAction" not in simulation_text:
+        print("simulation boundary missing fixed tick, simulation, replay summary, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
-    if "CanonicalStateHash" not in simulation_impl or "input_tick_too_far_ahead" not in simulation_impl:
-        print("simulation implementation missing canonical hash or authoritative input validation", file=sys.stderr)
+    if "CanonicalStateHash" not in simulation_impl or "input_tick_too_far_ahead" not in simulation_impl or "mode_action_client_result_forbidden" not in simulation_impl:
+        print("simulation implementation missing canonical hash or authoritative input/mode-action validation", file=sys.stderr)
         return 1
 
     if args.build:

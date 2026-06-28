@@ -212,6 +212,19 @@ phk::battle::BattleInput MakeInput(
     return input;
 }
 
+phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq = phk::v1::kBattleModeActionSeq) {
+    phk::battle::BattleModeAction action;
+    action.match_id = std::string(phk::v1::kBattleModeActionMatchId);
+    action.player_id = std::string(phk::v1::kBattleModeActionPlayerId);
+    action.tick = phk::v1::kBattleModeActionTick;
+    action.seq = seq;
+    action.action_id = std::string(phk::v1::kBattleModeActionActionId);
+    action.action_type = std::string(phk::v1::kBattleModeActionActionType);
+    action.payload_json = std::string(phk::v1::kBattleModeActionPayloadJson);
+    action.client_result_authoritative = false;
+    return action;
+}
+
 bool TestSimulationDeterminism() {
     phk::battle::SimulationConfig config;
     config.match_id = "match-001";
@@ -238,6 +251,14 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
     CHECK_TRUE(second.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
 
+    auto action = MakeModeAction(2);
+    action.tick = 2;
+    CHECK_TRUE(first.AcceptModeAction(action).ok);
+    CHECK_TRUE(second.AcceptModeAction(action).ok);
+    const auto replay_action = first.AcceptModeAction(action);
+    CHECK_TRUE(!replay_action.ok);
+    CHECK_EQ(replay_action.reason, std::string("seq_replay"));
+
     phk::battle::BattleSnapshot first_snapshot;
     phk::battle::BattleSnapshot second_snapshot;
     for (int i = 0; i < 3; ++i) {
@@ -250,7 +271,9 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first_snapshot.bullets_delta.size() >= 4);
     CHECK_EQ(first_snapshot.state_hash, second_snapshot.state_hash);
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
+    CHECK_EQ(first.Summary().event_stream_hash, second.Summary().event_stream_hash);
     CHECK_EQ(first.Summary().final_state_hash, first_snapshot.state_hash);
+    CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
     return true;
 }
 
@@ -275,11 +298,32 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(replay_summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(replay_summary.final_state_hash, snapshot.state_hash);
 
+    auto action = MakeModeAction();
+    action.tick = 2;
+    action.seq = 2;
+    const auto mode_action = server.AcceptModeAction(action);
+    CHECK_TRUE(mode_action.ok);
+    const auto mode_action_summary = server.MatchReplaySummary("match-001");
+    CHECK_EQ(mode_action_summary.event_count, replay_summary.event_count + 1);
+    CHECK_TRUE(mode_action_summary.event_stream_hash != replay_summary.event_stream_hash);
+
+    auto forged_action = MakeModeAction(3);
+    forged_action.tick = 3;
+    forged_action.client_result_authoritative = true;
+    const auto forged_result = server.AcceptModeAction(forged_action);
+    CHECK_TRUE(!forged_result.ok);
+    CHECK_EQ(forged_result.reason, std::string("mode_action_client_result_forbidden"));
+
     auto wrong_match = MakeInput("p1", 1, 1, 0);
     wrong_match.match_id = "missing-match";
     const auto missing = server.AcceptInput(wrong_match);
     CHECK_TRUE(!missing.ok);
     CHECK_EQ(missing.reason, std::string("match_unknown"));
+    auto missing_action = MakeModeAction(4);
+    missing_action.match_id = "missing-match";
+    const auto missing_action_result = server.AcceptModeAction(missing_action);
+    CHECK_TRUE(!missing_action_result.ok);
+    CHECK_EQ(missing_action_result.reason, std::string("match_unknown"));
     return true;
 }
 
@@ -306,14 +350,7 @@ bool TestDispatcher() {
     mode_action.seq = phk::v1::kBattleModeActionSeq;
     mode_action.tick = phk::v1::kBattleModeActionTick;
     mode_action.payload_type = phk::battle::BattlePayloadType::ModeAction;
-    phk::battle::BattleModeAction action;
-    action.match_id = std::string(phk::v1::kBattleModeActionMatchId);
-    action.player_id = std::string(phk::v1::kBattleModeActionPlayerId);
-    action.tick = phk::v1::kBattleModeActionTick;
-    action.seq = phk::v1::kBattleModeActionSeq;
-    action.action_id = std::string(phk::v1::kBattleModeActionActionId);
-    action.action_type = std::string(phk::v1::kBattleModeActionActionType);
-    action.payload_json = std::string(phk::v1::kBattleModeActionPayloadJson);
+    phk::battle::BattleModeAction action = MakeModeAction();
     CHECK_TRUE(!action.client_result_authoritative);
     const auto mode_action_result = dispatcher.Dispatch(mode_action, {'{', '}'});
     CHECK_TRUE(mode_action_result.ok);

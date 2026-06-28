@@ -93,6 +93,17 @@ InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
     return simulation_it->second.AcceptInput(input);
 }
 
+InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& action) {
+    const auto simulation_it = simulations_by_match_.find(action.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    return simulation_it->second.AcceptModeAction(action);
+}
+
 BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
