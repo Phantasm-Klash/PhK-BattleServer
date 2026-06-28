@@ -42,6 +42,14 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "result_identity_missing");
         return verification;
     }
+    const std::string required_ruleset = options.required_ruleset_version.empty()
+        ? std::string(kDefaultRulesetVersion)
+        : options.required_ruleset_version;
+    if (!result.version.ruleset_version.empty() &&
+        result.version.ruleset_version != required_ruleset) {
+        Fail(verification, "ruleset_version_mismatch");
+        return verification;
+    }
     if (!options.required_match_id.empty() && result.match_id != options.required_match_id) {
         Fail(verification, "match_mismatch");
         return verification;

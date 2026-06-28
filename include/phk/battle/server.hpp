@@ -56,6 +56,7 @@ public:
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
+	InputValidationResult SetPlayerConnected(const std::string& match_id, const std::string& player_id, bool connected);
 	BattleSnapshot TickMatch(const std::string& match_id);
 	BattleSnapshot MatchSnapshot(const std::string& match_id) const;
 	ReplaySummary MatchReplaySummary(const std::string& match_id) const;

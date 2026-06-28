@@ -27,6 +27,7 @@ enum class InputValidationCode {
     InvalidDirectionBits,
     InvalidCardSlot,
     InvalidModeAction,
+    PlayerDisconnected,
 };
 
 struct InputValidationResult {
@@ -37,6 +38,8 @@ struct InputValidationResult {
 
 struct ReplaySummary {
     std::string match_id;
+    std::string mode_id;
+    std::string ruleset_version;
     std::string input_stream_hash;
     std::string event_stream_hash;
     std::string final_state_hash;
@@ -52,6 +55,8 @@ struct ReplaySummary {
 
 struct SimulationConfig {
     std::string match_id;
+    std::string mode_id;
+    std::string ruleset_version = std::string(kDefaultRulesetVersion);
     std::uint64_t match_seed = 0;
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
     std::uint32_t max_input_ahead_ticks = 8;
@@ -70,6 +75,7 @@ public:
     [[nodiscard]] std::uint64_t AcceptedInputCount() const;
 
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
+    [[nodiscard]] InputValidationResult SetPlayerConnected(const std::string& player_id, bool connected);
     [[nodiscard]] InputValidationResult ValidateInput(const BattleInput& input) const;
     InputValidationResult AcceptInput(const BattleInput& input);
     [[nodiscard]] InputValidationResult ValidateModeAction(const BattleModeAction& action) const;
@@ -84,6 +90,7 @@ private:
         std::int32_t x_milli = 0;
         std::int32_t y_milli = 0;
         std::uint64_t last_seq = 0;
+        bool connected = true;
         BattleInput last_input;
     };
 
@@ -106,6 +113,7 @@ private:
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
     void AccumulateAcceptedModeAction(const BattleModeAction& action);
+    void AccumulateConnectionEvent(const PlayerState& player);
 
     SimulationConfig config_;
     std::uint64_t current_tick_ = 0;

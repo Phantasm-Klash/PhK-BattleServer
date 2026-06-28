@@ -56,6 +56,11 @@ VerificationResult TicketVerifier::Verify(
         Fail(result, "ruleset_missing");
         return result;
     }
+    if (!ticket.version.ruleset_version.empty() &&
+        ticket.version.ruleset_version != ticket.ruleset_version) {
+        Fail(result, "ruleset_version_mismatch");
+        return result;
+    }
     if (ticket.ticket_nonce_hex.size() < 24 || !IsHex(ticket.ticket_nonce_hex)) {
         Fail(result, "ticket_nonce_invalid");
         return result;

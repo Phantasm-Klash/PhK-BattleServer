@@ -112,6 +112,12 @@ bool TestTicketVerifier() {
     const auto raw_session_result = verifier.Verify(raw_session, options);
     CHECK_TRUE(!raw_session_result.ok);
     CHECK_EQ(raw_session_result.reason, std::string("raw_business_session_rejected"));
+
+    auto ruleset_mismatch = MakeTicket();
+    ruleset_mismatch.ticket.version.ruleset_version = "ruleset-other";
+    const auto ruleset_mismatch_result = verifier.Verify(ruleset_mismatch, options);
+    CHECK_TRUE(!ruleset_mismatch_result.ok);
+    CHECK_EQ(ruleset_mismatch_result.reason, std::string("ruleset_version_mismatch"));
     return true;
 }
 
@@ -209,7 +215,10 @@ bool TestGoldenReplaySummaryFixture() {
 
     phk::battle::SimulationConfig config;
     config.match_id = summary.match_id;
+    config.mode_id = std::string(phk::v1::kBattleResultCallbackModeId);
     phk::battle::BattleSimulation simulation(config);
+    CHECK_EQ(simulation.Summary().mode_id, std::string(phk::v1::kBattleResultCallbackModeId));
+    CHECK_EQ(simulation.Summary().ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_TRUE(simulation.Summary().event_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_TRUE(!simulation.Summary().final_state_hash.empty());
@@ -238,20 +247,67 @@ bool TestServerAndHandshake() {
 	CHECK_TRUE(!duplicate_player_result.ok);
 	CHECK_EQ(duplicate_player_result.reason, std::string("player_session_replay"));
 
+    auto wrong_mode = MakeTicket();
+    wrong_mode.ticket.ticket_id = "ticket-wrong-mode";
+    wrong_mode.ticket.user_id = "user-eve";
+    wrong_mode.ticket.player_id = "p3";
+    wrong_mode.ticket.mode_id = "battle_royale";
+    wrong_mode.ticket.ticket_nonce_hex = "abcdefabcdefabcdefabcdef";
+    wrong_mode.ticket.business_session_id = "session-ref:dev-eve";
+    const auto wrong_mode_result = server.RegisterTicket(wrong_mode);
+    CHECK_TRUE(!wrong_mode_result.ok);
+    CHECK_EQ(wrong_mode_result.reason, std::string("match_mode_ruleset_mismatch"));
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(1));
+
 	const auto registered_bob = server.RegisterTicket(MakeTicketForBob());
 	CHECK_TRUE(registered_bob.ok);
 	CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
 
 	phk::battle::BattleHandshakeHello hello;
-	hello.battle_ticket = ticket;
+    hello.battle_ticket = ticket;
     hello.supported_aead = {"AES_256_GCM", "CHACHA20_POLY1305"};
     const auto accept = server.AcceptHandshake(hello);
+    CHECK_TRUE(accept.ok);
+    CHECK_EQ(accept.reason, std::string("ok"));
     CHECK_EQ(accept.match_id, std::string("match-001"));
     CHECK_EQ(accept.player_id, std::string("p1"));
     CHECK_EQ(accept.selected_aead, std::string("CHACHA20_POLY1305"));
     CHECK_TRUE(!accept.transcript_hash_hex.empty());
 	CHECK_TRUE(!accept.dev_session_id.empty());
+
+    auto unregistered_ticket = MakeTicket();
+    unregistered_ticket.ticket.ticket_id = "ticket-unregistered";
+    unregistered_ticket.ticket.ticket_nonce_hex = "111111111111111111111111";
+    phk::battle::BattleHandshakeHello unregistered_hello;
+    unregistered_hello.battle_ticket = unregistered_ticket;
+    unregistered_hello.supported_aead = {"CHACHA20_POLY1305"};
+    const auto unregistered_accept = server.AcceptHandshake(unregistered_hello);
+    CHECK_TRUE(!unregistered_accept.ok);
+    CHECK_EQ(unregistered_accept.reason, std::string("ticket_not_registered"));
+
+    auto expired_ticket = ticket;
+    expired_ticket.ticket.expires_at_ms = 1782489604000;
+    phk::battle::BattleHandshakeHello expired_hello;
+    expired_hello.battle_ticket = expired_ticket;
+    expired_hello.supported_aead = {"CHACHA20_POLY1305"};
+    const auto expired_accept = server.AcceptHandshake(expired_hello);
+    CHECK_TRUE(!expired_accept.ok);
+    CHECK_EQ(expired_accept.reason, std::string("ticket_expired"));
 	return true;
+}
+
+bool TestRoomCapacityGuard() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    config.max_players = 1;
+    phk::battle::BattleServer server(config);
+
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    const auto full = server.RegisterTicket(MakeTicketForBob());
+    CHECK_TRUE(!full.ok);
+    CHECK_EQ(full.reason, std::string("match_full"));
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(1));
+    return true;
 }
 
 bool TestBattleResultSubmission() {
@@ -266,6 +322,18 @@ bool TestBattleResultSubmission() {
 	const auto wrong_players_result = server.SubmitBattleResult(wrong_players);
 	CHECK_TRUE(!wrong_players_result.ok);
 	CHECK_EQ(wrong_players_result.reason, std::string("player_ids_mismatch"));
+
+    auto wrong_mode = MakeBattleResult();
+    wrong_mode.result.mode_id = "battle_royale";
+    const auto wrong_mode_result = server.SubmitBattleResult(wrong_mode);
+    CHECK_TRUE(!wrong_mode_result.ok);
+    CHECK_EQ(wrong_mode_result.reason, std::string("mode_mismatch"));
+
+    auto wrong_ruleset = MakeBattleResult();
+    wrong_ruleset.result.version.ruleset_version = "ruleset-other";
+    const auto wrong_ruleset_result = server.SubmitBattleResult(wrong_ruleset);
+    CHECK_TRUE(!wrong_ruleset_result.ok);
+    CHECK_EQ(wrong_ruleset_result.reason, std::string("ruleset_version_mismatch"));
 
 	const auto accepted = server.SubmitBattleResult(MakeBattleResult());
 	CHECK_TRUE(accepted.ok);
@@ -314,6 +382,7 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq = phk::v1::kBattl
 bool TestSimulationDeterminism() {
     phk::battle::SimulationConfig config;
     config.match_id = "match-001";
+    config.mode_id = "certification";
     config.match_seed = 12345;
     config.spawn_period_ticks = 2;
     phk::battle::BattleSimulation first(config);
@@ -323,6 +392,17 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first.AddPlayer("p2", 20000, 0));
     CHECK_TRUE(second.AddPlayer("p1", -20000, 0));
     CHECK_TRUE(second.AddPlayer("p2", 20000, 0));
+
+    auto invalid_direction = MakeInput("p1", 1, 1, 0x10u);
+    const auto invalid_direction_result = first.AcceptInput(invalid_direction);
+    CHECK_TRUE(!invalid_direction_result.ok);
+    CHECK_EQ(invalid_direction_result.reason, std::string("invalid_direction_bits"));
+
+    auto invalid_card_slot = MakeInput("p1", 1, 1, 0);
+    invalid_card_slot.card_slot = 8;
+    const auto invalid_card_slot_result = first.AcceptInput(invalid_card_slot);
+    CHECK_TRUE(!invalid_card_slot_result.ok);
+    CHECK_EQ(invalid_card_slot_result.reason, std::string("invalid_card_slot"));
 
     const auto accepted = first.AcceptInput(MakeInput("p1", 1, 1, 1u << 3));
     CHECK_TRUE(accepted.ok);
@@ -344,6 +424,17 @@ bool TestSimulationDeterminism() {
     const auto replay_action = first.AcceptModeAction(action);
     CHECK_TRUE(!replay_action.ok);
     CHECK_EQ(replay_action.reason, std::string("seq_replay"));
+    auto missing_action = MakeModeAction(3);
+    missing_action.tick = 2;
+    missing_action.action_id.clear();
+    const auto missing_action_result = first.AcceptModeAction(missing_action);
+    CHECK_TRUE(!missing_action_result.ok);
+    CHECK_EQ(missing_action_result.reason, std::string("mode_action_missing_fields"));
+    auto far_action = MakeModeAction(3);
+    far_action.tick = 99;
+    const auto far_action_result = first.AcceptModeAction(far_action);
+    CHECK_TRUE(!far_action_result.ok);
+    CHECK_EQ(far_action_result.reason, std::string("mode_action_tick_too_far_ahead"));
 
     phk::battle::BattleSnapshot first_snapshot;
     phk::battle::BattleSnapshot second_snapshot;
@@ -355,6 +446,8 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
     CHECK_EQ(first_snapshot.players.size(), static_cast<std::size_t>(2));
     CHECK_TRUE(first_snapshot.bullets_delta.size() >= 4);
+    CHECK_EQ(first_snapshot.mode_state.at("mode_id"), std::string("certification"));
+    CHECK_EQ(first_snapshot.mode_state.at("ruleset_version"), std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(first_snapshot.state_hash, second_snapshot.state_hash);
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
     CHECK_EQ(first.Summary().event_stream_hash, second.Summary().event_stream_hash);
@@ -387,10 +480,14 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(snapshot.snapshot_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(2));
     CHECK_TRUE(!snapshot.state_hash.empty());
+    CHECK_EQ(snapshot.mode_state.at("mode_id"), std::string("certification"));
+    CHECK_EQ(snapshot.mode_state.at("ruleset_version"), std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(snapshot.mode_state.at("tick_rate_hz"), std::string("60"));
 
     const auto replay_summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(replay_summary.match_id, std::string("match-001"));
+    CHECK_EQ(replay_summary.mode_id, std::string("certification"));
+    CHECK_EQ(replay_summary.ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(replay_summary.final_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(replay_summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(replay_summary.final_state_hash, snapshot.state_hash);
@@ -414,6 +511,38 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
+    CHECK_EQ(after_action_snapshot.mode_state.at("connected_player_count"), std::string("2"));
+    CHECK_EQ(after_action_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
+
+    const auto disconnected = server.SetPlayerConnected("match-001", "p2", false);
+    CHECK_TRUE(disconnected.ok);
+    const auto disconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+    bool saw_p2_disconnected = false;
+    for (const auto& player : disconnected_snapshot.players) {
+        if (player.player_id == "p2") {
+            saw_p2_disconnected = !player.connected;
+        }
+    }
+    CHECK_TRUE(saw_p2_disconnected);
+    const auto disconnected_input = server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2));
+    CHECK_TRUE(!disconnected_input.ok);
+    CHECK_EQ(disconnected_input.reason, std::string("player_disconnected"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").event_count, mode_action_summary.event_count + 1);
+
+    const auto reconnected = server.SetPlayerConnected("match-001", "p2", true);
+    CHECK_TRUE(reconnected.ok);
+    const auto reconnected_input = server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2));
+    CHECK_TRUE(reconnected_input.ok);
+    const auto reconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
+
+    auto unknown_player = MakeInput("p3", 2, 1, 0);
+    const auto unknown_player_result = server.AcceptInput(unknown_player);
+    CHECK_TRUE(!unknown_player_result.ok);
+    CHECK_EQ(unknown_player_result.reason, std::string("player_unknown"));
 
     auto forged_action = MakeModeAction(3);
     forged_action.tick = 3;
@@ -505,6 +634,7 @@ int main() {
 		{"GoldenReplaySummaryFixture", TestGoldenReplaySummaryFixture},
 		{"TicketVerifier", TestTicketVerifier},
 		{"ServerAndHandshake", TestServerAndHandshake},
+        {"RoomCapacityGuard", TestRoomCapacityGuard},
 		{"BattleResultSubmission", TestBattleResultSubmission},
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},

@@ -51,6 +51,8 @@ BattleHandshakeAccept HandshakeManager::Accept(
     std::string_view server_key_id
 ) const {
     BattleHandshakeAccept accept;
+    accept.ok = true;
+    accept.reason = "ok";
     accept.version = verified_ticket.version;
     accept.match_id = verified_ticket.match_id;
     accept.player_id = verified_ticket.player_id;

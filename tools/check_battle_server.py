@@ -180,13 +180,44 @@ def main() -> int:
         return 1
 
     simulation_text = (ROOT / "include" / "phk" / "battle" / "simulation.hpp").read_text(encoding="utf-8")
-    if "kBattleTickRateHz = 60" not in simulation_text or "BattleSimulation" not in simulation_text or "ReplaySummary" not in simulation_text or "AcceptModeAction" not in simulation_text:
-        print("simulation boundary missing fixed tick, simulation, replay summary, or mode action acceptance", file=sys.stderr)
+    if (
+        "kBattleTickRateHz = 60" not in simulation_text
+        or "BattleSimulation" not in simulation_text
+        or "ReplaySummary" not in simulation_text
+        or "AcceptModeAction" not in simulation_text
+        or "mode_id" not in simulation_text
+        or "ruleset_version" not in simulation_text
+        or "SetPlayerConnected" not in simulation_text
+    ):
+        print("simulation boundary missing fixed tick, simulation, replay summary, mode/ruleset, reconnect, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
-    if "CanonicalStateHash" not in simulation_impl or "input_tick_too_far_ahead" not in simulation_impl or "mode_action_client_result_forbidden" not in simulation_impl:
-        print("simulation implementation missing canonical hash or authoritative input/mode-action validation", file=sys.stderr)
+    if (
+        "CanonicalStateHash" not in simulation_impl
+        or "input_tick_too_far_ahead" not in simulation_impl
+        or "mode_action_client_result_forbidden" not in simulation_impl
+        or "player_disconnected" not in simulation_impl
+        or 'snapshot.mode_state["mode_id"]' not in simulation_impl
+        or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
+    ):
+        print("simulation implementation missing canonical hash, mode/ruleset projection, reconnect, or authoritative input/mode-action validation", file=sys.stderr)
+        return 1
+
+    server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
+    if (
+        "match_mode_ruleset_mismatch" not in server_impl
+        or "SessionExistsForPlayer" not in server_impl
+        or "options.required_ruleset_version" not in server_impl
+        or "match_full" not in server_impl
+        or "ticket_not_registered" not in server_impl
+    ):
+        print("server implementation missing mode/ruleset, capacity, handshake, or registered-player authority guards", file=sys.stderr)
+        return 1
+
+    result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
+    if "ruleset_version_mismatch" not in result_impl or "reward_projection_json" not in result_impl:
+        print("result boundary missing ruleset verification or projection-only result shape", file=sys.stderr)
         return 1
 
     if args.build:

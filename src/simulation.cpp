@@ -55,6 +55,9 @@ std::int32_t DirectionAxis(bool negative, bool positive) {
 
 BattleSimulation::BattleSimulation(SimulationConfig config)
     : config_(std::move(config)) {
+    if (config_.ruleset_version.empty()) {
+        config_.ruleset_version = std::string(kDefaultRulesetVersion);
+    }
     if (config_.tick_rate_hz == 0) {
         config_.tick_rate_hz = kBattleTickRateHz;
     }
@@ -101,6 +104,27 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
     return true;
 }
 
+InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& player_id, bool connected) {
+    InputValidationResult result;
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        result.code = InputValidationCode::PlayerUnknown;
+        result.reason = "player_unknown";
+        return result;
+    }
+
+    PlayerState& player = player_it->second;
+    if (player.connected != connected) {
+        player.connected = connected;
+        AccumulateConnectionEvent(player);
+    }
+
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
 InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) const {
     InputValidationResult result;
     if (!input.version.IsCompatible()) {
@@ -117,6 +141,11 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
     if (player_it == players_.end()) {
         result.code = InputValidationCode::PlayerUnknown;
         result.reason = "player_unknown";
+        return result;
+    }
+    if (!player_it->second.connected) {
+        result.code = InputValidationCode::PlayerDisconnected;
+        result.reason = "player_disconnected";
         return result;
     }
     if (input.seq == 0) {
@@ -186,6 +215,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "player_unknown";
         return result;
     }
+    if (!player_it->second.connected) {
+        result.code = InputValidationCode::PlayerDisconnected;
+        result.reason = "player_disconnected";
+        return result;
+    }
     if (action.seq == 0) {
         result.code = InputValidationCode::SeqMissing;
         result.reason = "seq_missing";
@@ -240,6 +274,9 @@ BattleSnapshot BattleSimulation::Tick() {
 
     for (auto& item : players_) {
         PlayerState& player = item.second;
+        if (!player.connected) {
+            continue;
+        }
         BattleInput input = InputForTick(player);
         if (pending_it != pending_inputs_by_tick_.end()) {
             const auto input_it = pending_it->second.find(player.player_id);
@@ -268,8 +305,18 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.snapshot_kind = std::move(snapshot_kind);
     snapshot.state_hash = CanonicalStateHash();
     snapshot.event_cursor = event_count_;
+    snapshot.mode_state["mode_id"] = config_.mode_id;
+    snapshot.mode_state["ruleset_version"] = config_.ruleset_version;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
+    std::size_t connected_player_count = 0;
+    for (const auto& item : players_) {
+        if (item.second.connected) {
+            ++connected_player_count;
+        }
+    }
+    snapshot.mode_state["connected_player_count"] = std::to_string(connected_player_count);
+    snapshot.mode_state["disconnected_player_count"] = std::to_string(players_.size() - connected_player_count);
     if (has_last_mode_action_) {
         snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
         snapshot.mode_state["last_mode_action_type"] = last_mode_action_.action_type;
@@ -283,7 +330,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         player.player_id = item.second.player_id;
         player.x_milli = item.second.x_milli;
         player.y_milli = item.second.y_milli;
-        player.connected = true;
+        player.connected = item.second.connected;
         player.hand_size = 0;
         snapshot.players.push_back(player);
     }
@@ -308,6 +355,8 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
 ReplaySummary BattleSimulation::Summary() const {
     ReplaySummary summary;
     summary.match_id = config_.match_id;
+    summary.mode_id = config_.mode_id;
+    summary.ruleset_version = config_.ruleset_version;
     summary.input_stream_hash = HexHash(input_stream_hash_);
     summary.event_stream_hash = HexHash(event_stream_hash_);
     summary.final_state_hash = CanonicalStateHash();
@@ -334,6 +383,8 @@ std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
 std::string BattleSimulation::CanonicalStateHash() const {
     std::uint64_t hash = kFnvOffset;
     hash = HashAppend(hash, config_.match_id);
+    hash = HashAppend(hash, config_.mode_id);
+    hash = HashAppend(hash, config_.ruleset_version);
     hash = HashAppend(hash, current_tick_);
     hash = HashAppend(hash, config_.match_seed);
     hash = HashAppend(hash, config_.tick_rate_hz);
@@ -344,6 +395,7 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppendSigned(hash, player.x_milli);
         hash = HashAppendSigned(hash, player.y_milli);
         hash = HashAppend(hash, player.last_seq);
+        hash = HashAppend(hash, player.connected ? 1u : 0u);
         hash = HashAppend(hash, player.last_input.direction_bits);
         hash = HashAppend(hash, player.last_input.slow ? 1u : 0u);
         hash = HashAppend(hash, player.last_input.shoot ? 1u : 0u);
@@ -461,6 +513,14 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
     ++event_count_;
 }
 
+void BattleSimulation::AccumulateConnectionEvent(const PlayerState& player) {
+    event_stream_hash_ = HashAppend(event_stream_hash_, config_.match_id);
+    event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
+    event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
+    event_stream_hash_ = HashAppend(event_stream_hash_, player.connected ? "connected" : "disconnected");
+    ++event_count_;
+}
+
 std::string InputValidationCodeName(InputValidationCode code) {
     switch (code) {
         case InputValidationCode::Ok:
@@ -487,6 +547,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "invalid_card_slot";
         case InputValidationCode::InvalidModeAction:
             return "invalid_mode_action";
+        case InputValidationCode::PlayerDisconnected:
+            return "player_disconnected";
     }
     return "unknown";
 }

@@ -32,6 +32,7 @@ struct SignedBattleResult {
 struct BattleResultVerificationOptions {
     std::string required_match_id;
     std::string required_mode_id;
+    std::string required_ruleset_version;
     std::string required_key_id;
     std::vector<std::string> required_player_ids;
     std::int64_t now_ms = 0;

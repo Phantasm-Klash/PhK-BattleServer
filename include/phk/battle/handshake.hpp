@@ -18,6 +18,8 @@ struct BattleHandshakeHello {
 };
 
 struct BattleHandshakeAccept {
+    bool ok = false;
+    std::string reason;
     VersionStamp version;
     std::string match_id;
     std::string player_id;

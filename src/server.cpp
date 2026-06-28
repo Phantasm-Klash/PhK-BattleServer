@@ -4,6 +4,31 @@
 
 namespace phk::battle {
 
+namespace {
+
+bool SessionExistsForPlayer(
+    const std::map<std::string, BattleSessionRecord>& sessions,
+    const std::string& match_id,
+    const std::string& player_id
+) {
+    for (const auto& item : sessions) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id == match_id && session.player_id == player_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+InputValidationResult UnknownPlayerResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::PlayerUnknown;
+    result.reason = "player_unknown";
+    return result;
+}
+
+}  // namespace
+
 BattleServer::BattleServer(BattleServerConfig config)
     : config_(std::move(config)) {}
 
@@ -40,6 +65,17 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
             return result;
         }
     }
+    std::size_t match_session_count = 0;
+    for (const auto& item : sessions_by_ticket_) {
+        const BattleSessionRecord& existing = item.second;
+        if (existing.match_id == signed_ticket.ticket.match_id) {
+            ++match_session_count;
+        }
+    }
+    if (match_session_count >= config_.max_players) {
+        result.reason = "match_full";
+        return result;
+    }
 
     BattleSessionRecord session;
     session.ticket_id = signed_ticket.ticket.ticket_id;
@@ -55,9 +91,18 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     if (simulation_it == simulations_by_match_.end()) {
         SimulationConfig simulation_config;
         simulation_config.match_id = session.match_id;
+        simulation_config.mode_id = session.mode_id;
+        simulation_config.ruleset_version = signed_ticket.ticket.ruleset_version;
         simulation_config.match_seed = DeriveMatchSeed(session.match_id);
         simulation_config.tick_rate_hz = kBattleTickRateHz;
         simulation_it = simulations_by_match_.emplace(session.match_id, BattleSimulation(simulation_config)).first;
+    } else if (
+        simulation_it->second.Config().mode_id != session.mode_id ||
+        simulation_it->second.Config().ruleset_version != signed_ticket.ticket.ruleset_version
+    ) {
+        sessions_by_ticket_.erase(session.ticket_id);
+        result.reason = "match_mode_ruleset_mismatch";
+        return result;
     }
     simulation_it->second.AddPlayer(
         session.player_id,
@@ -72,6 +117,31 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
 }
 
 BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) const {
+    BattleHandshakeAccept rejected;
+    TicketVerificationOptions options;
+    options.now_ms = config_.now_ms;
+    options.required_battle_server_id = config_.server_id;
+    options.required_endpoint = config_.endpoint;
+    options.required_key_id = config_.signing_key_id;
+    const auto verification = ticket_verifier_.Verify(hello.battle_ticket, options);
+    if (!verification.ok) {
+        rejected.reason = verification.reason;
+        return rejected;
+    }
+    const auto ticket_it = sessions_by_ticket_.find(hello.battle_ticket.ticket.ticket_id);
+    if (ticket_it == sessions_by_ticket_.end()) {
+        rejected.reason = "ticket_not_registered";
+        return rejected;
+    }
+    const BattleSessionRecord& session = ticket_it->second;
+    if (
+        session.match_id != hello.battle_ticket.ticket.match_id ||
+        session.player_id != hello.battle_ticket.ticket.player_id ||
+        session.mode_id != hello.battle_ticket.ticket.mode_id
+    ) {
+        rejected.reason = "session_ticket_mismatch";
+        return rejected;
+    }
     return handshake_manager_.Accept(hello, hello.battle_ticket.ticket, config_.signing_key_id);
 }
 
@@ -90,6 +160,9 @@ InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
         result.reason = "match_unknown";
         return result;
     }
+    if (!SessionExistsForPlayer(sessions_by_ticket_, input.match_id, input.player_id)) {
+        return UnknownPlayerResult();
+    }
     return simulation_it->second.AcceptInput(input);
 }
 
@@ -101,7 +174,25 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
         result.reason = "match_unknown";
         return result;
     }
+    if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
+        return UnknownPlayerResult();
+    }
     return simulation_it->second.AcceptModeAction(action);
+}
+
+InputValidationResult BattleServer::SetPlayerConnected(
+    const std::string& match_id,
+    const std::string& player_id,
+    bool connected
+) {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    return simulation_it->second.SetPlayerConnected(player_id, connected);
 }
 
 BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
@@ -138,22 +229,16 @@ ReplaySummary BattleServer::MatchReplaySummary(const std::string& match_id) cons
 
 SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResult& signed_result) {
     SubmitBattleResultResult result;
-    const auto existing = result_hash_by_match_.find(signed_result.result.match_id);
-    if (existing != result_hash_by_match_.end()) {
-        if (existing->second == signed_result.result.result_hash) {
-            result.ok = true;
-            result.reason = "ok";
-            result.duplicate = true;
-            result.settlement_key = "battle-result:" + signed_result.result.match_id;
-            return result;
-        }
-        result.reason = "result_replay_mismatch";
+    const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
         return result;
     }
 
     BattleResultVerificationOptions options;
     options.required_match_id = signed_result.result.match_id;
-    options.required_mode_id = signed_result.result.mode_id;
+    options.required_mode_id = simulation_it->second.Config().mode_id;
+    options.required_ruleset_version = simulation_it->second.Config().ruleset_version;
     options.required_key_id = config_.server_id;
     options.now_ms = config_.now_ms;
     for (const auto& item : sessions_by_ticket_) {
@@ -165,6 +250,19 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     result.verification = result_verifier_.Verify(signed_result, options);
     if (!result.verification.ok) {
         result.reason = result.verification.reason;
+        return result;
+    }
+
+    const auto existing = result_hash_by_match_.find(signed_result.result.match_id);
+    if (existing != result_hash_by_match_.end()) {
+        if (existing->second == signed_result.result.result_hash) {
+            result.ok = true;
+            result.reason = "ok";
+            result.duplicate = true;
+            result.settlement_key = "battle-result:" + signed_result.result.match_id;
+            return result;
+        }
+        result.reason = "result_replay_mismatch";
         return result;
     }
 
