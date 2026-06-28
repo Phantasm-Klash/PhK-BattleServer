@@ -55,6 +55,7 @@ public:
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello) const;
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
 	InputValidationResult AcceptInput(const BattleInput& input);
+	InputValidationResult AcceptModeAction(const BattleModeAction& action);
 	BattleSnapshot TickMatch(const std::string& match_id);
 	BattleSnapshot MatchSnapshot(const std::string& match_id) const;
 	ReplaySummary MatchReplaySummary(const std::string& match_id) const;

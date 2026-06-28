@@ -168,6 +168,72 @@ InputValidationResult BattleSimulation::AcceptInput(const BattleInput& input) {
     return result;
 }
 
+InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeAction& action) const {
+    InputValidationResult result;
+    if (!action.version.IsCompatible()) {
+        result.code = InputValidationCode::VersionIncompatible;
+        result.reason = "version_incompatible";
+        return result;
+    }
+    if (action.match_id != config_.match_id) {
+        result.code = InputValidationCode::MatchMismatch;
+        result.reason = "match_mismatch";
+        return result;
+    }
+    const auto player_it = players_.find(action.player_id);
+    if (player_it == players_.end()) {
+        result.code = InputValidationCode::PlayerUnknown;
+        result.reason = "player_unknown";
+        return result;
+    }
+    if (action.seq == 0) {
+        result.code = InputValidationCode::SeqMissing;
+        result.reason = "seq_missing";
+        return result;
+    }
+    if (action.seq <= player_it->second.last_seq) {
+        result.code = InputValidationCode::SeqReplay;
+        result.reason = "seq_replay";
+        return result;
+    }
+    if (action.tick <= current_tick_) {
+        result.code = InputValidationCode::TickTooOld;
+        result.reason = "mode_action_tick_too_old";
+        return result;
+    }
+    if (action.tick > current_tick_ + config_.max_input_ahead_ticks) {
+        result.code = InputValidationCode::TickTooFarAhead;
+        result.reason = "mode_action_tick_too_far_ahead";
+        return result;
+    }
+    if (action.action_id.empty() || action.action_type.empty() || action.payload_json.empty()) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_missing_fields";
+        return result;
+    }
+    if (action.client_result_authoritative) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_client_result_forbidden";
+        return result;
+    }
+
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
+InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction& action) {
+    auto result = ValidateModeAction(action);
+    if (!result.ok) {
+        return result;
+    }
+
+    players_[action.player_id].last_seq = action.seq;
+    AccumulateAcceptedModeAction(action);
+    return result;
+}
+
 BattleSnapshot BattleSimulation::Tick() {
     const std::uint64_t tick_to_apply = current_tick_ + 1;
     const auto pending_it = pending_inputs_by_tick_.find(tick_to_apply);
@@ -368,6 +434,17 @@ void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {
     ++accepted_input_count_;
 }
 
+void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& action) {
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.match_id);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.player_id);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.tick);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.seq);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.action_id);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.action_type);
+    event_stream_hash_ = HashAppend(event_stream_hash_, action.payload_json);
+    ++event_count_;
+}
+
 std::string InputValidationCodeName(InputValidationCode code) {
     switch (code) {
         case InputValidationCode::Ok:
@@ -392,6 +469,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "invalid_direction_bits";
         case InputValidationCode::InvalidCardSlot:
             return "invalid_card_slot";
+        case InputValidationCode::InvalidModeAction:
+            return "invalid_mode_action";
     }
     return "unknown";
 }
