@@ -19,6 +19,7 @@ enum class BattlePayloadType : std::uint8_t {
     Ping = 6,
     Reconnect = 7,
     Result = 8,
+    ModeAction = 9,
 };
 
 struct BattlePacketHeader {
@@ -45,6 +46,18 @@ struct BattleInput {
     bool bomb = false;
     int card_slot = -1;
     std::string mode_action_id;
+};
+
+struct BattleModeAction {
+    VersionStamp version;
+    std::string match_id;
+    std::string player_id;
+    std::uint64_t tick = 0;
+    std::uint64_t seq = 0;
+    std::string action_id;
+    std::string action_type;
+    std::string payload_json;
+    bool client_result_authoritative = false;
 };
 
 struct BattlePlayerSnapshot {

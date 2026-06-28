@@ -300,8 +300,17 @@ bool TestDispatcher() {
     CHECK_TRUE(!replay.ok);
     CHECK_EQ(replay.reason, std::string("seq_replay"));
 
+    phk::battle::BattlePacketHeader mode_action = ping;
+    mode_action.seq = 2;
+    mode_action.tick = 11;
+    mode_action.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    const auto mode_action_result = dispatcher.Dispatch(mode_action, {});
+    CHECK_TRUE(mode_action_result.ok);
+    CHECK_EQ(mode_action_result.response_kind, std::string("mode_action_empty_payload"));
+    CHECK_EQ(phk::battle::PayloadTypeName(phk::battle::BattlePayloadType::ModeAction), std::string("mode_action"));
+
     phk::battle::BattlePacketHeader forbidden = ping;
-    forbidden.seq = 2;
+    forbidden.seq = 3;
     forbidden.payload_type = phk::battle::BattlePayloadType::Result;
     const auto forbidden_result = dispatcher.Dispatch(forbidden, {});
     CHECK_TRUE(!forbidden_result.ok);
