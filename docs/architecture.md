@@ -12,12 +12,12 @@ Status: v0.1 skeleton.
 | --- | --- |
 | `phk/v1/manifest.hpp` | Generated dependency-light protocol manifest from `PhK-Protocol`. It currently supplies shared version/ruleset constants and message-field gates until full protobuf C++ bindings replace it. |
 | `ticket` | Holds the battle ticket shape and development verifier. The current verifier checks Ed25519 key/signature shape and ticket binding, but does not perform production crypto yet. |
-| `handshake` | Holds the ECDHE/AEAD handshake boundary. The current implementation derives deterministic development session ids and selects ChaCha20-Poly1305-compatible labels. |
+| `handshake` | Holds the ECDHE/AEAD handshake boundary. The current implementation checks hello key/random/AEAD shape, derives deterministic development session ids, and selects ChaCha20-Poly1305-compatible labels. |
 | `kcp_endpoint` | Holds the KCP/UDP endpoint boundary. The current implementation is an echo placeholder for tests. |
 | `protocol` | Holds battle packet headers and dispatcher guards until generated protobuf bindings are wired. |
-| `simulation` | Holds the v0.1 deterministic battle-core slice: fixed 60Hz tick, match-bound mode/ruleset metadata, authoritative input and mode-action validation, player disconnect/reconnect state, milli-unit movement, simplified bullet generation/movement, canonical state hash, replay summary hashes, and lightweight last accepted mode-action projection. |
-| `result` | Holds the battle result shape and development verifier. It checks match/mode binding, player ids, result hash, replay id, settled time, and Ed25519 signature field shape before Gensoulkyo accepts a battle result. |
-| `server` | Composes ticket verification, capacity-checked session creation, registered-ticket handshake acceptance, packet dispatch, match simulation input/tick/snapshot calls, and idempotent battle result submission. |
+| `simulation` | Holds the v0.1 deterministic battle-core slice: fixed 60Hz tick, match-bound mode/ruleset metadata, authoritative input and mode-action validation, input seq/tick windows, player disconnect/reconnect state, cursor-aware reconnect snapshots, milli-unit movement, simplified bullet generation/movement, canonical state hash, replay summary hashes, and lightweight last accepted mode-action projection. |
+| `result` | Holds the battle result shape and development verifier. It checks match/mode binding, player ids, result hash, replay id, replay event cursor, settled time, and Ed25519 signature field shape before Gensoulkyo accepts a battle result. |
+| `server` | Composes ticket verification, capacity-checked session creation, registered-ticket handshake acceptance, packet dispatch, match simulation input/tick/snapshot/reconnect calls, and idempotent battle result submission bound to the local replay summary. |
 
 ## Planned Production Replacements
 
@@ -35,9 +35,13 @@ Status: v0.1 skeleton.
 - Match session count cannot exceed the configured battle-server `max_players`.
 - Reused ticket ids are rejected by the server facade.
 - Handshake acceptance re-verifies the ticket structure/expiry and requires the ticket to be registered in the server facade.
+- Handshake hello messages must provide non-empty client key/random material and at least one supported ChaCha20-Poly1305-compatible AEAD label.
 - Battle input and mode actions must come from a player with a registered server session for that match.
+- Battle input and mode-action seq numbers must increase within the configured server window; old, replayed, or implausibly jumped seq values are rejected.
 - Client packets cannot submit battle results.
 - Disconnected players cannot submit battle input or mode actions until the server facade marks them connected again.
-- Battle results are bound to the allocated match id, frozen mode id, frozen ruleset version, player ids, result hash, replay id, settled time, and battle server key id before the business server can settle rewards.
+- Reconnect snapshots are full authoritative snapshots that include the server event cursor, requested cursor, and missed event count; a client cursor ahead of the server cursor is rejected as `event_cursor_ahead`.
+- Battle results are bound to the allocated match id, frozen mode id, frozen ruleset version, player ids, local replay-derived result hash, replay id, replay event cursor, settled time, and battle server key id before the business server can settle rewards.
+- The battle server never writes inventory, rewards, wallet, or database state. It only emits replay/hash/cursor-bound result material that the business server can verify and settle idempotently.
 - Client packet seq numbers must increase per `match_id:player_id`.
 - Business session references must be opaque references, not raw bearer tokens.

@@ -34,7 +34,10 @@ struct BattleResultVerificationOptions {
     std::string required_mode_id;
     std::string required_ruleset_version;
     std::string required_key_id;
+    std::string required_result_hash;
+    std::string required_replay_id;
     std::vector<std::string> required_player_ids;
+    std::uint64_t required_event_cursor = 0;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
 };

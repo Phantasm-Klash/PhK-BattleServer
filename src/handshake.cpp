@@ -1,5 +1,6 @@
 #include "phk/battle/handshake.hpp"
 
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 
@@ -43,6 +44,12 @@ bool SupportsAead(const std::vector<std::string>& values, std::string_view name)
     return false;
 }
 
+bool HasAnyNonZero(const std::array<std::uint8_t, 32>& values) {
+    return std::any_of(values.begin(), values.end(), [](std::uint8_t value) {
+        return value != 0;
+    });
+}
+
 }  // namespace
 
 BattleHandshakeAccept HandshakeManager::Accept(
@@ -51,6 +58,19 @@ BattleHandshakeAccept HandshakeManager::Accept(
     std::string_view server_key_id
 ) const {
     BattleHandshakeAccept accept;
+    if (!HasAnyNonZero(hello.client_x25519_pub)) {
+        accept.reason = "client_key_missing";
+        return accept;
+    }
+    if (!HasAnyNonZero(hello.client_random)) {
+        accept.reason = "client_random_missing";
+        return accept;
+    }
+    if (!SupportsAead(hello.supported_aead, "CHACHA20_POLY1305") &&
+        !SupportsAead(hello.supported_aead, "XCHACHA20_POLY1305")) {
+        accept.reason = "aead_unsupported";
+        return accept;
+    }
     accept.ok = true;
     accept.reason = "ok";
     accept.version = verified_ticket.version;

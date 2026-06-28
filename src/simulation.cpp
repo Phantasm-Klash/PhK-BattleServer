@@ -64,6 +64,9 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     if (config_.max_input_ahead_ticks == 0) {
         config_.max_input_ahead_ticks = 1;
     }
+    if (config_.max_seq_ahead == 0) {
+        config_.max_seq_ahead = 1;
+    }
     if (config_.spawn_period_ticks == 0) {
         config_.spawn_period_ticks = 1;
     }
@@ -158,6 +161,11 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "seq_replay";
         return result;
     }
+    if (input.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+        result.code = InputValidationCode::SeqTooFarAhead;
+        result.reason = "seq_too_far_ahead";
+        return result;
+    }
     if (input.tick <= current_tick_) {
         result.code = InputValidationCode::TickTooOld;
         result.reason = "input_tick_too_old";
@@ -228,6 +236,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
     if (action.seq <= player_it->second.last_seq) {
         result.code = InputValidationCode::SeqReplay;
         result.reason = "seq_replay";
+        return result;
+    }
+    if (action.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+        result.code = InputValidationCode::SeqTooFarAhead;
+        result.reason = "seq_too_far_ahead";
         return result;
     }
     if (action.tick <= current_tick_) {
@@ -349,6 +362,36 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.bullets_delta.push_back(bullet);
     }
 
+    return snapshot;
+}
+
+BattleSnapshot BattleSimulation::ReconnectSnapshot(
+    const std::string& player_id,
+    std::uint64_t last_seen_event_cursor
+) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        BattleSnapshot snapshot;
+        snapshot.match_id = config_.match_id;
+        snapshot.snapshot_tick = current_tick_;
+        snapshot.snapshot_kind = "player_unknown";
+        snapshot.event_cursor = event_count_;
+        return snapshot;
+    }
+    if (last_seen_event_cursor > event_count_) {
+        BattleSnapshot snapshot;
+        snapshot.match_id = config_.match_id;
+        snapshot.snapshot_tick = current_tick_;
+        snapshot.snapshot_kind = "event_cursor_ahead";
+        snapshot.event_cursor = event_count_;
+        snapshot.mode_state["requested_event_cursor"] = std::to_string(last_seen_event_cursor);
+        return snapshot;
+    }
+
+    BattleSnapshot snapshot = Snapshot("reconnect");
+    snapshot.mode_state["reconnect_player_id"] = player_id;
+    snapshot.mode_state["requested_event_cursor"] = std::to_string(last_seen_event_cursor);
+    snapshot.mode_state["missed_event_count"] = std::to_string(event_count_ - last_seen_event_cursor);
     return snapshot;
 }
 
@@ -549,6 +592,10 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "invalid_mode_action";
         case InputValidationCode::PlayerDisconnected:
             return "player_disconnected";
+        case InputValidationCode::SeqTooFarAhead:
+            return "seq_too_far_ahead";
+        case InputValidationCode::EventCursorAhead:
+            return "event_cursor_ahead";
     }
     return "unknown";
 }

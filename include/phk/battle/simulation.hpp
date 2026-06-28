@@ -28,6 +28,8 @@ enum class InputValidationCode {
     InvalidCardSlot,
     InvalidModeAction,
     PlayerDisconnected,
+    SeqTooFarAhead,
+    EventCursorAhead,
 };
 
 struct InputValidationResult {
@@ -60,6 +62,7 @@ struct SimulationConfig {
     std::uint64_t match_seed = 0;
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
     std::uint32_t max_input_ahead_ticks = 8;
+    std::uint32_t max_seq_ahead = 32;
     std::uint32_t spawn_period_ticks = 30;
     std::uint32_t max_bullets = 256;
 };
@@ -82,6 +85,10 @@ public:
     InputValidationResult AcceptModeAction(const BattleModeAction& action);
     BattleSnapshot Tick();
     [[nodiscard]] BattleSnapshot Snapshot(std::string snapshot_kind = "full") const;
+    [[nodiscard]] BattleSnapshot ReconnectSnapshot(
+        const std::string& player_id,
+        std::uint64_t last_seen_event_cursor
+    ) const;
     [[nodiscard]] ReplaySummary Summary() const;
 
 private:

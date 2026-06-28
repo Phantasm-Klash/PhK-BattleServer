@@ -1,5 +1,7 @@
 ﻿#include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,47 @@ namespace {
 
 std::string RepeatHex(char ch, std::size_t count) {
     return std::string(count, ch);
+}
+
+void FillHandshakeBytes(phk::battle::BattleHandshakeHello& hello) {
+    hello.client_x25519_pub[0] = 1;
+    hello.client_random[0] = 2;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string ExpectedDevResultHash(const phk::battle::ReplaySummary& summary) {
+    std::uint64_t hash = 1469598103934665603ull;
+    hash = HashAppend(hash, summary.match_id);
+    hash = HashAppend(hash, summary.mode_id);
+    hash = HashAppend(hash, summary.ruleset_version);
+    hash = HashAppend(hash, summary.input_stream_hash);
+    hash = HashAppend(hash, summary.event_stream_hash);
+    hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.final_tick);
+    hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.event_count);
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string ExpectedDevReplayId(const phk::battle::ReplaySummary& summary) {
+    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
 }
 
 phk::battle::SignedBattleTicket MakeTicket() {
@@ -81,6 +124,17 @@ phk::battle::SignedBattleResult MakeBattleResult() {
 	signed_result.server_authoritative = true;
 	return signed_result;
 }
+
+phk::battle::SignedBattleResult MakeBattleResultForSummary(const phk::battle::ReplaySummary& summary) {
+    auto signed_result = MakeBattleResult();
+    signed_result.result.result_hash = ExpectedDevResultHash(summary);
+    signed_result.result.replay_id = ExpectedDevReplayId(summary);
+    signed_result.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) + "}";
+    return signed_result;
+}
+
+phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq);
 
 bool TestTicketVerifier() {
 	phk::battle::TicketVerifier verifier;
@@ -265,6 +319,7 @@ bool TestServerAndHandshake() {
 
 	phk::battle::BattleHandshakeHello hello;
     hello.battle_ticket = ticket;
+    FillHandshakeBytes(hello);
     hello.supported_aead = {"AES_256_GCM", "CHACHA20_POLY1305"};
     const auto accept = server.AcceptHandshake(hello);
     CHECK_TRUE(accept.ok);
@@ -275,11 +330,24 @@ bool TestServerAndHandshake() {
     CHECK_TRUE(!accept.transcript_hash_hex.empty());
 	CHECK_TRUE(!accept.dev_session_id.empty());
 
+    phk::battle::BattleHandshakeHello missing_key_hello = hello;
+    missing_key_hello.client_x25519_pub = {};
+    const auto missing_key_accept = server.AcceptHandshake(missing_key_hello);
+    CHECK_TRUE(!missing_key_accept.ok);
+    CHECK_EQ(missing_key_accept.reason, std::string("client_key_missing"));
+
+    phk::battle::BattleHandshakeHello unsupported_aead_hello = hello;
+    unsupported_aead_hello.supported_aead = {"AES_256_GCM"};
+    const auto unsupported_aead_accept = server.AcceptHandshake(unsupported_aead_hello);
+    CHECK_TRUE(!unsupported_aead_accept.ok);
+    CHECK_EQ(unsupported_aead_accept.reason, std::string("aead_unsupported"));
+
     auto unregistered_ticket = MakeTicket();
     unregistered_ticket.ticket.ticket_id = "ticket-unregistered";
     unregistered_ticket.ticket.ticket_nonce_hex = "111111111111111111111111";
     phk::battle::BattleHandshakeHello unregistered_hello;
     unregistered_hello.battle_ticket = unregistered_ticket;
+    FillHandshakeBytes(unregistered_hello);
     unregistered_hello.supported_aead = {"CHACHA20_POLY1305"};
     const auto unregistered_accept = server.AcceptHandshake(unregistered_hello);
     CHECK_TRUE(!unregistered_accept.ok);
@@ -289,6 +357,7 @@ bool TestServerAndHandshake() {
     expired_ticket.ticket.expires_at_ms = 1782489604000;
     phk::battle::BattleHandshakeHello expired_hello;
     expired_hello.battle_ticket = expired_ticket;
+    FillHandshakeBytes(expired_hello);
     expired_hello.supported_aead = {"CHACHA20_POLY1305"};
     const auto expired_accept = server.AcceptHandshake(expired_hello);
     CHECK_TRUE(!expired_accept.ok);
@@ -316,32 +385,55 @@ bool TestBattleResultSubmission() {
 	phk::battle::BattleServer server(config);
 	CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
 	CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    auto action = MakeModeAction(1);
+    action.tick = 1;
+    CHECK_TRUE(server.AcceptModeAction(action).ok);
+    const auto summary = server.MatchReplaySummary("match-001");
+    CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(1));
 
-	auto wrong_players = MakeBattleResult();
+	auto wrong_players = MakeBattleResultForSummary(summary);
 	wrong_players.result.player_ids = {"p1"};
 	const auto wrong_players_result = server.SubmitBattleResult(wrong_players);
 	CHECK_TRUE(!wrong_players_result.ok);
 	CHECK_EQ(wrong_players_result.reason, std::string("player_ids_mismatch"));
 
-    auto wrong_mode = MakeBattleResult();
+    auto wrong_mode = MakeBattleResultForSummary(summary);
     wrong_mode.result.mode_id = "battle_royale";
     const auto wrong_mode_result = server.SubmitBattleResult(wrong_mode);
     CHECK_TRUE(!wrong_mode_result.ok);
     CHECK_EQ(wrong_mode_result.reason, std::string("mode_mismatch"));
 
-    auto wrong_ruleset = MakeBattleResult();
+    auto wrong_ruleset = MakeBattleResultForSummary(summary);
     wrong_ruleset.result.version.ruleset_version = "ruleset-other";
     const auto wrong_ruleset_result = server.SubmitBattleResult(wrong_ruleset);
     CHECK_TRUE(!wrong_ruleset_result.ok);
     CHECK_EQ(wrong_ruleset_result.reason, std::string("ruleset_version_mismatch"));
 
-	const auto accepted = server.SubmitBattleResult(MakeBattleResult());
+    auto wrong_hash = MakeBattleResultForSummary(summary);
+    wrong_hash.result.result_hash = "sha256:wrong";
+    const auto wrong_hash_result = server.SubmitBattleResult(wrong_hash);
+    CHECK_TRUE(!wrong_hash_result.ok);
+    CHECK_EQ(wrong_hash_result.reason, std::string("result_hash_mismatch"));
+
+    auto wrong_replay = MakeBattleResultForSummary(summary);
+    wrong_replay.result.replay_id = "battle-replay:wrong";
+    const auto wrong_replay_result = server.SubmitBattleResult(wrong_replay);
+    CHECK_TRUE(!wrong_replay_result.ok);
+    CHECK_EQ(wrong_replay_result.reason, std::string("replay_id_mismatch"));
+
+    auto wrong_cursor = MakeBattleResultForSummary(summary);
+    wrong_cursor.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":999}";
+    const auto wrong_cursor_result = server.SubmitBattleResult(wrong_cursor);
+    CHECK_TRUE(!wrong_cursor_result.ok);
+    CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
+
+	const auto accepted = server.SubmitBattleResult(MakeBattleResultForSummary(summary));
 	CHECK_TRUE(accepted.ok);
 	CHECK_EQ(accepted.reason, std::string("ok"));
 	CHECK_EQ(accepted.settlement_key, std::string(phk::v1::kBattleResultCallbackSettlementKey));
 	CHECK_TRUE(!accepted.verification.warnings.empty());
 
-	const auto duplicate = server.SubmitBattleResult(MakeBattleResult());
+	const auto duplicate = server.SubmitBattleResult(MakeBattleResultForSummary(summary));
 	CHECK_TRUE(duplicate.ok);
 	CHECK_TRUE(duplicate.duplicate);
 	CHECK_EQ(duplicate.reason, std::string("ok"));
@@ -409,6 +501,9 @@ bool TestSimulationDeterminism() {
     const auto replay = first.AcceptInput(MakeInput("p1", 2, 1, 1u << 3));
     CHECK_TRUE(!replay.ok);
     CHECK_EQ(replay.reason, std::string("seq_replay"));
+    const auto seq_jump = first.AcceptInput(MakeInput("p1", 2, 64, 1u << 3));
+    CHECK_TRUE(!seq_jump.ok);
+    CHECK_EQ(seq_jump.reason, std::string("seq_too_far_ahead"));
     const auto far_future = first.AcceptInput(MakeInput("p1", 99, 2, 1u << 3));
     CHECK_TRUE(!far_future.ok);
     CHECK_EQ(far_future.reason, std::string("input_tick_too_far_ahead"));
@@ -533,6 +628,15 @@ bool TestServerAuthoritativeInputAndSnapshot() {
 
     const auto reconnected = server.SetPlayerConnected("match-001", "p2", true);
     CHECK_TRUE(reconnected.ok);
+    const auto reconnect_snapshot = server.ReconnectSnapshot("match-001", "p2", mode_action_summary.event_count);
+    CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
+    CHECK_EQ(reconnect_snapshot.mode_state.at("reconnect_player_id"), std::string("p2"));
+    CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("2"));
+    const auto cursor_ahead_snapshot = server.ReconnectSnapshot("match-001", "p2", 999);
+    CHECK_EQ(cursor_ahead_snapshot.snapshot_kind, std::string("event_cursor_ahead"));
+    CHECK_EQ(cursor_ahead_snapshot.mode_state.at("requested_event_cursor"), std::string("999"));
+    const auto unknown_reconnect_snapshot = server.ReconnectSnapshot("match-001", "p3", 0);
+    CHECK_EQ(unknown_reconnect_snapshot.snapshot_kind, std::string("player_unknown"));
     const auto reconnected_input = server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2));
     CHECK_TRUE(reconnected_input.ok);
     const auto reconnected_snapshot = server.MatchSnapshot("match-001");

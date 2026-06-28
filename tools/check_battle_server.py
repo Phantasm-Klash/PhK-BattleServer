@@ -188,8 +188,10 @@ def main() -> int:
         or "mode_id" not in simulation_text
         or "ruleset_version" not in simulation_text
         or "SetPlayerConnected" not in simulation_text
+        or "ReconnectSnapshot" not in simulation_text
+        or "max_seq_ahead" not in simulation_text
     ):
-        print("simulation boundary missing fixed tick, simulation, replay summary, mode/ruleset, reconnect, or mode action acceptance", file=sys.stderr)
+        print("simulation boundary missing fixed tick, simulation, replay summary, mode/ruleset, reconnect snapshot, seq window, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
@@ -198,6 +200,9 @@ def main() -> int:
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
         or "player_disconnected" not in simulation_impl
+        or "seq_too_far_ahead" not in simulation_impl
+        or "event_cursor_ahead" not in simulation_impl
+        or 'snapshot.mode_state["missed_event_count"]' not in simulation_impl
         or 'snapshot.mode_state["mode_id"]' not in simulation_impl
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
     ):
@@ -209,6 +214,9 @@ def main() -> int:
         "match_mode_ruleset_mismatch" not in server_impl
         or "SessionExistsForPlayer" not in server_impl
         or "options.required_ruleset_version" not in server_impl
+        or "options.required_result_hash" not in server_impl
+        or "options.required_event_cursor" not in server_impl
+        or "ReconnectSnapshot" not in server_impl
         or "match_full" not in server_impl
         or "ticket_not_registered" not in server_impl
     ):
@@ -216,8 +224,19 @@ def main() -> int:
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
-    if "ruleset_version_mismatch" not in result_impl or "reward_projection_json" not in result_impl:
-        print("result boundary missing ruleset verification or projection-only result shape", file=sys.stderr)
+    if (
+        "ruleset_version_mismatch" not in result_impl
+        or "reward_projection_json" not in result_impl
+        or "result_hash_mismatch" not in result_impl
+        or "replay_id_mismatch" not in result_impl
+        or "event_cursor_mismatch" not in result_impl
+    ):
+        print("result boundary missing ruleset/hash/replay/cursor verification or projection-only result shape", file=sys.stderr)
+        return 1
+
+    handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")
+    if "client_key_missing" not in handshake_impl or "client_random_missing" not in handshake_impl or "aead_unsupported" not in handshake_impl:
+        print("handshake boundary missing client key/random/aead shape checks", file=sys.stderr)
         return 1
 
     if args.build:

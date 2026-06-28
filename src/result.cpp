@@ -25,6 +25,20 @@ bool SameStringSet(std::vector<std::string> left, std::vector<std::string> right
     });
 }
 
+bool ContainsJsonUintField(const std::string& json, std::string_view field_name, std::uint64_t expected) {
+    const std::string needle = "\"" + std::string(field_name) + "\":" + std::to_string(expected);
+    const std::size_t offset = json.find(needle);
+    if (offset == std::string::npos) {
+        return false;
+    }
+    const std::size_t after_value = offset + needle.size();
+    if (after_value == json.size()) {
+        return true;
+    }
+    const char next = json[after_value];
+    return next == ',' || next == '}';
+}
+
 }  // namespace
 
 BattleResultVerification BattleResultVerifier::Verify(
@@ -62,12 +76,25 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "result_hash_invalid");
         return verification;
     }
+    if (!options.required_result_hash.empty() && result.result_hash != options.required_result_hash) {
+        Fail(verification, "result_hash_mismatch");
+        return verification;
+    }
     if (result.replay_id.empty()) {
         Fail(verification, "replay_id_missing");
         return verification;
     }
+    if (!options.required_replay_id.empty() && result.replay_id != options.required_replay_id) {
+        Fail(verification, "replay_id_mismatch");
+        return verification;
+    }
     if (result.player_ids.empty() || !SameStringSet(result.player_ids, options.required_player_ids)) {
         Fail(verification, "player_ids_mismatch");
+        return verification;
+    }
+    if (options.required_event_cursor > 0 &&
+        !ContainsJsonUintField(result.mode_result_json, "event_cursor", options.required_event_cursor)) {
+        Fail(verification, "event_cursor_mismatch");
         return verification;
     }
     if (result.settled_at_ms <= 0) {

@@ -1,5 +1,7 @@
 #include "phk/battle/server.hpp"
 
+#include <iomanip>
+#include <sstream>
 #include <utility>
 
 namespace phk::battle {
@@ -25,6 +27,43 @@ InputValidationResult UnknownPlayerResult() {
     result.code = InputValidationCode::PlayerUnknown;
     result.reason = "player_unknown";
     return result;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string DevSha256RefFromSummary(const ReplaySummary& summary) {
+    std::uint64_t hash = 1469598103934665603ull;
+    hash = HashAppend(hash, summary.match_id);
+    hash = HashAppend(hash, summary.mode_id);
+    hash = HashAppend(hash, summary.ruleset_version);
+    hash = HashAppend(hash, summary.input_stream_hash);
+    hash = HashAppend(hash, summary.event_stream_hash);
+    hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.final_tick);
+    hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.event_count);
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string DevReplayIdFromSummary(const ReplaySummary& summary) {
+    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
 }
 
 }  // namespace
@@ -217,6 +256,29 @@ BattleSnapshot BattleServer::MatchSnapshot(const std::string& match_id) const {
     return simulation_it->second.Snapshot();
 }
 
+BattleSnapshot BattleServer::ReconnectSnapshot(
+    const std::string& match_id,
+    const std::string& player_id,
+    std::uint64_t last_seen_event_cursor
+) const {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        BattleSnapshot snapshot;
+        snapshot.match_id = match_id;
+        snapshot.snapshot_kind = "match_unknown";
+        return snapshot;
+    }
+    if (!SessionExistsForPlayer(sessions_by_ticket_, match_id, player_id)) {
+        BattleSnapshot snapshot;
+        snapshot.match_id = match_id;
+        snapshot.snapshot_tick = simulation_it->second.CurrentTick();
+        snapshot.snapshot_kind = "player_unknown";
+        snapshot.event_cursor = simulation_it->second.Summary().event_count;
+        return snapshot;
+    }
+    return simulation_it->second.ReconnectSnapshot(player_id, last_seen_event_cursor);
+}
+
 ReplaySummary BattleServer::MatchReplaySummary(const std::string& match_id) const {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
@@ -241,6 +303,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_ruleset_version = simulation_it->second.Config().ruleset_version;
     options.required_key_id = config_.server_id;
     options.now_ms = config_.now_ms;
+    const ReplaySummary summary = simulation_it->second.Summary();
+    options.required_result_hash = DevSha256RefFromSummary(summary);
+    options.required_replay_id = DevReplayIdFromSummary(summary);
+    options.required_event_cursor = summary.event_count;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
         if (session.match_id == signed_result.result.match_id) {

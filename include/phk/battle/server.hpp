@@ -59,6 +59,11 @@ public:
 	InputValidationResult SetPlayerConnected(const std::string& match_id, const std::string& player_id, bool connected);
 	BattleSnapshot TickMatch(const std::string& match_id);
 	BattleSnapshot MatchSnapshot(const std::string& match_id) const;
+	BattleSnapshot ReconnectSnapshot(
+		const std::string& match_id,
+		const std::string& player_id,
+		std::uint64_t last_seen_event_cursor
+	) const;
 	ReplaySummary MatchReplaySummary(const std::string& match_id) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
 
