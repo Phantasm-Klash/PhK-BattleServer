@@ -130,6 +130,60 @@ bool TestProtocolManifest() {
     return true;
 }
 
+bool TestSharedSnapshotEventFixtures() {
+    phk::battle::BattleSnapshot snapshot;
+    snapshot.match_id = std::string(phk::v1::kBattleSnapshotMatchId);
+    snapshot.snapshot_tick = phk::v1::kBattleSnapshotSnapshotTick;
+    snapshot.snapshot_kind = std::string(phk::v1::kBattleSnapshotSnapshotKind);
+    snapshot.state_hash = std::string(phk::v1::kBattleSnapshotStateHash);
+    snapshot.event_cursor = phk::v1::kBattleSnapshotEventCursor;
+
+    phk::battle::BattlePlayerSnapshot player;
+    player.player_id = "p1";
+    player.x_milli = 120000;
+    player.y_milli = 300000;
+    player.connected = true;
+    player.hand_size = 4;
+    snapshot.players.push_back(player);
+
+    phk::battle::BattleBulletDelta bullet;
+    bullet.bullet_id = "b-001";
+    bullet.op = "spawn";
+    bullet.x_milli = 120000;
+    bullet.y_milli = 300000;
+    bullet.vx_milli = 0;
+    bullet.vy_milli = -350;
+    bullet.radius_milli = 5000;
+    bullet.pattern_id = "opening_fan";
+    bullet.color = "blue";
+    snapshot.bullets_delta.push_back(bullet);
+    snapshot.mode_state["duel_status"] = "running";
+
+    CHECK_EQ(snapshot.match_id, std::string("match-001"));
+    CHECK_EQ(snapshot.snapshot_tick, static_cast<std::uint64_t>(122));
+    CHECK_EQ(snapshot.snapshot_kind, std::string("delta"));
+    CHECK_EQ(snapshot.state_hash, std::string("sha256:state"));
+    CHECK_EQ(snapshot.event_cursor, static_cast<std::uint64_t>(4));
+    CHECK_TRUE(!snapshot.players.empty());
+    CHECK_TRUE(!snapshot.bullets_delta.empty());
+    CHECK_EQ(snapshot.mode_state.at("duel_status"), std::string("running"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleSnapshot", "event_cursor"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleEvent", "server_authoritative"));
+
+    phk::battle::BattlePacketHeader event_header;
+    event_header.match_id = std::string(phk::v1::kBattleEventMatchId);
+    event_header.tick = phk::v1::kBattleEventTick;
+    event_header.seq = phk::v1::kBattleEventCursor;
+    event_header.payload_type = phk::battle::BattlePayloadType::Event;
+    CHECK_EQ(event_header.match_id, snapshot.match_id);
+    CHECK_EQ(event_header.tick, phk::v1::kBattleSnapshotSnapshotTick);
+    CHECK_EQ(event_header.seq, phk::v1::kBattleSnapshotEventCursor);
+    CHECK_EQ(std::string(phk::v1::kBattleEventType), std::string("bullet_spawn"));
+    CHECK_TRUE(phk::v1::kBattleEventServerAuthoritative);
+    CHECK_EQ(phk::battle::PayloadTypeName(event_header.payload_type), std::string("event"));
+    return true;
+}
+
 bool TestServerAndHandshake() {
 	phk::battle::BattleServerConfig config;
 	config.now_ms = 1782489605000;
@@ -415,6 +469,7 @@ bool TestKcpPlaceholder() {
 int main() {
 	const std::vector<std::pair<std::string, bool (*)()>> tests = {
 		{"ProtocolManifest", TestProtocolManifest},
+		{"SharedSnapshotEventFixtures", TestSharedSnapshotEventFixtures},
 		{"TicketVerifier", TestTicketVerifier},
 		{"ServerAndHandshake", TestServerAndHandshake},
 		{"BattleResultSubmission", TestBattleResultSubmission},
