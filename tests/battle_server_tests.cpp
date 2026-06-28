@@ -67,17 +67,17 @@ phk::battle::SignedBattleTicket MakeTicketForBob() {
 
 phk::battle::SignedBattleResult MakeBattleResult() {
 	phk::battle::SignedBattleResult signed_result;
-	signed_result.result.match_id = "match-001";
-	signed_result.result.mode_id = "certification";
-	signed_result.result.result_hash = "sha256:0123456789abcdef";
-	signed_result.result.replay_id = "battle-replay-001";
+	signed_result.result.match_id = std::string(phk::v1::kBattleResultCallbackMatchId);
+	signed_result.result.mode_id = std::string(phk::v1::kBattleResultCallbackModeId);
+	signed_result.result.result_hash = std::string(phk::v1::kBattleResultCallbackResultHash);
+	signed_result.result.replay_id = std::string(phk::v1::kBattleResultCallbackReplayId);
 	signed_result.result.player_ids = {"p1", "p2"};
-	signed_result.result.reward_projection_json = R"({"source":"battle-server"})";
-	signed_result.result.mode_result_json = R"({"owner":"cpp"})";
-	signed_result.result.settled_at_ms = 1782489610000;
-	signed_result.key_id = "battle-local-1";
-	signed_result.public_key_hex = RepeatHex('a', 64);
-	signed_result.signature_hex = RepeatHex('c', 128);
+	signed_result.result.reward_projection_json = std::string(phk::v1::kBattleResultCallbackRewardProjectionJson);
+	signed_result.result.mode_result_json = std::string(phk::v1::kBattleResultCallbackModeResultJson);
+	signed_result.result.settled_at_ms = phk::v1::kBattleResultCallbackSettledAtMs;
+	signed_result.key_id = std::string(phk::v1::kBattleResultCallbackKeyId);
+	signed_result.public_key_hex = std::string(phk::v1::kBattleResultCallbackPublicKeyHex);
+	signed_result.signature_hex = std::string(phk::v1::kBattleResultCallbackSignatureHex);
 	signed_result.server_authoritative = true;
 	return signed_result;
 }
@@ -184,7 +184,7 @@ bool TestBattleResultSubmission() {
 	const auto accepted = server.SubmitBattleResult(MakeBattleResult());
 	CHECK_TRUE(accepted.ok);
 	CHECK_EQ(accepted.reason, std::string("ok"));
-	CHECK_EQ(accepted.settlement_key, std::string("battle-result:match-001"));
+	CHECK_EQ(accepted.settlement_key, std::string(phk::v1::kBattleResultCallbackSettlementKey));
 	CHECK_TRUE(!accepted.verification.warnings.empty());
 
 	const auto duplicate = server.SubmitBattleResult(MakeBattleResult());
