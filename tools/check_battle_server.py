@@ -40,6 +40,7 @@ REQUIRED = [
 REQUIRED_CPP_MANIFEST_FIELDS = {
     "BattleTicket": ["match_id", "player_id", "ruleset_version", "expires_at_ms"],
     "BattlePacketHeader": ["match_id", "player_id", "tick", "seq", "ack", "payload_type", "nonce"],
+    "BattleEncryptedPacket": ["header", "ciphertext", "auth_tag"],
     "BattleInput": ["match_id", "player_id", "tick", "seq", "direction_bits", "slow", "shoot", "bomb", "card_slot"],
     "BattleModeAction": ["match_id", "player_id", "tick", "seq", "action_id", "action_type", "client_result_authoritative"],
     "BattleSnapshot": ["match_id", "snapshot_tick", "state_hash", "event_cursor", "players", "bullets_delta", "mode_state"],
@@ -243,9 +244,21 @@ def main() -> int:
         print("result boundary missing ruleset/hash/replay/cursor verification or projection-only result shape", file=sys.stderr)
         return 1
 
+    protocol_text = (ROOT / "include" / "phk" / "battle" / "protocol.hpp").read_text(encoding="utf-8")
+    if "BattleEncryptedPacket" not in protocol_text or "DispatchEncrypted" not in protocol_text:
+        print("protocol boundary missing encrypted packet adapter shape", file=sys.stderr)
+        return 1
+
     protocol_impl = (ROOT / "src" / "protocol.cpp").read_text(encoding="utf-8")
-    if "key_id_missing" not in protocol_impl or "nonce_invalid" not in protocol_impl or "payload_type_missing" not in protocol_impl:
-        print("protocol dispatcher missing encrypted packet key/nonce/payload shape guards", file=sys.stderr)
+    if (
+        "key_id_missing" not in protocol_impl
+        or "nonce_invalid" not in protocol_impl
+        or "payload_type_missing" not in protocol_impl
+        or "ciphertext_missing" not in protocol_impl
+        or "auth_tag_invalid" not in protocol_impl
+        or "encrypted_payload_type_invalid" not in protocol_impl
+    ):
+        print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload shape guards", file=sys.stderr)
         return 1
 
     handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")

@@ -60,6 +60,12 @@ struct BattleModeAction {
     bool client_result_authoritative = false;
 };
 
+struct BattleEncryptedPacket {
+    BattlePacketHeader header;
+    std::vector<std::uint8_t> ciphertext;
+    std::vector<std::uint8_t> auth_tag;
+};
+
 struct BattlePlayerSnapshot {
     std::string player_id;
     std::int32_t x_milli = 0;
@@ -105,6 +111,7 @@ public:
         const BattlePacketHeader& header,
         const std::vector<std::uint8_t>& plaintext_payload
     );
+    DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
 
 private:
     std::map<std::string, std::uint64_t> last_seq_by_player_;

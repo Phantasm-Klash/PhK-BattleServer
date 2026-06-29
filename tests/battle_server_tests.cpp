@@ -795,6 +795,64 @@ bool TestDispatcher() {
     return true;
 }
 
+bool TestEncryptedPacketAdapterShape() {
+    phk::battle::BattleDispatcher dispatcher;
+    phk::battle::BattleEncryptedPacket packet;
+    packet.header.match_id = "match-001";
+    packet.header.player_id = "p1";
+    packet.header.tick = 10;
+    packet.header.seq = 1;
+    packet.header.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(packet.header);
+    packet.ciphertext = {'c', 'i', 'p', 'h', 'e', 'r'};
+    packet.auth_tag.assign(16, 0x7a);
+
+    const auto accepted = dispatcher.DispatchEncrypted(packet);
+    CHECK_TRUE(accepted.ok);
+    CHECK_EQ(accepted.response_kind, std::string("input"));
+
+    auto missing_ciphertext = packet;
+    missing_ciphertext.header.player_id = "p2";
+    missing_ciphertext.header.seq = 1;
+    missing_ciphertext.ciphertext.clear();
+    const auto missing_ciphertext_result = dispatcher.DispatchEncrypted(missing_ciphertext);
+    CHECK_TRUE(!missing_ciphertext_result.ok);
+    CHECK_EQ(missing_ciphertext_result.reason, std::string("ciphertext_missing"));
+
+    auto bad_tag = packet;
+    bad_tag.header.player_id = "p2";
+    bad_tag.header.seq = 2;
+    bad_tag.auth_tag.assign(15, 0x7a);
+    const auto bad_tag_result = dispatcher.DispatchEncrypted(bad_tag);
+    CHECK_TRUE(!bad_tag_result.ok);
+    CHECK_EQ(bad_tag_result.reason, std::string("auth_tag_invalid"));
+
+    auto missing_key = packet;
+    missing_key.header.player_id = "p2";
+    missing_key.header.seq = 3;
+    missing_key.header.key_id.clear();
+    const auto missing_key_result = dispatcher.DispatchEncrypted(missing_key);
+    CHECK_TRUE(!missing_key_result.ok);
+    CHECK_EQ(missing_key_result.reason, std::string("key_id_missing"));
+
+    auto result_packet = packet;
+    result_packet.header.player_id = "p2";
+    result_packet.header.seq = 4;
+    result_packet.header.payload_type = phk::battle::BattlePayloadType::Result;
+    const auto result_packet_result = dispatcher.DispatchEncrypted(result_packet);
+    CHECK_TRUE(!result_packet_result.ok);
+    CHECK_EQ(result_packet_result.reason, std::string("client_result_forbidden"));
+
+    auto event_packet = packet;
+    event_packet.header.player_id = "p2";
+    event_packet.header.seq = 5;
+    event_packet.header.payload_type = phk::battle::BattlePayloadType::Event;
+    const auto event_packet_result = dispatcher.DispatchEncrypted(event_packet);
+    CHECK_TRUE(!event_packet_result.ok);
+    CHECK_EQ(event_packet_result.reason, std::string("encrypted_payload_type_invalid"));
+    return true;
+}
+
 bool TestKcpPlaceholder() {
     phk::battle::KcpEchoEndpoint endpoint;
     phk::battle::UdpDatagram datagram;
@@ -824,6 +882,7 @@ int main() {
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
+		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"KcpPlaceholder", TestKcpPlaceholder},
 	};
 
