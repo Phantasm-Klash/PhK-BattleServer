@@ -6,6 +6,17 @@
 
 namespace phk::battle {
 
+namespace {
+
+std::string SessionRemoteKey(const BattleEncryptedPacket& packet) {
+    if (packet.header.match_id.empty() || packet.header.player_id.empty() || packet.header.key_id.empty()) {
+        return {};
+    }
+    return packet.header.match_id + ":" + packet.header.player_id + ":" + packet.header.key_id;
+}
+
+}  // namespace
+
 std::vector<UdpDatagram> KcpEchoEndpoint::ProcessDatagram(const UdpDatagram& datagram) {
     stats_.datagrams_in += 1;
     stats_.bytes_in += datagram.payload.size();
@@ -33,10 +44,33 @@ KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
     const UdpDatagram& datagram
 ) {
     KcpAeadAdapterResult result;
+    const bool remote_rebind_allowed = packet.header.payload_type == BattlePayloadType::Reconnect;
+    if (!remote_rebind_allowed &&
+        (packet.header.payload_type == BattlePayloadType::Input ||
+        packet.header.payload_type == BattlePayloadType::ModeAction ||
+        packet.header.payload_type == BattlePayloadType::Ping)) {
+        const std::string remote_key = SessionRemoteKey(packet);
+        if (!remote_key.empty()) {
+            const auto remote_it = remote_endpoint_by_session_.find(remote_key);
+            if (remote_it != remote_endpoint_by_session_.end() &&
+                remote_it->second != datagram.remote_endpoint) {
+                result.reason = "remote_endpoint_mismatch";
+                result.dispatch.payload_type = packet.header.payload_type;
+                result.dispatch.reason = result.reason;
+                return result;
+            }
+        }
+    }
+
     result.dispatch = server_.DispatchEncrypted(packet);
     result.reason = result.dispatch.reason;
     if (!result.dispatch.ok) {
         return result;
+    }
+
+    const std::string remote_key = SessionRemoteKey(packet);
+    if (!remote_key.empty()) {
+        remote_endpoint_by_session_[remote_key] = datagram.remote_endpoint;
     }
 
     result.replies = endpoint_.ProcessDatagram(datagram);

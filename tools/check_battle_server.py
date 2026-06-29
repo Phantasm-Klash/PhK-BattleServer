@@ -358,12 +358,15 @@ def main() -> int:
         "KcpAeadPacketAdapter" not in kcp_text
         or "KcpAeadAdapterResult" not in kcp_text
         or "BattleEncryptedPacket" not in kcp_text
+        or "remote_endpoint_by_session_" not in kcp_text
         or "ProcessEncryptedDatagram" not in kcp_impl
         or "server_.DispatchEncrypted(packet)" not in kcp_impl
+        or "remote_endpoint_mismatch" not in kcp_impl
+        or "remote_rebind_allowed = packet.header.payload_type == BattlePayloadType::Reconnect" not in kcp_impl
         or "endpoint_.ProcessDatagram(datagram)" not in kcp_impl
         or "if (!result.dispatch.ok)" not in kcp_impl
     ):
-        print("KCP endpoint missing encrypted AEAD packet adapter boundary or dispatch-before-forward guard", file=sys.stderr)
+        print("KCP endpoint missing encrypted AEAD packet adapter boundary, remote rebinding guard, or dispatch-before-forward guard", file=sys.stderr)
         return 1
 
     handshake_text = (ROOT / "include" / "phk" / "battle" / "handshake.hpp").read_text(encoding="utf-8")
@@ -404,10 +407,12 @@ def main() -> int:
         or "handshake_required" not in tests_text
         or "client_to_server_key_ref" not in tests_text
         or "KcpAeadPacketAdapterBoundary" not in tests_text
+        or "remote_endpoint_mismatch" not in tests_text
+        or "reconnect_result" not in tests_text
         or "session_key_mismatch" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD adapter coverage", file=sys.stderr)
+        print("battle server tests missing pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
         return 1
 
     if args.build:

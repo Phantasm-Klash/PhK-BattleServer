@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,7 @@ public:
 private:
     BattleServer& server_;
     KcpEndpoint& endpoint_;
+    std::map<std::string, std::string> remote_endpoint_by_session_;
 };
 
 }  // namespace phk::battle

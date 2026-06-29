@@ -1674,14 +1674,58 @@ bool TestKcpAeadPacketAdapterBoundary() {
     CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(1));
     CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(1));
 
-    auto nonce_replay = packet;
-    nonce_replay.header.seq = 2;
-    const auto replay = adapter.ProcessEncryptedDatagram(nonce_replay, datagram);
+    auto remote_mismatch = packet;
+    remote_mismatch.header.seq = 2;
+    remote_mismatch.header.nonce_hex = RepeatHex('e', 24);
+    auto other_remote = datagram;
+    other_remote.remote_endpoint = "127.0.0.1:52002";
+    const auto remote_rejected = adapter.ProcessEncryptedDatagram(remote_mismatch, other_remote);
+    CHECK_TRUE(!remote_rejected.ok);
+    CHECK_EQ(remote_rejected.reason, std::string("remote_endpoint_mismatch"));
+    CHECK_TRUE(remote_rejected.replies.empty());
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(1));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(1));
+
+    const auto remote_retry = adapter.ProcessEncryptedDatagram(remote_mismatch, datagram);
+    CHECK_TRUE(remote_retry.ok);
+    CHECK_EQ(remote_retry.reason, std::string("input"));
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(2));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(2));
+
+    auto reconnect = packet;
+    reconnect.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
+    reconnect.header.seq = 3;
+    reconnect.header.nonce_hex = RepeatHex('f', 24);
+    const auto reconnect_result = adapter.ProcessEncryptedDatagram(reconnect, other_remote);
+    CHECK_TRUE(reconnect_result.ok);
+    CHECK_EQ(reconnect_result.reason, std::string("reconnect"));
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(3));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(3));
+
+    auto old_remote_after_reconnect = packet;
+    old_remote_after_reconnect.header.seq = 4;
+    old_remote_after_reconnect.header.nonce_hex = RepeatHex('a', 24);
+    const auto old_remote_result = adapter.ProcessEncryptedDatagram(old_remote_after_reconnect, datagram);
+    CHECK_TRUE(!old_remote_result.ok);
+    CHECK_EQ(old_remote_result.reason, std::string("remote_endpoint_mismatch"));
+    CHECK_TRUE(old_remote_result.replies.empty());
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(3));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(3));
+
+    const auto new_remote_result = adapter.ProcessEncryptedDatagram(old_remote_after_reconnect, other_remote);
+    CHECK_TRUE(new_remote_result.ok);
+    CHECK_EQ(new_remote_result.reason, std::string("input"));
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(4));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(4));
+
+    auto nonce_replay = old_remote_after_reconnect;
+    nonce_replay.header.seq = 5;
+    const auto replay = adapter.ProcessEncryptedDatagram(nonce_replay, other_remote);
     CHECK_TRUE(!replay.ok);
     CHECK_EQ(replay.reason, std::string("nonce_replay"));
     CHECK_TRUE(replay.replies.empty());
-    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(1));
-    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(1));
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(4));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(4));
     return true;
 }
 
