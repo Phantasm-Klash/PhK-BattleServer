@@ -1,5 +1,7 @@
 #include "phk/battle/kcp_endpoint.hpp"
 
+#include "phk/battle/server.hpp"
+
 #include <algorithm>
 
 namespace phk::battle {
@@ -21,6 +23,26 @@ std::vector<UdpDatagram> KcpEchoEndpoint::ProcessDatagram(const UdpDatagram& dat
 
 KcpEndpointStats KcpEchoEndpoint::Stats() const {
     return stats_;
+}
+
+KcpAeadPacketAdapter::KcpAeadPacketAdapter(BattleServer& server, KcpEndpoint& endpoint)
+    : server_(server), endpoint_(endpoint) {}
+
+KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
+    const BattleEncryptedPacket& packet,
+    const UdpDatagram& datagram
+) {
+    KcpAeadAdapterResult result;
+    result.dispatch = server_.DispatchEncrypted(packet);
+    result.reason = result.dispatch.reason;
+    if (!result.dispatch.ok) {
+        return result;
+    }
+
+    result.replies = endpoint_.ProcessDatagram(datagram);
+    result.ok = true;
+    result.reason = result.dispatch.response_kind;
+    return result;
 }
 
 }  // namespace phk::battle

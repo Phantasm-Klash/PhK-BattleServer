@@ -4,7 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "phk/battle/protocol.hpp"
+
 namespace phk::battle {
+
+class BattleServer;
 
 struct UdpDatagram {
     std::string remote_endpoint;
@@ -32,6 +36,27 @@ public:
 
 private:
     KcpEndpointStats stats_;
+};
+
+struct KcpAeadAdapterResult {
+    bool ok = false;
+    std::string reason;
+    DispatchResult dispatch;
+    std::vector<UdpDatagram> replies;
+};
+
+class KcpAeadPacketAdapter final {
+public:
+    KcpAeadPacketAdapter(BattleServer& server, KcpEndpoint& endpoint);
+
+    KcpAeadAdapterResult ProcessEncryptedDatagram(
+        const BattleEncryptedPacket& packet,
+        const UdpDatagram& datagram
+    );
+
+private:
+    BattleServer& server_;
+    KcpEndpoint& endpoint_;
 };
 
 }  // namespace phk::battle

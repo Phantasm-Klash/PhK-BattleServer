@@ -1539,6 +1539,63 @@ bool TestKcpPlaceholder() {
     return true;
 }
 
+bool TestKcpAeadPacketAdapterBoundary() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    const auto accept = AcceptDefaultHandshake(server);
+    CHECK_TRUE(accept.ok);
+
+    phk::battle::KcpEchoEndpoint endpoint;
+    phk::battle::KcpAeadPacketAdapter adapter(server, endpoint);
+
+    phk::battle::BattleEncryptedPacket packet;
+    packet.header.match_id = "match-001";
+    packet.header.player_id = "p1";
+    packet.header.tick = 1;
+    packet.header.seq = 1;
+    packet.header.payload_type = phk::battle::BattlePayloadType::Input;
+    packet.header.key_id = accept.client_to_server_key_ref;
+    packet.header.nonce_hex = RepeatHex('c', 24);
+    packet.ciphertext = {'i', 'n', 'p', 'u', 't'};
+    packet.auth_tag.assign(16, 0x33);
+
+    phk::battle::UdpDatagram datagram;
+    datagram.remote_endpoint = "127.0.0.1:52001";
+    datagram.payload = {'k', 'c', 'p', ':', 'i', 'n', 'p', 'u', 't'};
+
+    auto wrong_key = packet;
+    wrong_key.header.key_id = "wrong-key";
+    wrong_key.header.nonce_hex = RepeatHex('d', 24);
+    const auto rejected = adapter.ProcessEncryptedDatagram(wrong_key, datagram);
+    CHECK_TRUE(!rejected.ok);
+    CHECK_EQ(rejected.reason, std::string("session_key_mismatch"));
+    CHECK_TRUE(rejected.replies.empty());
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(0));
+
+    const auto accepted = adapter.ProcessEncryptedDatagram(packet, datagram);
+    CHECK_TRUE(accepted.ok);
+    CHECK_EQ(accepted.dispatch.response_kind, std::string("input"));
+    CHECK_EQ(accepted.reason, std::string("input"));
+    CHECK_EQ(accepted.replies.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(accepted.replies[0].remote_endpoint, datagram.remote_endpoint);
+    CHECK_TRUE(accepted.replies[0].payload.size() > datagram.payload.size());
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(1));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(1));
+
+    auto nonce_replay = packet;
+    nonce_replay.header.seq = 2;
+    const auto replay = adapter.ProcessEncryptedDatagram(nonce_replay, datagram);
+    CHECK_TRUE(!replay.ok);
+    CHECK_EQ(replay.reason, std::string("nonce_replay"));
+    CHECK_TRUE(replay.replies.empty());
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(1));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(1));
+    return true;
+}
+
 }  // namespace
 
 int main() {
@@ -1561,6 +1618,7 @@ int main() {
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"KcpPlaceholder", TestKcpPlaceholder},
+		{"KcpAeadPacketAdapterBoundary", TestKcpAeadPacketAdapterBoundary},
 	};
 
     for (const auto& test : tests) {

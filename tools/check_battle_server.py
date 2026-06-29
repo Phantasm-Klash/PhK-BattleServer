@@ -329,6 +329,20 @@ def main() -> int:
         print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
         return 1
 
+    kcp_text = (ROOT / "include" / "phk" / "battle" / "kcp_endpoint.hpp").read_text(encoding="utf-8")
+    kcp_impl = (ROOT / "src" / "kcp_endpoint.cpp").read_text(encoding="utf-8")
+    if (
+        "KcpAeadPacketAdapter" not in kcp_text
+        or "KcpAeadAdapterResult" not in kcp_text
+        or "BattleEncryptedPacket" not in kcp_text
+        or "ProcessEncryptedDatagram" not in kcp_impl
+        or "server_.DispatchEncrypted(packet)" not in kcp_impl
+        or "endpoint_.ProcessDatagram(datagram)" not in kcp_impl
+        or "if (!result.dispatch.ok)" not in kcp_impl
+    ):
+        print("KCP endpoint missing encrypted AEAD packet adapter boundary or dispatch-before-forward guard", file=sys.stderr)
+        return 1
+
     handshake_text = (ROOT / "include" / "phk" / "battle" / "handshake.hpp").read_text(encoding="utf-8")
     handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")
     if (
@@ -359,8 +373,11 @@ def main() -> int:
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
         or "handshake_required" not in tests_text
         or "client_to_server_key_ref" not in tests_text
+        or "KcpAeadPacketAdapterBoundary" not in tests_text
+        or "session_key_mismatch" not in tests_text
+        or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing pinned 60Hz replay/result fingerprints or handshake-bound encrypted session coverage", file=sys.stderr)
+        print("battle server tests missing pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD adapter coverage", file=sys.stderr)
         return 1
 
     if args.build:
