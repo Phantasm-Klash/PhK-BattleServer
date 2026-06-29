@@ -628,6 +628,15 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.final_state_hash, second_summary.final_state_hash);
     CHECK_EQ(first.Snapshot().mode_state.at("tick_rate_hz"), std::string("60"));
     CHECK_EQ(first.Snapshot().mode_state.at("mode_id"), std::string("pvp_duel"));
+    const auto reconnect_snapshot = first.ReconnectSnapshot("p1", first_summary.event_count - 1);
+    CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
+    CHECK_EQ(reconnect_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(reconnect_snapshot.state_hash, first_summary.final_state_hash);
+    CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("1"));
+    CHECK_EQ(reconnect_snapshot.event_cursor, first_summary.event_count);
+    const auto cursor_ahead = first.ReconnectSnapshot("p1", first_summary.event_count + 1);
+    CHECK_EQ(cursor_ahead.snapshot_kind, std::string("event_cursor_ahead"));
+    CHECK_EQ(cursor_ahead.event_cursor, first_summary.event_count);
     return true;
 }
 
@@ -798,6 +807,14 @@ bool TestDispatcher() {
     const auto bad_nonce_result = dispatcher.Dispatch(bad_nonce, {'p'});
     CHECK_TRUE(!bad_nonce_result.ok);
     CHECK_EQ(bad_nonce_result.reason, std::string("nonce_invalid"));
+
+    phk::battle::BattlePacketHeader long_nonce = ping;
+    long_nonce.player_id = "p2";
+    long_nonce.seq = 3;
+    long_nonce.nonce_hex = RepeatHex('1', 26);
+    const auto long_nonce_result = dispatcher.Dispatch(long_nonce, {'p'});
+    CHECK_TRUE(!long_nonce_result.ok);
+    CHECK_EQ(long_nonce_result.reason, std::string("nonce_invalid"));
     return true;
 }
 
@@ -847,9 +864,17 @@ bool TestEncryptedPacketAdapterShape() {
     CHECK_TRUE(!missing_key_result.ok);
     CHECK_EQ(missing_key_result.reason, std::string("key_id_missing"));
 
+    auto long_nonce = packet;
+    long_nonce.header.player_id = "p2";
+    long_nonce.header.seq = 4;
+    long_nonce.header.nonce_hex = RepeatHex('2', 26);
+    const auto long_nonce_result = dispatcher.DispatchEncrypted(long_nonce);
+    CHECK_TRUE(!long_nonce_result.ok);
+    CHECK_EQ(long_nonce_result.reason, std::string("nonce_invalid"));
+
     auto result_packet = packet;
     result_packet.header.player_id = "p2";
-    result_packet.header.seq = 4;
+    result_packet.header.seq = 5;
     result_packet.header.payload_type = phk::battle::BattlePayloadType::Result;
     const auto result_packet_result = dispatcher.DispatchEncrypted(result_packet);
     CHECK_TRUE(!result_packet_result.ok);
@@ -857,7 +882,7 @@ bool TestEncryptedPacketAdapterShape() {
 
     auto event_packet = packet;
     event_packet.header.player_id = "p2";
-    event_packet.header.seq = 5;
+    event_packet.header.seq = 6;
     event_packet.header.payload_type = phk::battle::BattlePayloadType::Event;
     const auto event_packet_result = dispatcher.DispatchEncrypted(event_packet);
     CHECK_TRUE(!event_packet_result.ok);
@@ -902,6 +927,15 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_TRUE(!wrong_key_result.ok);
     CHECK_EQ(wrong_key_result.reason, std::string("session_key_mismatch"));
 
+    auto ack_ahead = packet;
+    ack_ahead.header.player_id = "p2";
+    ack_ahead.header.seq = 1;
+    ack_ahead.header.ack = 1;
+    ack_ahead.header.nonce_hex = RepeatHex('8', 24);
+    const auto ack_ahead_result = server.DispatchEncrypted(ack_ahead);
+    CHECK_TRUE(!ack_ahead_result.ok);
+    CHECK_EQ(ack_ahead_result.reason, std::string("encrypted_ack_ahead"));
+
     auto far_future_tick = packet;
     far_future_tick.header.player_id = "p2";
     far_future_tick.header.seq = 1;
@@ -921,6 +955,16 @@ bool TestServerEncryptedPacketSessionBoundary() {
     const auto stale_tick_result = server.DispatchEncrypted(stale_tick);
     CHECK_TRUE(!stale_tick_result.ok);
     CHECK_EQ(stale_tick_result.reason, std::string("encrypted_tick_too_old"));
+
+    auto current_ack = packet;
+    current_ack.header.player_id = "p2";
+    current_ack.header.seq = 2;
+    current_ack.header.tick = 2;
+    current_ack.header.ack = 1;
+    current_ack.header.nonce_hex = RepeatHex('9', 24);
+    const auto current_ack_result = server.DispatchEncrypted(current_ack);
+    CHECK_TRUE(current_ack_result.ok);
+    CHECK_EQ(current_ack_result.response_kind, std::string("input"));
 
     auto unknown_player = packet;
     unknown_player.header.player_id = "p3";

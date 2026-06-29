@@ -231,6 +231,7 @@ def main() -> int:
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
         or "session_key_mismatch" not in server_impl
+        or "encrypted_ack_ahead" not in server_impl
         or "encrypted_tick_too_old" not in server_impl
         or "encrypted_tick_too_far_ahead" not in server_impl
         or "match_full" not in server_impl
@@ -263,6 +264,7 @@ def main() -> int:
         or "payload_type_missing" not in protocol_impl
         or "ciphertext_missing" not in protocol_impl
         or "auth_tag_invalid" not in protocol_impl
+        or "HasExpectedAeadNonceShape" not in protocol_impl
         or "nonce_replay" not in protocol_impl
         or "encrypted_payload_type_invalid" not in protocol_impl
     ):

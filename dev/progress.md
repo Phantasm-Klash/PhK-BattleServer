@@ -25,10 +25,17 @@ Status date: 2026-06-29
 - Tightened the C++ manifest gate to cover signed-ticket and handshake hello/accept fields, including future `server_signature`, so the temporary manifest bridge fails sooner if the generated protobuf shape drifts.
 - Added a server-facade encrypted packet session boundary: encrypted packet dispatch now requires a registered match/player session and the session key id before the dispatcher records seq or nonce state. This keeps the current KCP/AEAD placeholder tied to allocated battle tickets while real session keys are pending.
 - Added a server-facade encrypted input tick-window boundary: encrypted input and mode-action packet headers are rejected when stale or beyond the match simulation's configured input-ahead window before dispatcher seq/nonce state is recorded. This keeps the KCP/AEAD scaffold aligned with the 60Hz authoritative simulation window while real protobuf decoding and AEAD verification are pending.
+- Tightened the encrypted adapter nonce shape from "at least 96-bit hex" to exactly 24 hex characters, matching the migration-time ChaCha20-Poly1305 nonce contract before real AEAD lands.
+- Added a server-facade encrypted input ack boundary: encrypted input and mode-action headers cannot acknowledge snapshots beyond the authoritative simulation tick, while current-tick acknowledgements remain accepted.
+- Extended the 1v1 60Hz replay fixture to assert reconnect snapshots at the final replay tick, including stable state hash, event cursor, missed-event count, and event-cursor-ahead rejection.
 
 ## 2026-06-29 Verification
 
 - `python3 tools/check_battle_server.py` passes.
+- `python3 tools/check_battle_server.py --build` is blocked on the host because `cmake` is not installed.
+- `docker compose run --rm test` is blocked because this host has legacy `docker-compose` but no Docker Compose v2 plugin.
+- `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
+- `/root/gotouhou/docs/ops/protocol_audit_check.py` is not executable on this host, but `python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
 - Direct host `g++ -std=c++17 -Iinclude -I../PhK-Protocol/gen/cpp tests/battle_server_tests.cpp src/ticket.cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes.
 - Docker regression passes with legacy Compose: `docker-compose run --rm test`.
 - `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.

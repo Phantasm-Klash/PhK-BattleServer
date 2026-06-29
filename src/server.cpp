@@ -250,6 +250,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     }
     if (IsInputWindowBoundPayload(packet.header.payload_type)) {
         const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.ack > simulation.CurrentTick()) {
+            result.reason = "encrypted_ack_ahead";
+            return result;
+        }
         if (packet.header.tick <= simulation.CurrentTick()) {
             result.reason = "encrypted_tick_too_old";
             return result;

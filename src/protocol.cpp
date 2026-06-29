@@ -21,6 +21,10 @@ bool HasExpectedAeadTagShape(const std::vector<std::uint8_t>& auth_tag) {
     return auth_tag.size() == 16;
 }
 
+bool HasExpectedAeadNonceShape(const std::string& nonce_hex) {
+    return nonce_hex.size() == 24 && IsHex(nonce_hex);
+}
+
 std::string NonceReplayKey(const BattlePacketHeader& header) {
     return header.match_id + ":" + header.player_id + ":" + header.key_id + ":" + header.nonce_hex;
 }
@@ -59,7 +63,7 @@ DispatchResult BattleDispatcher::Dispatch(
             result.reason = "key_id_missing";
             return result;
         }
-        if (header.nonce_hex.size() < 24 || !IsHex(header.nonce_hex)) {
+        if (!HasExpectedAeadNonceShape(header.nonce_hex)) {
             result.reason = "nonce_invalid";
             return result;
         }
@@ -119,8 +123,7 @@ DispatchResult BattleDispatcher::DispatchEncrypted(const BattleEncryptedPacket& 
     if (!packet.header.match_id.empty() &&
         !packet.header.player_id.empty() &&
         !packet.header.key_id.empty() &&
-        packet.header.nonce_hex.size() >= 24 &&
-        IsHex(packet.header.nonce_hex)) {
+        HasExpectedAeadNonceShape(packet.header.nonce_hex)) {
         const std::string nonce_key = NonceReplayKey(packet.header);
         if (seen_encrypted_nonces_.find(nonce_key) != seen_encrypted_nonces_.end()) {
             result.reason = "nonce_replay";
