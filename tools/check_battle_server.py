@@ -402,6 +402,7 @@ def main() -> int:
         or "handshake_accepted" not in server_impl
         or "client_to_server_key_ref" not in server_impl
         or "session_key_mismatch" not in server_impl
+        or "IsSnapshotAckBoundPayload" not in server_impl
         or "encrypted_ack_ahead" not in server_impl
         or "encrypted_event_cursor_ahead" not in server_impl
         or "encrypted_player_disconnected" not in server_impl
@@ -562,6 +563,7 @@ def main() -> int:
         or "adapter.Stats().remote_endpoint_rebinds" not in tests_text
         or "adapter.Stats().bound_sessions" not in tests_text
         or "session_key_mismatch" not in tests_text
+        or "ping_ack_ahead" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
         print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)

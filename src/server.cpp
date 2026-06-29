@@ -41,6 +41,12 @@ bool IsInputWindowBoundPayload(BattlePayloadType payload_type) {
         payload_type == BattlePayloadType::ModeAction;
 }
 
+bool IsSnapshotAckBoundPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction ||
+        payload_type == BattlePayloadType::Ping;
+}
+
 bool IsReconnectPayload(BattlePayloadType payload_type) {
     return payload_type == BattlePayloadType::Reconnect;
 }
@@ -282,14 +288,17 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "session_key_mismatch";
         return result;
     }
+    if (IsSnapshotAckBoundPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.ack > simulation.CurrentTick()) {
+            result.reason = "encrypted_ack_ahead";
+            return result;
+        }
+    }
     if (IsInputWindowBoundPayload(packet.header.payload_type)) {
         const BattleSimulation& simulation = simulation_it->second;
         if (!simulation.IsPlayerConnected(packet.header.player_id)) {
             result.reason = "encrypted_player_disconnected";
-            return result;
-        }
-        if (packet.header.ack > simulation.CurrentTick()) {
-            result.reason = "encrypted_ack_ahead";
             return result;
         }
         if (packet.header.tick <= simulation.CurrentTick()) {
