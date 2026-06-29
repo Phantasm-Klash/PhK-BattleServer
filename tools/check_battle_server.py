@@ -88,8 +88,59 @@ def descriptor_messages(descriptor: dict) -> dict[str, dict]:
     return messages
 
 
+def descriptor_enums(descriptor: dict) -> dict[str, dict]:
+    enums: dict[str, dict] = {}
+    for proto_file in descriptor.get("files", []):
+        for enum in proto_file.get("enums", []):
+            enums[str(enum.get("name", ""))] = enum
+    return enums
+
+
 def field_names(message: dict) -> set[str]:
     return {str(field.get("name", "")) for field in message.get("fields", [])}
+
+
+def field_by_name(message: dict, name: str) -> dict:
+    for field in message.get("fields", []):
+        if field.get("name") == name:
+            return field
+    return {}
+
+
+def check_descriptor_field_shape(
+    messages: dict[str, dict],
+    message_name: str,
+    field_name: str,
+    field_type: str,
+    field_number: int,
+    repeated: bool = False,
+) -> bool:
+    message = messages.get(message_name, {})
+    field = field_by_name(message, field_name)
+    if not field:
+        print(f"descriptor missing {message_name}.{field_name}", file=sys.stderr)
+        return False
+    if str(field.get("type", "")) != field_type:
+        print(
+            f"descriptor {message_name}.{field_name} expected type {field_type}, "
+            f"got {field.get('type')}",
+            file=sys.stderr,
+        )
+        return False
+    if int(field.get("number", 0)) != field_number:
+        print(
+            f"descriptor {message_name}.{field_name} expected number {field_number}, "
+            f"got {field.get('number')}",
+            file=sys.stderr,
+        )
+        return False
+    if bool(field.get("repeated", False)) != repeated:
+        print(
+            f"descriptor {message_name}.{field_name} repeated flag mismatch",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def check_protocol_descriptor() -> bool:
@@ -102,6 +153,31 @@ def check_protocol_descriptor() -> bool:
         print("unsupported PhK-Protocol descriptor version", file=sys.stderr)
         return False
     messages = descriptor_messages(descriptor)
+    enums = descriptor_enums(descriptor)
+    payload_type_enum = enums.get("BattlePayloadType")
+    if payload_type_enum is None:
+        print("descriptor missing BattlePayloadType enum", file=sys.stderr)
+        return False
+    expected_payload_values = {
+        "BATTLE_PAYLOAD_TYPE_UNSPECIFIED": 0,
+        "BATTLE_PAYLOAD_TYPE_HANDSHAKE_HELLO": 1,
+        "BATTLE_PAYLOAD_TYPE_HANDSHAKE_ACCEPT": 2,
+        "BATTLE_PAYLOAD_TYPE_INPUT": 3,
+        "BATTLE_PAYLOAD_TYPE_SNAPSHOT": 4,
+        "BATTLE_PAYLOAD_TYPE_EVENT": 5,
+        "BATTLE_PAYLOAD_TYPE_PING": 6,
+        "BATTLE_PAYLOAD_TYPE_RECONNECT": 7,
+        "BATTLE_PAYLOAD_TYPE_RESULT": 8,
+        "BATTLE_PAYLOAD_TYPE_MODE_ACTION": 9,
+    }
+    actual_payload_values = {
+        str(value.get("name", "")): int(value.get("number", -1))
+        for value in payload_type_enum.get("values", [])
+    }
+    for name, number in expected_payload_values.items():
+        if actual_payload_values.get(name) != number:
+            print(f"descriptor BattlePayloadType {name} expected {number}", file=sys.stderr)
+            return False
     for message_name in [
         "BattleTicket",
         "SignedBattleTicket",
@@ -124,6 +200,34 @@ def check_protocol_descriptor() -> bool:
     for field in ["match_id", "player_id", "tick", "seq", "ack", "payload_type", "key_id", "nonce"]:
         if field not in header_fields:
             print(f"descriptor BattlePacketHeader missing {field}", file=sys.stderr)
+            return False
+    required_field_shapes = [
+        ("BattlePacketHeader", "payload_type", "BattlePayloadType", 7, False),
+        ("BattlePacketHeader", "nonce", "bytes", 9, False),
+        ("BattleEncryptedPacket", "ciphertext", "bytes", 2, False),
+        ("BattleEncryptedPacket", "auth_tag", "bytes", 3, False),
+        ("BattleHandshakeHello", "client_x25519_pub", "bytes", 3, False),
+        ("BattleHandshakeHello", "client_random", "bytes", 4, False),
+        ("BattleHandshakeHello", "supported_aead", "string", 5, True),
+        ("BattleHandshakeAccept", "server_x25519_pub", "bytes", 4, False),
+        ("BattleHandshakeAccept", "server_random", "bytes", 5, False),
+        ("BattleHandshakeAccept", "transcript_hash", "bytes", 9, False),
+        ("BattleHandshakeAccept", "server_signature", "SignedBlob", 10, False),
+        ("BattleModeAction", "payload_json", "bytes", 8, False),
+        ("BattleModeAction", "client_result_authoritative", "bool", 9, False),
+        ("BattleResult", "reward_projection_json", "bytes", 7, False),
+        ("BattleResult", "mode_result_json", "bytes", 8, False),
+        ("SignedBattleResult", "signature", "bytes", 4, False),
+    ]
+    for message_name, field_name, field_type, field_number, repeated in required_field_shapes:
+        if not check_descriptor_field_shape(
+            messages,
+            message_name,
+            field_name,
+            field_type,
+            field_number,
+            repeated,
+        ):
             return False
     return True
 
@@ -406,6 +510,8 @@ def main() -> int:
     tests_text = (ROOT / "tests" / "battle_server_tests.cpp").read_text(encoding="utf-8")
     if (
         "MakeAuthoritativeReplay60Config" not in tests_text
+        or "BattlePayloadType::HandshakeAccept" not in tests_text
+        or "BattlePayloadType::ModeAction" not in tests_text
         or "DriveAuthoritativeReplay60Ticks" not in tests_text
         or "fnv64:183370bd6f8c18e7" not in tests_text
         or "fnv64:7c13fa803ae1b2dd" not in tests_text
@@ -442,7 +548,7 @@ def main() -> int:
         or "session_key_mismatch" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
+        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
         return 1
 
     if args.build:

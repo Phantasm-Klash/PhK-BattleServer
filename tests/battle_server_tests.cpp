@@ -269,6 +269,16 @@ bool TestProtocolManifest() {
     CHECK_EQ(version.battle_api_version, std::string(phk::v1::kBattleApiVersion));
     CHECK_EQ(version.ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(std::string(phk::battle::kRulesetHash), std::string(phk::v1::kRulesetHash));
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Unspecified), 0);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::HandshakeHello), 1);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::HandshakeAccept), 2);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Input), 3);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Snapshot), 4);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Event), 5);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Ping), 6);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Reconnect), 7);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Result), 8);
+    CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::ModeAction), 9);
     CHECK_TRUE(phk::v1::HasMessageField("BattleTicket", "ruleset_version"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "seq"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "nonce"));
