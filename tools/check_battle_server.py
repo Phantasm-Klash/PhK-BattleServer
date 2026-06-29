@@ -272,6 +272,10 @@ def main() -> int:
         or "record.owner_user_id" not in simulation_impl
         or "HashAppend(hash, item)" not in simulation_impl
         or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
+        or "CanonicalSnapshotPayload" not in simulation_impl
+        or "player.x_milli" not in simulation_impl
+        or "bullet.pattern_id" not in simulation_impl
+        or "snapshot.mode_state" not in simulation_impl
     ):
         print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
@@ -409,8 +413,11 @@ def main() -> int:
         or "sha256:dev-fnv64-a7519545ad65902e" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
-        or "sha256:dev-fnv64-54919460e75ba83d" not in tests_text
+        or "sha256:dev-fnv64-f2df27561abbe64e" not in tests_text
         or "tampered_fixture_snapshot" not in tests_text
+        or "tampered_fixture_player" not in tests_text
+        or "tampered_fixture_bullet" not in tests_text
+        or "tampered_fixture_mode_state" not in tests_text
         or "tampered_fixture_authority" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text

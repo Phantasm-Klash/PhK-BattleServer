@@ -32,6 +32,12 @@ Status date: 2026-06-29
 - CTest now pins the fixture hash `sha256:dev-fnv64-54919460e75ba83d` for the 60Hz 1v1 replay fixture and proves tampering the summary record, final snapshot, trace material, or server-authoritative flag changes the fixture hash.
 - `tools/check_battle_server.py` gates the canonical fixture payload/hash API and focused tamper coverage while full generated protobuf replay bindings remain pending.
 
+## 2026-06-29 Final Snapshot Fixture Body Boundary
+
+- Tightened the canonical replay fixture payload so the development fixture hash binds the final snapshot body, not only the final snapshot hash/cursor. The payload now serializes sorted final player snapshots, bullet deltas, and mode-state key/value material alongside the existing replay summary record and input/event traces.
+- The 60Hz 1v1 replay fixture hash is now pinned at `sha256:dev-fnv64-f2df27561abbe64e`; tests prove tampering a final player position, bullet pattern id, or mode id changes the fixture hash even when the aggregate summary fields are otherwise preserved.
+- `tools/check_battle_server.py` now gates the canonical snapshot payload path and the added tamper coverage while this remains a development protobuf-replacement boundary.
+
 ## 2026-06-29 KCP/AEAD Adapter Boundary
 
 - Added `KcpAeadPacketAdapter`, a development transport adapter that accepts a `BattleEncryptedPacket` plus UDP datagram, calls `BattleServer::DispatchEncrypted` first, and only forwards accepted packets to the current KCP placeholder endpoint.
@@ -174,6 +180,11 @@ Status date: 2026-06-29
 - Current replay fixture sample: `python3 tools/check_battle_server.py` passes.
 - Current replay fixture sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
 - Current replay fixture sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
+- Current final snapshot fixture body sample: `python3 tools/check_battle_server.py` passes.
+- Current final snapshot fixture body sample: direct `g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude -I../PhK-Protocol/gen/cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp src/ticket.cpp tests/battle_server_tests.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes, including final snapshot player/bullet/mode-state fixture tamper checks.
+- Current final snapshot fixture body sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run. The host still has legacy `docker-compose` and no Docker Compose v2 `docker compose --profile` support.
+- Current final snapshot fixture body sample: `python3 tools/check_battle_server.py --build` remains blocked on the host because `cmake` is not installed; Docker covers the CMake/CTest path.
+- Current final snapshot fixture body sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` reaches and passes PhK-BattleServer checks, but the cross-repo audit exits nonzero in Gensoulkyo: `TestBattleLifecycleAuditRepositoryReceivesAllocationTicketResultAndReplayRecords` expected one allocation audit and observed both server registration and allocation audit rows.
 
 ## 2026-06-28 Verification
 

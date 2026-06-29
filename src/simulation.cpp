@@ -63,6 +63,52 @@ bool IsAllowedModeActionType(std::string_view action_type) {
         action_type == "reconnect";
 }
 
+std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
+    std::ostringstream out;
+    out << snapshot.match_id << '|'
+        << snapshot.snapshot_tick << '|'
+        << snapshot.snapshot_kind << '|'
+        << snapshot.state_hash << '|'
+        << snapshot.event_cursor << '|';
+
+    std::vector<BattlePlayerSnapshot> players = snapshot.players;
+    std::sort(players.begin(), players.end(), [](const BattlePlayerSnapshot& left, const BattlePlayerSnapshot& right) {
+        return left.player_id < right.player_id;
+    });
+    for (const auto& player : players) {
+        out << "player="
+            << player.player_id << ','
+            << player.x_milli << ','
+            << player.y_milli << ','
+            << BoolToken(player.connected) << ','
+            << player.hand_size << ';';
+    }
+    out << '|';
+
+    std::vector<BattleBulletDelta> bullets = snapshot.bullets_delta;
+    std::sort(bullets.begin(), bullets.end(), [](const BattleBulletDelta& left, const BattleBulletDelta& right) {
+        return left.bullet_id < right.bullet_id;
+    });
+    for (const auto& bullet : bullets) {
+        out << "bullet="
+            << bullet.bullet_id << ','
+            << bullet.op << ','
+            << bullet.x_milli << ','
+            << bullet.y_milli << ','
+            << bullet.vx_milli << ','
+            << bullet.vy_milli << ','
+            << bullet.radius_milli << ','
+            << bullet.pattern_id << ','
+            << bullet.color << ';';
+    }
+    out << '|';
+
+    for (const auto& item : snapshot.mode_state) {
+        out << "mode=" << item.first << '=' << item.second << ';';
+    }
+    return out.str();
+}
+
 }  // namespace
 
 BattleSimulation::BattleSimulation(SimulationConfig config)
@@ -584,10 +630,7 @@ std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
         << fixture.event_cursor << '|'
         << (fixture.server_authoritative ? "1" : "0") << '|'
         << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
-        << fixture.final_snapshot.snapshot_kind << '|'
-        << fixture.final_snapshot.snapshot_tick << '|'
-        << fixture.final_snapshot.state_hash << '|'
-        << fixture.final_snapshot.event_cursor << '|';
+        << CanonicalSnapshotPayload(fixture.final_snapshot) << '|';
     for (const auto& player_id : fixture.player_ids) {
         out << player_id << ',';
     }

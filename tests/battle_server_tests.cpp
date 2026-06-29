@@ -1154,13 +1154,17 @@ bool TestReplayFixtureBoundary() {
             "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|60"
         ) != std::string::npos
     );
-    CHECK_TRUE(canonical_fixture_payload.find("|replay_final|60|fnv64:8049946f03724f36|4|") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("|match-replay-fixture|60|replay_final|fnv64:8049946f03724f36|4|") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("|player=p1,92500,-90000,1,0;player=p2,-105000,90000,1,0;|") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("bullet=b10,upsert,48000,2665,3000,0,4000,basic_radial,blue;") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("mode=accepted_input_count=120;") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("mode=mode_id=pvp_duel;") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("|p1,p2,|") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("input|p1|tick=1|seq=1") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-54919460e75ba83d")
+        std::string("sha256:dev-fnv64-f2df27561abbe64e")
     );
     auto tampered_fixture_record = fixture;
     tampered_fixture_record.replay_summary_record.final_state_hash = "fnv64:0000000000000000";
@@ -1168,6 +1172,15 @@ bool TestReplayFixtureBoundary() {
     auto tampered_fixture_snapshot = fixture;
     tampered_fixture_snapshot.final_snapshot.state_hash = "fnv64:0000000000000000";
     CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_snapshot) != phk::battle::DevReplayFixtureHash(fixture));
+    auto tampered_fixture_player = fixture;
+    tampered_fixture_player.final_snapshot.players[0].x_milli += 1;
+    CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_player) != phk::battle::DevReplayFixtureHash(fixture));
+    auto tampered_fixture_bullet = fixture;
+    tampered_fixture_bullet.final_snapshot.bullets_delta[0].pattern_id = "tampered_pattern";
+    CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_bullet) != phk::battle::DevReplayFixtureHash(fixture));
+    auto tampered_fixture_mode_state = fixture;
+    tampered_fixture_mode_state.final_snapshot.mode_state["mode_id"] = "tampered_mode";
+    CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_mode_state) != phk::battle::DevReplayFixtureHash(fixture));
     auto tampered_fixture_trace = fixture;
     tampered_fixture_trace.input_trace.back() += "|tampered";
     CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_trace) != phk::battle::DevReplayFixtureHash(fixture));
