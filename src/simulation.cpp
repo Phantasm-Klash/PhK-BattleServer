@@ -456,11 +456,29 @@ ReplaySummary BattleSimulation::Summary() const {
     return summary;
 }
 
+ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
+    std::string owner_user_id
+) const {
+    const ReplaySummary summary = Summary();
+    ReplayInputStreamSummaryRecord record;
+    record.replay_id = DevReplayIdFromReplaySummary(summary);
+    record.owner_user_id = std::move(owner_user_id);
+    record.match_id = summary.match_id;
+    record.input_count = summary.input_count;
+    record.event_count = summary.event_count;
+    record.input_stream_hash = summary.input_stream_hash;
+    record.event_stream_hash = summary.event_stream_hash;
+    record.final_state_hash = summary.final_state_hash;
+    record.final_tick = summary.final_tick;
+    return record;
+}
+
 ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) const {
     ReplayFixture fixture;
     fixture.summary = Summary();
-    fixture.replay_id = DevReplayIdFromReplaySummary(fixture.summary);
-    fixture.owner_user_id = std::move(owner_user_id);
+    fixture.replay_summary_record = BuildReplayInputStreamSummary(owner_user_id);
+    fixture.replay_id = fixture.replay_summary_record.replay_id;
+    fixture.owner_user_id = fixture.replay_summary_record.owner_user_id;
     fixture.match_id = fixture.summary.match_id;
     fixture.mode_id = fixture.summary.mode_id;
     fixture.ruleset_version = fixture.summary.ruleset_version;
@@ -527,6 +545,26 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, bullet.color);
     }
     return HexHash(hash);
+}
+
+std::string CanonicalReplayInputStreamSummaryRecord(
+    const ReplayInputStreamSummaryRecord& record
+) {
+    std::ostringstream out;
+    out << record.version.protocol_version << '|'
+        << record.version.business_api_version << '|'
+        << record.version.battle_api_version << '|'
+        << record.version.ruleset_version << '|'
+        << record.replay_id << '|'
+        << record.owner_user_id << '|'
+        << record.match_id << '|'
+        << record.input_count << '|'
+        << record.event_count << '|'
+        << record.input_stream_hash << '|'
+        << record.event_stream_hash << '|'
+        << record.final_state_hash << '|'
+        << record.final_tick;
+    return out.str();
 }
 
 std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {

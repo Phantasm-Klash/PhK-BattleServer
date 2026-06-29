@@ -62,6 +62,19 @@ struct ReplaySummary {
     std::vector<std::string> event_trace;
 };
 
+struct ReplayInputStreamSummaryRecord {
+    VersionStamp version;
+    std::string replay_id;
+    std::string owner_user_id;
+    std::string match_id;
+    std::uint64_t input_count = 0;
+    std::uint64_t event_count = 0;
+    std::string input_stream_hash;
+    std::string event_stream_hash;
+    std::string final_state_hash;
+    std::uint64_t final_tick = 0;
+};
+
 struct ReplayFixture {
     std::string replay_id;
     std::string owner_user_id;
@@ -73,6 +86,7 @@ struct ReplayFixture {
     std::vector<std::string> input_trace;
     std::vector<std::string> event_trace;
     ReplaySummary summary;
+    ReplayInputStreamSummaryRecord replay_summary_record;
     BattleSnapshot final_snapshot;
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
     std::uint64_t event_cursor = 0;
@@ -114,6 +128,9 @@ public:
         std::uint64_t last_seen_event_cursor
     ) const;
     [[nodiscard]] ReplaySummary Summary() const;
+    [[nodiscard]] ReplayInputStreamSummaryRecord BuildReplayInputStreamSummary(
+        std::string owner_user_id = ""
+    ) const;
     [[nodiscard]] ReplayFixture BuildReplayFixture(std::string owner_user_id = "") const;
 
 private:
@@ -171,6 +188,9 @@ private:
 };
 
 [[nodiscard]] std::string InputValidationCodeName(InputValidationCode code);
+[[nodiscard]] std::string CanonicalReplayInputStreamSummaryRecord(
+    const ReplayInputStreamSummaryRecord& record
+);
 [[nodiscard]] std::string DevResultHashFromReplaySummary(const ReplaySummary& summary);
 [[nodiscard]] std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary);
 

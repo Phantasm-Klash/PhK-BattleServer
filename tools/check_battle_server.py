@@ -50,7 +50,17 @@ REQUIRED_CPP_MANIFEST_FIELDS = {
     "BattleEvent": ["match_id", "tick", "cursor", "type", "server_authoritative"],
     "BattleResult": ["match_id", "mode_id", "result_hash", "replay_id", "reward_projection_json", "mode_result_json"],
     "SignedBattleResult": ["result", "signature_alg", "signature", "key_id"],
-    "ReplayInputStreamSummary": ["match_id", "input_count", "event_count", "input_stream_hash", "final_state_hash", "final_tick"],
+    "ReplayInputStreamSummary": [
+        "replay_id",
+        "owner_user_id",
+        "match_id",
+        "input_count",
+        "event_count",
+        "input_stream_hash",
+        "event_stream_hash",
+        "final_state_hash",
+        "final_tick",
+    ],
 }
 
 
@@ -197,7 +207,10 @@ def main() -> int:
         or "BattleSimulation" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
+        or "ReplayInputStreamSummaryRecord" not in simulation_text
+        or "BuildReplayInputStreamSummary" not in simulation_text
         or "BuildReplayFixture" not in simulation_text
+        or "CanonicalReplayInputStreamSummaryRecord" not in simulation_text
         or "DevResultHashFromReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
         or "pending_mode_actions_by_tick_" not in simulation_text
@@ -217,7 +230,9 @@ def main() -> int:
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
     if (
         "CanonicalStateHash" not in simulation_impl
+        or "BuildReplayInputStreamSummary" not in simulation_impl
         or "BuildReplayFixture" not in simulation_impl
+        or "CanonicalReplayInputStreamSummaryRecord" not in simulation_impl
         or "DevResultHashFromReplaySummary" not in simulation_impl
         or "DevReplayIdFromReplaySummary" not in simulation_impl
         or 'Snapshot("replay_final")' not in simulation_impl
@@ -241,6 +256,8 @@ def main() -> int:
         or "event_trace_.push_back" not in simulation_impl
         or "summary.input_trace = input_trace_" not in simulation_impl
         or "fixture.input_trace = fixture.summary.input_trace" not in simulation_impl
+        or "fixture.replay_summary_record = BuildReplayInputStreamSummary" not in simulation_impl
+        or "record.owner_user_id" not in simulation_impl
         or "HashAppend(hash, item)" not in simulation_impl
     ):
         print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)

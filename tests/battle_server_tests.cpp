@@ -936,6 +936,19 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.tick_rate_hz, phk::battle::kBattleTickRateHz);
     CHECK_EQ(fixture.event_cursor, fixture.summary.event_count);
     CHECK_TRUE(fixture.server_authoritative);
+    CHECK_EQ(fixture.replay_summary_record.version.protocol_version, phk::v1::kProtocolVersion);
+    CHECK_EQ(fixture.replay_summary_record.version.business_api_version, std::string(phk::v1::kBusinessApiVersion));
+    CHECK_EQ(fixture.replay_summary_record.version.battle_api_version, std::string(phk::v1::kBattleApiVersion));
+    CHECK_EQ(fixture.replay_summary_record.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
+    CHECK_EQ(fixture.replay_summary_record.replay_id, fixture.replay_id);
+    CHECK_EQ(fixture.replay_summary_record.owner_user_id, fixture.owner_user_id);
+    CHECK_EQ(fixture.replay_summary_record.match_id, fixture.match_id);
+    CHECK_EQ(fixture.replay_summary_record.input_count, fixture.summary.input_count);
+    CHECK_EQ(fixture.replay_summary_record.event_count, fixture.summary.event_count);
+    CHECK_EQ(fixture.replay_summary_record.input_stream_hash, fixture.summary.input_stream_hash);
+    CHECK_EQ(fixture.replay_summary_record.event_stream_hash, fixture.summary.event_stream_hash);
+    CHECK_EQ(fixture.replay_summary_record.final_state_hash, fixture.summary.final_state_hash);
+    CHECK_EQ(fixture.replay_summary_record.final_tick, fixture.summary.final_tick);
     CHECK_EQ(fixture.summary.final_tick, static_cast<std::uint64_t>(60));
     CHECK_EQ(fixture.summary.input_count, static_cast<std::uint64_t>(120));
     CHECK_EQ(fixture.summary.fallback_input_count, static_cast<std::uint64_t>(0));
@@ -958,6 +971,30 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.final_snapshot.mode_state.at("accepted_input_count"), std::string("120"));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
     CHECK_TRUE(fixture.result_hash.rfind("sha256:dev-fnv64-", 0) == 0);
+
+    const auto summary_record = simulation.BuildReplayInputStreamSummary("user-alice");
+    CHECK_EQ(summary_record.replay_id, fixture.replay_id);
+    CHECK_EQ(summary_record.owner_user_id, std::string("user-alice"));
+    CHECK_EQ(summary_record.match_id, config.match_id);
+    CHECK_EQ(summary_record.input_count, static_cast<std::uint64_t>(120));
+    CHECK_EQ(summary_record.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(summary_record.input_stream_hash, fixture.summary.input_stream_hash);
+    CHECK_EQ(summary_record.event_stream_hash, fixture.summary.event_stream_hash);
+    CHECK_EQ(summary_record.final_state_hash, fixture.summary.final_state_hash);
+    CHECK_EQ(summary_record.final_tick, static_cast<std::uint64_t>(60));
+    CHECK_TRUE(
+        phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record).find("battle-replay:match-replay-fixture:60") !=
+        std::string::npos
+    );
+    auto tampered_record = summary_record;
+    tampered_record.final_tick = 61;
+    CHECK_TRUE(
+        phk::battle::CanonicalReplayInputStreamSummaryRecord(tampered_record) !=
+        phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record)
+    );
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "replay_id"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "owner_user_id"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "event_stream_hash"));
     return true;
 }
 
