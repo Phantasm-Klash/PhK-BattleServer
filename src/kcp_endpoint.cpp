@@ -54,6 +54,8 @@ KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
             const auto remote_it = remote_endpoint_by_session_.find(remote_key);
             if (remote_it != remote_endpoint_by_session_.end() &&
                 remote_it->second != datagram.remote_endpoint) {
+                stats_.rejected_datagrams += 1;
+                stats_.remote_endpoint_mismatches += 1;
                 result.reason = "remote_endpoint_mismatch";
                 result.dispatch.payload_type = packet.header.payload_type;
                 result.dispatch.reason = result.reason;
@@ -65,18 +67,33 @@ KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
     result.dispatch = server_.DispatchEncrypted(packet);
     result.reason = result.dispatch.reason;
     if (!result.dispatch.ok) {
+        stats_.rejected_datagrams += 1;
         return result;
     }
 
     const std::string remote_key = SessionRemoteKey(packet);
     if (!remote_key.empty()) {
+        const auto remote_it = remote_endpoint_by_session_.find(remote_key);
+        if (remote_it != remote_endpoint_by_session_.end() &&
+            remote_it->second != datagram.remote_endpoint &&
+            remote_rebind_allowed) {
+            stats_.remote_endpoint_rebinds += 1;
+        }
         remote_endpoint_by_session_[remote_key] = datagram.remote_endpoint;
     }
 
     result.replies = endpoint_.ProcessDatagram(datagram);
     result.ok = true;
     result.reason = result.dispatch.response_kind;
+    stats_.accepted_datagrams += 1;
+    stats_.bound_sessions = remote_endpoint_by_session_.size();
     return result;
+}
+
+KcpAeadAdapterStats KcpAeadPacketAdapter::Stats() const {
+    KcpAeadAdapterStats stats = stats_;
+    stats.bound_sessions = remote_endpoint_by_session_.size();
+    return stats;
 }
 
 }  // namespace phk::battle

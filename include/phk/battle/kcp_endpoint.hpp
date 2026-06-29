@@ -46,6 +46,14 @@ struct KcpAeadAdapterResult {
     std::vector<UdpDatagram> replies;
 };
 
+struct KcpAeadAdapterStats {
+    std::uint64_t accepted_datagrams = 0;
+    std::uint64_t rejected_datagrams = 0;
+    std::uint64_t remote_endpoint_mismatches = 0;
+    std::uint64_t remote_endpoint_rebinds = 0;
+    std::uint64_t bound_sessions = 0;
+};
+
 class KcpAeadPacketAdapter final {
 public:
     KcpAeadPacketAdapter(BattleServer& server, KcpEndpoint& endpoint);
@@ -54,10 +62,12 @@ public:
         const BattleEncryptedPacket& packet,
         const UdpDatagram& datagram
     );
+    [[nodiscard]] KcpAeadAdapterStats Stats() const;
 
 private:
     BattleServer& server_;
     KcpEndpoint& endpoint_;
+    KcpAeadAdapterStats stats_;
     std::map<std::string, std::string> remote_endpoint_by_session_;
 };
 

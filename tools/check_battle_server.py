@@ -357,10 +357,21 @@ def main() -> int:
     if (
         "KcpAeadPacketAdapter" not in kcp_text
         or "KcpAeadAdapterResult" not in kcp_text
+        or "KcpAeadAdapterStats" not in kcp_text
+        or "accepted_datagrams" not in kcp_text
+        or "rejected_datagrams" not in kcp_text
+        or "remote_endpoint_mismatches" not in kcp_text
+        or "remote_endpoint_rebinds" not in kcp_text
+        or "bound_sessions" not in kcp_text
         or "BattleEncryptedPacket" not in kcp_text
         or "remote_endpoint_by_session_" not in kcp_text
         or "ProcessEncryptedDatagram" not in kcp_impl
+        or "KcpAeadPacketAdapter::Stats" not in kcp_impl
         or "server_.DispatchEncrypted(packet)" not in kcp_impl
+        or "stats_.accepted_datagrams" not in kcp_impl
+        or "stats_.rejected_datagrams" not in kcp_impl
+        or "stats_.remote_endpoint_mismatches" not in kcp_impl
+        or "stats_.remote_endpoint_rebinds" not in kcp_impl
         or "remote_endpoint_mismatch" not in kcp_impl
         or "remote_rebind_allowed = packet.header.payload_type == BattlePayloadType::Reconnect" not in kcp_impl
         or "endpoint_.ProcessDatagram(datagram)" not in kcp_impl
@@ -409,6 +420,11 @@ def main() -> int:
         or "KcpAeadPacketAdapterBoundary" not in tests_text
         or "remote_endpoint_mismatch" not in tests_text
         or "reconnect_result" not in tests_text
+        or "adapter.Stats().accepted_datagrams" not in tests_text
+        or "adapter.Stats().rejected_datagrams" not in tests_text
+        or "adapter.Stats().remote_endpoint_mismatches" not in tests_text
+        or "adapter.Stats().remote_endpoint_rebinds" not in tests_text
+        or "adapter.Stats().bound_sessions" not in tests_text
         or "session_key_mismatch" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
