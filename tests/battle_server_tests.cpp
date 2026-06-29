@@ -902,6 +902,26 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_TRUE(!wrong_key_result.ok);
     CHECK_EQ(wrong_key_result.reason, std::string("session_key_mismatch"));
 
+    auto far_future_tick = packet;
+    far_future_tick.header.player_id = "p2";
+    far_future_tick.header.seq = 1;
+    far_future_tick.header.tick = 99;
+    far_future_tick.header.nonce_hex = RepeatHex('6', 24);
+    const auto far_future_tick_result = server.DispatchEncrypted(far_future_tick);
+    CHECK_TRUE(!far_future_tick_result.ok);
+    CHECK_EQ(far_future_tick_result.reason, std::string("encrypted_tick_too_far_ahead"));
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+    auto stale_tick = packet;
+    stale_tick.header.player_id = "p2";
+    stale_tick.header.seq = 2;
+    stale_tick.header.tick = 1;
+    stale_tick.header.nonce_hex = RepeatHex('7', 24);
+    const auto stale_tick_result = server.DispatchEncrypted(stale_tick);
+    CHECK_TRUE(!stale_tick_result.ok);
+    CHECK_EQ(stale_tick_result.reason, std::string("encrypted_tick_too_old"));
+
     auto unknown_player = packet;
     unknown_player.header.player_id = "p3";
     unknown_player.header.seq = 1;

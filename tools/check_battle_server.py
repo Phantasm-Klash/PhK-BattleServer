@@ -231,10 +231,12 @@ def main() -> int:
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
         or "session_key_mismatch" not in server_impl
+        or "encrypted_tick_too_old" not in server_impl
+        or "encrypted_tick_too_far_ahead" not in server_impl
         or "match_full" not in server_impl
         or "ticket_not_registered" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, encrypted tick-window, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")

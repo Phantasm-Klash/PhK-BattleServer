@@ -36,6 +36,11 @@ const BattleSessionRecord* SessionForPlayer(
     return nullptr;
 }
 
+bool IsInputWindowBoundPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -242,6 +247,17 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     if (packet.header.key_id != session->key_id) {
         result.reason = "session_key_mismatch";
         return result;
+    }
+    if (IsInputWindowBoundPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.tick <= simulation.CurrentTick()) {
+            result.reason = "encrypted_tick_too_old";
+            return result;
+        }
+        if (packet.header.tick > simulation.CurrentTick() + simulation.Config().max_input_ahead_ticks) {
+            result.reason = "encrypted_tick_too_far_ahead";
+            return result;
+        }
     }
     return dispatcher_.DispatchEncrypted(packet);
 }
