@@ -1,7 +1,5 @@
 ﻿#include <cstdlib>
-#include <iomanip>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -40,44 +38,12 @@ void FillHandshakeBytes(phk::battle::BattleHandshakeHello& hello) {
     hello.client_random[0] = 2;
 }
 
-std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
-    for (const char ch : value) {
-        hash ^= static_cast<unsigned char>(ch);
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
-std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
-    for (int shift = 0; shift < 64; shift += 8) {
-        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
 std::string ExpectedDevResultHash(const phk::battle::ReplaySummary& summary) {
-    std::uint64_t hash = 1469598103934665603ull;
-    hash = HashAppend(hash, summary.match_id);
-    hash = HashAppend(hash, summary.mode_id);
-    hash = HashAppend(hash, summary.ruleset_version);
-    hash = HashAppend(hash, summary.input_stream_hash);
-    hash = HashAppend(hash, summary.event_stream_hash);
-    hash = HashAppend(hash, summary.final_state_hash);
-    hash = HashAppend(hash, summary.final_tick);
-    hash = HashAppend(hash, summary.input_count);
-    hash = HashAppend(hash, summary.fallback_input_count);
-    hash = HashAppend(hash, summary.neutral_fallback_count);
-    hash = HashAppend(hash, summary.held_input_fallback_count);
-    hash = HashAppend(hash, summary.mode_action_count);
-    hash = HashAppend(hash, summary.event_count);
-    std::ostringstream out;
-    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
-    return out.str();
+    return phk::battle::DevResultHashFromReplaySummary(summary);
 }
 
 std::string ExpectedDevReplayId(const phk::battle::ReplaySummary& summary) {
-    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
+    return phk::battle::DevReplayIdFromReplaySummary(summary);
 }
 
 phk::battle::SignedBattleTicket MakeTicket() {
@@ -785,6 +751,60 @@ bool TestAuthoritativeReplay60TickFixture() {
     return true;
 }
 
+bool TestReplayFixtureBoundary() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-replay-fixture";
+    config.mode_id = "pvp_duel";
+    config.match_seed = 424242;
+    config.max_input_ahead_ticks = 16;
+    config.max_seq_ahead = 128;
+    config.spawn_period_ticks = 15;
+
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
+
+    for (std::uint64_t tick = 1; tick <= 60; ++tick) {
+        auto p1_input = MakeInput("p1", tick, tick, (tick <= 30) ? (1u << 3) : (1u << 0));
+        auto p2_input = MakeInput("p2", tick, tick, (tick <= 30) ? (1u << 2) : (1u << 1));
+        p1_input.match_id = config.match_id;
+        p2_input.match_id = config.match_id;
+        p1_input.slow = (tick % 2) == 0;
+        p2_input.slow = (tick % 3) == 0;
+        CHECK_TRUE(simulation.AcceptInput(p1_input).ok);
+        CHECK_TRUE(simulation.AcceptInput(p2_input).ok);
+        simulation.Tick();
+    }
+
+    const auto fixture = simulation.BuildReplayFixture("user-alice");
+    CHECK_EQ(fixture.replay_id, ExpectedDevReplayId(fixture.summary));
+    CHECK_EQ(fixture.owner_user_id, std::string("user-alice"));
+    CHECK_EQ(fixture.match_id, config.match_id);
+    CHECK_EQ(fixture.mode_id, config.mode_id);
+    CHECK_EQ(fixture.ruleset_version, std::string(phk::v1::kRulesetVersion));
+    CHECK_EQ(fixture.result_hash, ExpectedDevResultHash(fixture.summary));
+    CHECK_EQ(fixture.player_ids.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(fixture.player_ids[0], std::string("p1"));
+    CHECK_EQ(fixture.player_ids[1], std::string("p2"));
+    CHECK_EQ(fixture.tick_rate_hz, phk::battle::kBattleTickRateHz);
+    CHECK_EQ(fixture.event_cursor, fixture.summary.event_count);
+    CHECK_TRUE(fixture.server_authoritative);
+    CHECK_EQ(fixture.summary.final_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(fixture.summary.input_count, static_cast<std::uint64_t>(120));
+    CHECK_EQ(fixture.summary.fallback_input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(fixture.summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(fixture.final_snapshot.snapshot_kind, std::string("replay_final"));
+    CHECK_EQ(fixture.final_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(fixture.final_snapshot.state_hash, fixture.summary.final_state_hash);
+    CHECK_EQ(fixture.final_snapshot.event_cursor, fixture.event_cursor);
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("mode_id"), config.mode_id);
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("tick_rate_hz"), std::string("60"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("accepted_input_count"), std::string("120"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
+    CHECK_TRUE(fixture.result_hash.rfind("sha256:dev-fnv64-", 0) == 0);
+    return true;
+}
+
 bool TestServerAuthoritativeInputAndSnapshot() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -1180,6 +1200,7 @@ int main() {
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
+		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},

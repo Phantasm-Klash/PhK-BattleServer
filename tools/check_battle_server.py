@@ -196,6 +196,9 @@ def main() -> int:
         "kBattleTickRateHz = 60" not in simulation_text
         or "BattleSimulation" not in simulation_text
         or "ReplaySummary" not in simulation_text
+        or "ReplayFixture" not in simulation_text
+        or "BuildReplayFixture" not in simulation_text
+        or "DevResultHashFromReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
         or "pending_mode_actions_by_tick_" not in simulation_text
         or "ApplyModeActionsForTick" not in simulation_text
@@ -206,12 +209,16 @@ def main() -> int:
         or "max_seq_ahead" not in simulation_text
         or "fallback_input_count" not in simulation_text
     ):
-        print("simulation boundary missing fixed tick, simulation, replay summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, or mode action acceptance", file=sys.stderr)
+        print("simulation boundary missing fixed tick, simulation, replay fixture/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
     if (
         "CanonicalStateHash" not in simulation_impl
+        or "BuildReplayFixture" not in simulation_impl
+        or "DevResultHashFromReplaySummary" not in simulation_impl
+        or "DevReplayIdFromReplaySummary" not in simulation_impl
+        or 'Snapshot("replay_final")' not in simulation_impl
         or "input_tick_duplicate" not in simulation_impl
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
@@ -229,7 +236,7 @@ def main() -> int:
         or 'snapshot.mode_state["mode_id"]' not in simulation_impl
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
     ):
-        print("simulation implementation missing canonical hash, mode/ruleset projection, reconnect, fallback/mode-action replay audit, or authoritative input/mode-action validation", file=sys.stderr)
+        print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
@@ -249,6 +256,8 @@ def main() -> int:
         or "ticket_not_registered" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
         or "CanonicalBattleResultPayload" not in server_impl
+        or "DevResultHashFromReplaySummary" not in server_impl
+        or "DevReplayIdFromReplaySummary" not in server_impl
         or "projection_only" not in server_impl
         or "fallback_input_count" not in server_impl
         or "mode_action_count" not in server_impl

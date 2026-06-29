@@ -450,6 +450,25 @@ ReplaySummary BattleSimulation::Summary() const {
     return summary;
 }
 
+ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) const {
+    ReplayFixture fixture;
+    fixture.summary = Summary();
+    fixture.replay_id = DevReplayIdFromReplaySummary(fixture.summary);
+    fixture.owner_user_id = std::move(owner_user_id);
+    fixture.match_id = fixture.summary.match_id;
+    fixture.mode_id = fixture.summary.mode_id;
+    fixture.ruleset_version = fixture.summary.ruleset_version;
+    fixture.result_hash = DevResultHashFromReplaySummary(fixture.summary);
+    fixture.final_snapshot = Snapshot("replay_final");
+    fixture.tick_rate_hz = config_.tick_rate_hz;
+    fixture.event_cursor = fixture.summary.event_count;
+    fixture.server_authoritative = true;
+    for (const auto& item : players_) {
+        fixture.player_ids.push_back(item.first);
+    }
+    return fixture;
+}
+
 std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
     std::uint64_t hash = kFnvOffset;
     hash = HashAppend(hash, config_.match_seed);
@@ -500,6 +519,31 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, bullet.color);
     }
     return HexHash(hash);
+}
+
+std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, summary.match_id);
+    hash = HashAppend(hash, summary.mode_id);
+    hash = HashAppend(hash, summary.ruleset_version);
+    hash = HashAppend(hash, summary.input_stream_hash);
+    hash = HashAppend(hash, summary.event_stream_hash);
+    hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.final_tick);
+    hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.fallback_input_count);
+    hash = HashAppend(hash, summary.neutral_fallback_count);
+    hash = HashAppend(hash, summary.held_input_fallback_count);
+    hash = HashAppend(hash, summary.mode_action_count);
+    hash = HashAppend(hash, summary.event_count);
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary) {
+    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
 }
 
 BattleInput BattleSimulation::InputForTick(const PlayerState& player) const {

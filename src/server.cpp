@@ -64,31 +64,6 @@ std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
     return hash;
 }
 
-std::string DevSha256RefFromSummary(const ReplaySummary& summary) {
-    std::uint64_t hash = 1469598103934665603ull;
-    hash = HashAppend(hash, summary.match_id);
-    hash = HashAppend(hash, summary.mode_id);
-    hash = HashAppend(hash, summary.ruleset_version);
-    hash = HashAppend(hash, summary.input_stream_hash);
-    hash = HashAppend(hash, summary.event_stream_hash);
-    hash = HashAppend(hash, summary.final_state_hash);
-    hash = HashAppend(hash, summary.final_tick);
-    hash = HashAppend(hash, summary.input_count);
-    hash = HashAppend(hash, summary.fallback_input_count);
-    hash = HashAppend(hash, summary.neutral_fallback_count);
-    hash = HashAppend(hash, summary.held_input_fallback_count);
-    hash = HashAppend(hash, summary.mode_action_count);
-    hash = HashAppend(hash, summary.event_count);
-
-    std::ostringstream out;
-    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
-    return out.str();
-}
-
-std::string DevReplayIdFromSummary(const ReplaySummary& summary) {
-    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
-}
-
 std::string Hex64(std::uint64_t value) {
     std::ostringstream out;
     out << std::hex << std::setw(16) << std::setfill('0') << value;
@@ -401,8 +376,8 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     battle_result.match_id = match_id;
     battle_result.mode_id = simulation_it->second.Config().mode_id;
     battle_result.version.ruleset_version = simulation_it->second.Config().ruleset_version;
-    battle_result.result_hash = DevSha256RefFromSummary(result.replay_summary);
-    battle_result.replay_id = DevReplayIdFromSummary(result.replay_summary);
+    battle_result.result_hash = DevResultHashFromReplaySummary(result.replay_summary);
+    battle_result.replay_id = DevReplayIdFromReplaySummary(result.replay_summary);
     battle_result.reward_projection_json =
         "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}";
     battle_result.mode_result_json =
@@ -460,8 +435,8 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_key_id = config_.server_id;
     options.now_ms = config_.now_ms;
     const ReplaySummary summary = simulation_it->second.Summary();
-    options.required_result_hash = DevSha256RefFromSummary(summary);
-    options.required_replay_id = DevReplayIdFromSummary(summary);
+    options.required_result_hash = DevResultHashFromReplaySummary(summary);
+    options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;

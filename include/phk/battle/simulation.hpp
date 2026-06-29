@@ -60,6 +60,21 @@ struct ReplaySummary {
     std::uint64_t last_mode_action_seq = 0;
 };
 
+struct ReplayFixture {
+    std::string replay_id;
+    std::string owner_user_id;
+    std::string match_id;
+    std::string mode_id;
+    std::string ruleset_version;
+    std::string result_hash;
+    std::vector<std::string> player_ids;
+    ReplaySummary summary;
+    BattleSnapshot final_snapshot;
+    std::uint32_t tick_rate_hz = kBattleTickRateHz;
+    std::uint64_t event_cursor = 0;
+    bool server_authoritative = true;
+};
+
 struct SimulationConfig {
     std::string match_id;
     std::string mode_id;
@@ -95,6 +110,7 @@ public:
         std::uint64_t last_seen_event_cursor
     ) const;
     [[nodiscard]] ReplaySummary Summary() const;
+    [[nodiscard]] ReplayFixture BuildReplayFixture(std::string owner_user_id = "") const;
 
 private:
     struct PlayerState {
@@ -149,5 +165,7 @@ private:
 };
 
 [[nodiscard]] std::string InputValidationCodeName(InputValidationCode code);
+[[nodiscard]] std::string DevResultHashFromReplaySummary(const ReplaySummary& summary);
+[[nodiscard]] std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary);
 
 }  // namespace phk::battle
