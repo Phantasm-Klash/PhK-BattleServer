@@ -326,7 +326,31 @@ bool TestServerAndHandshake() {
     CHECK_EQ(accept.player_id, std::string("p1"));
     CHECK_EQ(accept.selected_aead, std::string("CHACHA20_POLY1305"));
     CHECK_TRUE(!accept.transcript_hash_hex.empty());
+    CHECK_EQ(accept.transcript_hash_hex.size(), static_cast<std::size_t>(32));
+    CHECK_EQ(accept.client_to_server_key_ref.rfind("hkdf-dev:client_to_server:", 0), static_cast<std::size_t>(0));
+    CHECK_EQ(accept.server_to_client_key_ref.rfind("hkdf-dev:server_to_client:", 0), static_cast<std::size_t>(0));
+    CHECK_TRUE(accept.client_to_server_key_ref != accept.server_to_client_key_ref);
+    CHECK_EQ(accept.server_signature_alg, std::string("ED25519"));
+    CHECK_EQ(accept.server_signature_hex.size(), static_cast<std::size_t>(128));
+    CHECK_TRUE(phk::battle::IsHex(accept.server_signature_hex));
+    CHECK_EQ(
+        accept.server_signature_hex,
+        phk::battle::DevHandshakeServerSignature(accept.transcript_hash_hex, config.signing_key_id)
+    );
 	CHECK_TRUE(!accept.dev_session_id.empty());
+
+    phk::battle::BattleHandshakeHello xchacha_hello = hello;
+    xchacha_hello.battle_ticket.ticket.ticket_id = "ticket-002";
+    xchacha_hello.battle_ticket.ticket.user_id = "user-bob";
+    xchacha_hello.battle_ticket.ticket.player_id = "p2";
+    xchacha_hello.battle_ticket.ticket.business_session_id = "session-ref:dev-bob";
+    xchacha_hello.battle_ticket.ticket.ticket_nonce_hex = "ffeeddccbbaa998877665544";
+    xchacha_hello.supported_aead = {"XCHACHA20_POLY1305"};
+    const auto xchacha_accept = server.AcceptHandshake(xchacha_hello);
+    CHECK_TRUE(xchacha_accept.ok);
+    CHECK_EQ(xchacha_accept.selected_aead, std::string("XCHACHA20_POLY1305"));
+    CHECK_EQ(xchacha_accept.server_signature_hex.size(), static_cast<std::size_t>(128));
+    CHECK_TRUE(xchacha_accept.client_to_server_key_ref != accept.client_to_server_key_ref);
 
     phk::battle::BattleHandshakeHello missing_key_hello = hello;
     missing_key_hello.client_x25519_pub = {};

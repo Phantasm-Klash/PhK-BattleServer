@@ -296,9 +296,19 @@ def main() -> int:
         print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
         return 1
 
+    handshake_text = (ROOT / "include" / "phk" / "battle" / "handshake.hpp").read_text(encoding="utf-8")
     handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")
-    if "client_key_missing" not in handshake_impl or "client_random_missing" not in handshake_impl or "aead_unsupported" not in handshake_impl:
-        print("handshake boundary missing client key/random/aead shape checks", file=sys.stderr)
+    if (
+        "client_key_missing" not in handshake_impl
+        or "client_random_missing" not in handshake_impl
+        or "aead_unsupported" not in handshake_impl
+        or "client_to_server_key_ref" not in handshake_text
+        or "server_to_client_key_ref" not in handshake_text
+        or "server_signature_hex" not in handshake_text
+        or "DevHandshakeKeyRef" not in handshake_impl
+        or "DevHandshakeServerSignature" not in handshake_impl
+    ):
+        print("handshake boundary missing client key/random/aead checks, dev key refs, or transcript signature material", file=sys.stderr)
         return 1
 
     if args.build:

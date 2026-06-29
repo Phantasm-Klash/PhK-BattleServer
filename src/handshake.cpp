@@ -35,6 +35,17 @@ std::string Hex64(std::uint64_t value) {
     return out.str();
 }
 
+std::string DevHexMaterial(std::string seed, std::size_t hex_chars) {
+    std::string out;
+    std::uint64_t counter = 0;
+    while (out.size() < hex_chars) {
+        out += Hex64(Fnv1a(seed + ":" + std::to_string(counter)));
+        ++counter;
+    }
+    out.resize(hex_chars);
+    return out;
+}
+
 bool SupportsAead(const std::vector<std::string>& values, std::string_view name) {
     for (const auto& value : values) {
         if (value == name) {
@@ -84,6 +95,10 @@ BattleHandshakeAccept HandshakeManager::Accept(
     accept.kcp_conv = DeriveDevKcpConv(verified_ticket.match_id, verified_ticket.player_id);
     accept.key_id = std::string(server_key_id);
     accept.transcript_hash_hex = DevTranscriptHash(hello, verified_ticket);
+    accept.client_to_server_key_ref = DevHandshakeKeyRef(accept.transcript_hash_hex, "client_to_server");
+    accept.server_to_client_key_ref = DevHandshakeKeyRef(accept.transcript_hash_hex, "server_to_client");
+    accept.server_signature_alg = "ED25519";
+    accept.server_signature_hex = DevHandshakeServerSignature(accept.transcript_hash_hex, server_key_id);
     accept.dev_session_id = verified_ticket.match_id + ":" + verified_ticket.player_id + ":" +
         Hex64(Fnv1a(accept.transcript_hash_hex));
     return accept;
@@ -106,6 +121,24 @@ std::string DevTranscriptHash(
     const std::uint64_t first = Fnv1a(input.str());
     const std::uint64_t second = Fnv1a(input.str() + ":2");
     return Hex64(first) + Hex64(second);
+}
+
+std::string DevHandshakeKeyRef(
+    std::string_view transcript_hash_hex,
+    std::string_view direction_label
+) {
+    return "hkdf-dev:" + std::string(direction_label) + ":" +
+        DevHexMaterial(std::string(transcript_hash_hex) + ":" + std::string(direction_label), 32);
+}
+
+std::string DevHandshakeServerSignature(
+    std::string_view transcript_hash_hex,
+    std::string_view server_key_id
+) {
+    return DevHexMaterial(
+        std::string(transcript_hash_hex) + ":" + std::string(server_key_id) + ":server-signature",
+        128
+    );
 }
 
 }  // namespace phk::battle

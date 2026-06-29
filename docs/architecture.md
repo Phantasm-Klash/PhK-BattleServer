@@ -12,7 +12,7 @@ Status: v0.1 skeleton.
 | --- | --- |
 | `phk/v1/manifest.hpp` | Generated dependency-light protocol manifest from `PhK-Protocol`. It currently supplies shared version/ruleset constants and message-field gates until full protobuf C++ bindings replace it. |
 | `ticket` | Holds the battle ticket shape and development verifier. The current verifier checks Ed25519 key/signature shape and ticket binding, but does not perform production crypto yet. |
-| `handshake` | Holds the ECDHE/AEAD handshake boundary. The current implementation checks hello key/random/AEAD shape, derives deterministic development session ids, and selects ChaCha20-Poly1305-compatible labels. |
+| `handshake` | Holds the ECDHE/AEAD handshake boundary. The current implementation checks hello key/random/AEAD shape, selects ChaCha20-Poly1305-compatible labels, derives deterministic development session/key references, and emits Ed25519-shaped transcript signature material. |
 | `kcp_endpoint` | Holds the KCP/UDP endpoint boundary. The current implementation is an echo placeholder for tests. |
 | `protocol` | Holds battle packet headers, encrypted packet adapter structs, and dispatcher guards until generated protobuf bindings are wired. It rejects client-authored result packets and now requires development key id/nonce/ciphertext/auth-tag shape plus nonce reuse rejection on encrypted-path packet types before accepting seq state. |
 | `simulation` | Holds the v0.1 deterministic battle-core slice: fixed 60Hz tick, match-bound mode/ruleset metadata, authoritative input and mode-action validation, shared mode-action type gating, input seq/tick windows, tick-bound mode-action buffering/application, missing-input fallback audit counters, player disconnect/reconnect state, cursor-aware reconnect snapshots, milli-unit movement, simplified bullet generation/movement, canonical state hash, replay summary hashes, replay fixture material, and lightweight mode-action audit projection. |
@@ -36,6 +36,7 @@ Status: v0.1 skeleton.
 - Reused ticket ids are rejected by the server facade.
 - Handshake acceptance re-verifies the ticket structure/expiry and requires the ticket to be registered in the server facade.
 - Handshake hello messages must provide non-empty client key/random material and at least one supported ChaCha20-Poly1305-compatible AEAD label.
+- Handshake accepts include deterministic development client-to-server and server-to-client key references plus an Ed25519-shaped server signature over the transcript hash. These are boundary fixtures for future X25519/HKDF/transcript signing and do not replace production cryptography.
 - Battle input and mode actions must come from a player with a registered server session for that match.
 - Battle input and mode-action seq numbers must increase within the configured server window; old, replayed, or implausibly jumped seq values are rejected.
 - A player may queue only one input for a given authoritative tick. A later higher-seq packet for the same player/tick is rejected instead of replacing the buffered input, so replay hash material and applied simulation state cannot diverge.
