@@ -274,6 +274,8 @@ bool TestGoldenReplaySummaryFixture() {
     CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_TRUE(simulation.Summary().event_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_TRUE(!simulation.Summary().final_state_hash.empty());
+    CHECK_TRUE(simulation.Summary().input_trace.empty());
+    CHECK_TRUE(simulation.Summary().event_trace.empty());
     return true;
 }
 
@@ -660,6 +662,14 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().last_mode_action_tick, action.tick);
     CHECK_EQ(first.Summary().last_mode_action_seq, action.seq);
     CHECK_EQ(first.Summary().last_mode_action_id, second.Summary().last_mode_action_id);
+    CHECK_TRUE(first.Summary().input_trace == second.Summary().input_trace);
+    CHECK_TRUE(first.Summary().event_trace == second.Summary().event_trace);
+    CHECK_EQ(first.Summary().input_trace.size(), static_cast<std::size_t>(6));
+    CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(2));
+    CHECK_TRUE(first.Summary().input_trace[0].find("input|p1|tick=1|seq=1") != std::string::npos);
+    CHECK_TRUE(first.Summary().input_trace[2].find("fallback|held|p1|tick=2") != std::string::npos);
+    CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
+    CHECK_TRUE(first.Summary().event_trace[1].find("bullet_spawn|tick=2") != std::string::npos);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
@@ -690,6 +700,9 @@ bool TestFallbackInputReplayAudit() {
     CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Summary().input_trace.size(), static_cast<std::size_t>(2));
+    CHECK_TRUE(simulation.Summary().input_trace[0].find("fallback|neutral|p1|tick=1") != std::string::npos);
+    CHECK_TRUE(simulation.Summary().input_trace[1].find("fallback|neutral|p2|tick=1") != std::string::npos);
     CHECK_EQ(neutral_snapshot.mode_state.at("fallback_input_count"), std::string("2"));
     CHECK_EQ(neutral_snapshot.mode_state.at("neutral_fallback_count"), std::string("2"));
 
@@ -708,6 +721,9 @@ bool TestFallbackInputReplayAudit() {
     CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(5));
     CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Summary().input_trace.size(), static_cast<std::size_t>(6));
+    CHECK_TRUE(simulation.Summary().input_trace[2].find("input|p1|tick=2|seq=1") != std::string::npos);
+    CHECK_TRUE(simulation.Summary().input_trace[4].find("fallback|held|p1|tick=3|seq=1") != std::string::npos);
     CHECK_EQ(held_snapshot.mode_state.at("held_input_fallback_count"), std::string("1"));
     CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_EQ(simulation.Summary().final_state_hash, held_snapshot.state_hash);
@@ -755,6 +771,14 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.held_input_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.mode_action_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first_summary.input_trace.size(), static_cast<std::size_t>(120));
+    CHECK_EQ(first_summary.event_trace.size(), static_cast<std::size_t>(4));
+    CHECK_TRUE(first_summary.input_trace == second_summary.input_trace);
+    CHECK_TRUE(first_summary.event_trace == second_summary.event_trace);
+    CHECK_TRUE(first_summary.input_trace.front().find("input|p1|tick=1|seq=1") != std::string::npos);
+    CHECK_TRUE(first_summary.input_trace.back().find("input|p2|tick=60|seq=60") != std::string::npos);
+    CHECK_TRUE(first_summary.event_trace.front().find("bullet_spawn|tick=15") != std::string::npos);
+    CHECK_TRUE(first_summary.event_trace.back().find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(first.BulletCount(), second.BulletCount());
     CHECK_EQ(first_summary.input_stream_hash, second_summary.input_stream_hash);
     CHECK_EQ(first_summary.event_stream_hash, second_summary.event_stream_hash);
@@ -817,6 +841,15 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.summary.input_count, static_cast<std::uint64_t>(120));
     CHECK_EQ(fixture.summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(fixture.summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_TRUE(fixture.input_trace == fixture.summary.input_trace);
+    CHECK_TRUE(fixture.event_trace == fixture.summary.event_trace);
+    CHECK_EQ(fixture.input_trace.size(), static_cast<std::size_t>(120));
+    CHECK_EQ(fixture.event_trace.size(), static_cast<std::size_t>(4));
+    CHECK_TRUE(fixture.input_trace.front().find("input|p1|tick=1|seq=1") != std::string::npos);
+    CHECK_TRUE(fixture.event_trace.front().find("bullet_spawn|tick=15") != std::string::npos);
+    auto tampered_summary = fixture.summary;
+    tampered_summary.input_trace[0] += "|tampered";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary) != fixture.result_hash);
     CHECK_EQ(fixture.final_snapshot.snapshot_kind, std::string("replay_final"));
     CHECK_EQ(fixture.final_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
     CHECK_EQ(fixture.final_snapshot.state_hash, fixture.summary.final_state_hash);
@@ -880,6 +913,9 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(mode_action_summary.last_mode_action_tick, action.tick);
     CHECK_EQ(mode_action_summary.last_mode_action_seq, action.seq);
     CHECK_EQ(mode_action_summary.mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_TRUE(mode_action_summary.input_trace.size() >= 4);
+    CHECK_TRUE(mode_action_summary.event_trace.size() >= 1);
+    CHECK_TRUE(mode_action_summary.event_trace.back().find("mode_action|p1|tick=2|seq=2") != std::string::npos);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
@@ -905,6 +941,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_TRUE(!disconnected_input.ok);
     CHECK_EQ(disconnected_input.reason, std::string("player_disconnected"));
     CHECK_EQ(server.MatchReplaySummary("match-001").event_count, mode_action_summary.event_count + 1);
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("connection|disconnected|p2") != std::string::npos);
 
     const auto reconnected = server.SetPlayerConnected("match-001", "p2", true);
     CHECK_TRUE(reconnected.ok);
@@ -912,6 +949,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
     CHECK_EQ(reconnect_snapshot.mode_state.at("reconnect_player_id"), std::string("p2"));
     CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("2"));
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("connection|connected|p2") != std::string::npos);
     const auto cursor_ahead_snapshot = server.ReconnectSnapshot("match-001", "p2", 999);
     CHECK_EQ(cursor_ahead_snapshot.snapshot_kind, std::string("event_cursor_ahead"));
     CHECK_EQ(cursor_ahead_snapshot.mode_state.at("requested_event_cursor"), std::string("999"));

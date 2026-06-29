@@ -208,8 +208,10 @@ def main() -> int:
         or "ReconnectSnapshot" not in simulation_text
         or "max_seq_ahead" not in simulation_text
         or "fallback_input_count" not in simulation_text
+        or "input_trace" not in simulation_text
+        or "event_trace" not in simulation_text
     ):
-        print("simulation boundary missing fixed tick, simulation, replay fixture/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, or mode action acceptance", file=sys.stderr)
+        print("simulation boundary missing fixed tick, simulation, replay fixture/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, replay trace, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
@@ -235,8 +237,13 @@ def main() -> int:
         or "ApplyModeActionsForTick(tick_to_apply)" not in simulation_impl
         or 'snapshot.mode_state["mode_id"]' not in simulation_impl
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
+        or "input_trace_.push_back" not in simulation_impl
+        or "event_trace_.push_back" not in simulation_impl
+        or "summary.input_trace = input_trace_" not in simulation_impl
+        or "fixture.input_trace = fixture.summary.input_trace" not in simulation_impl
+        or "HashAppend(hash, item)" not in simulation_impl
     ):
-        print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, or authoritative input/mode-action validation", file=sys.stderr)
+        print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")

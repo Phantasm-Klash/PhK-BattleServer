@@ -40,6 +40,10 @@ std::string HexHash(std::uint64_t hash) {
     return out.str();
 }
 
+std::string BoolToken(bool value) {
+    return value ? "1" : "0";
+}
+
 std::int32_t ClampMilli(std::int32_t value, std::int32_t min_value, std::int32_t max_value) {
     return std::max(min_value, std::min(value, max_value));
 }
@@ -440,6 +444,8 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.held_input_fallback_count = held_input_fallback_count_;
     summary.mode_action_count = mode_action_count_;
     summary.event_count = event_count_;
+    summary.input_trace = input_trace_;
+    summary.event_trace = event_trace_;
     if (has_last_mode_action_) {
         summary.last_mode_action_id = last_mode_action_.action_id;
         summary.last_mode_action_type = last_mode_action_.action_type;
@@ -463,6 +469,8 @@ ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) co
     fixture.tick_rate_hz = config_.tick_rate_hz;
     fixture.event_cursor = fixture.summary.event_count;
     fixture.server_authoritative = true;
+    fixture.input_trace = fixture.summary.input_trace;
+    fixture.event_trace = fixture.summary.event_trace;
     for (const auto& item : players_) {
         fixture.player_ids.push_back(item.first);
     }
@@ -536,6 +544,12 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.held_input_fallback_count);
     hash = HashAppend(hash, summary.mode_action_count);
     hash = HashAppend(hash, summary.event_count);
+    for (const auto& item : summary.input_trace) {
+        hash = HashAppend(hash, item);
+    }
+    for (const auto& item : summary.event_trace) {
+        hash = HashAppend(hash, item);
+    }
 
     std::ostringstream out;
     out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
@@ -616,6 +630,11 @@ void BattleSimulation::SpawnBulletsForTick() {
 
     event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
     event_stream_hash_ = HashAppend(event_stream_hash_, next_bullet_id_);
+    event_trace_.push_back(
+        "bullet_spawn|tick=" + std::to_string(current_tick_) +
+        "|next_id=" + std::to_string(next_bullet_id_) +
+        "|count=" + std::to_string(bullets_.size())
+    );
     ++event_count_;
 }
 
@@ -645,6 +664,16 @@ void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {
     input_stream_hash_ = HashAppend(input_stream_hash_, input.bomb ? 1u : 0u);
     input_stream_hash_ = HashAppendSigned(input_stream_hash_, input.card_slot);
     input_stream_hash_ = HashAppend(input_stream_hash_, input.mode_action_id);
+    input_trace_.push_back(
+        "input|" + input.player_id +
+        "|tick=" + std::to_string(input.tick) +
+        "|seq=" + std::to_string(input.seq) +
+        "|dir=" + std::to_string(input.direction_bits) +
+        "|slow=" + BoolToken(input.slow) +
+        "|shoot=" + BoolToken(input.shoot) +
+        "|bomb=" + BoolToken(input.bomb) +
+        "|card=" + std::to_string(input.card_slot)
+    );
     ++accepted_input_count_;
 }
 
@@ -659,9 +688,21 @@ void BattleSimulation::AccumulateFallbackInput(const PlayerState& player, const 
     input_stream_hash_ = HashAppend(input_stream_hash_, input.bomb ? 1u : 0u);
     input_stream_hash_ = HashAppendSigned(input_stream_hash_, input.card_slot);
     input_stream_hash_ = HashAppend(input_stream_hash_, "fallback");
+    const bool neutral = input.seq == 0 && input.direction_bits == 0 && !input.slow && !input.shoot && !input.bomb &&
+        input.card_slot == -1;
+    input_trace_.push_back(
+        std::string("fallback|") + (neutral ? "neutral" : "held") +
+        "|" + player.player_id +
+        "|tick=" + std::to_string(input.tick) +
+        "|seq=" + std::to_string(input.seq) +
+        "|dir=" + std::to_string(input.direction_bits) +
+        "|slow=" + BoolToken(input.slow) +
+        "|shoot=" + BoolToken(input.shoot) +
+        "|bomb=" + BoolToken(input.bomb) +
+        "|card=" + std::to_string(input.card_slot)
+    );
     ++fallback_input_count_;
-    if (input.seq == 0 && input.direction_bits == 0 && !input.slow && !input.shoot && !input.bomb &&
-        input.card_slot == -1) {
+    if (neutral) {
         ++neutral_fallback_count_;
     } else {
         ++held_input_fallback_count_;
@@ -678,6 +719,13 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_type);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.payload_json);
+    event_trace_.push_back(
+        "mode_action|" + action.player_id +
+        "|tick=" + std::to_string(action.tick) +
+        "|seq=" + std::to_string(action.seq) +
+        "|id=" + action.action_id +
+        "|type=" + action.action_type
+    );
     ++mode_action_count_;
     ++event_count_;
 }
@@ -687,6 +735,11 @@ void BattleSimulation::AccumulateConnectionEvent(const PlayerState& player) {
     event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
     event_stream_hash_ = HashAppend(event_stream_hash_, player.connected ? "connected" : "disconnected");
+    event_trace_.push_back(
+        std::string("connection|") + (player.connected ? "connected" : "disconnected") +
+        "|" + player.player_id +
+        "|tick=" + std::to_string(current_tick_)
+    );
     ++event_count_;
 }
 
