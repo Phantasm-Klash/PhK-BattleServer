@@ -120,6 +120,7 @@ private:
     [[nodiscard]] std::string CanonicalStateHash() const;
     [[nodiscard]] BattleInput InputForTick(const PlayerState& player) const;
     void ApplyInput(PlayerState& player, const BattleInput& input);
+    void ApplyModeActionsForTick(std::uint64_t tick);
     void SpawnBulletsForTick();
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
@@ -142,6 +143,7 @@ private:
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
+    std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
     std::vector<BulletState> bullets_;
 };
 

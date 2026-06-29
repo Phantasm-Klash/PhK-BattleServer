@@ -415,11 +415,13 @@ bool TestBattleResultSubmission() {
 	phk::battle::BattleServerConfig config;
 	config.now_ms = 1782489620000;
 	phk::battle::BattleServer server(config);
-	CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
-	CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
     auto action = MakeModeAction(1);
     action.tick = 1;
     CHECK_TRUE(server.AcceptModeAction(action).ok);
+    CHECK_EQ(server.MatchReplaySummary("match-001").event_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(1));
 
@@ -811,6 +813,17 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     action.seq = 2;
     const auto mode_action = server.AcceptModeAction(action);
     CHECK_TRUE(mode_action.ok);
+    const auto queued_mode_action_summary = server.MatchReplaySummary("match-001");
+    CHECK_EQ(queued_mode_action_summary.event_count, replay_summary.event_count);
+    CHECK_EQ(queued_mode_action_summary.event_stream_hash, replay_summary.event_stream_hash);
+    CHECK_EQ(queued_mode_action_summary.mode_action_count, static_cast<std::uint64_t>(0));
+    const auto queued_action_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(queued_action_snapshot.mode_state.at("mode_action_count"), std::string("0"));
+    CHECK_TRUE(queued_action_snapshot.mode_state.find("last_mode_action_id") == queued_action_snapshot.mode_state.end());
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2)).ok);
+    const auto after_action_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(after_action_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
     const auto mode_action_summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(mode_action_summary.event_count, replay_summary.event_count + 1);
     CHECK_TRUE(mode_action_summary.event_stream_hash != replay_summary.event_stream_hash);
@@ -820,7 +833,6 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(mode_action_summary.last_mode_action_tick, action.tick);
     CHECK_EQ(mode_action_summary.last_mode_action_seq, action.seq);
     CHECK_EQ(mode_action_summary.mode_action_count, static_cast<std::uint64_t>(1));
-    const auto after_action_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
@@ -842,7 +854,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
         }
     }
     CHECK_TRUE(saw_p2_disconnected);
-    const auto disconnected_input = server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2));
+    const auto disconnected_input = server.AcceptInput(MakeInput("p2", 3, 3, 1u << 2));
     CHECK_TRUE(!disconnected_input.ok);
     CHECK_EQ(disconnected_input.reason, std::string("player_disconnected"));
     CHECK_EQ(server.MatchReplaySummary("match-001").event_count, mode_action_summary.event_count + 1);
@@ -858,7 +870,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(cursor_ahead_snapshot.mode_state.at("requested_event_cursor"), std::string("999"));
     const auto unknown_reconnect_snapshot = server.ReconnectSnapshot("match-001", "p3", 0);
     CHECK_EQ(unknown_reconnect_snapshot.snapshot_kind, std::string("player_unknown"));
-    const auto reconnected_input = server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2));
+    const auto reconnected_input = server.AcceptInput(MakeInput("p2", 3, 3, 1u << 2));
     CHECK_TRUE(reconnected_input.ok);
     const auto reconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));

@@ -197,6 +197,8 @@ def main() -> int:
         or "BattleSimulation" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
+        or "pending_mode_actions_by_tick_" not in simulation_text
+        or "ApplyModeActionsForTick" not in simulation_text
         or "mode_id" not in simulation_text
         or "ruleset_version" not in simulation_text
         or "SetPlayerConnected" not in simulation_text
@@ -221,6 +223,8 @@ def main() -> int:
         or 'snapshot.mode_state["mode_action_count"]' not in simulation_impl
         or "AccumulateFallbackInput" not in simulation_impl
         or "mode_action_count_" not in simulation_impl
+        or "pending_mode_actions_by_tick_[action.tick].push_back(action)" not in simulation_impl
+        or "ApplyModeActionsForTick(tick_to_apply)" not in simulation_impl
         or 'snapshot.mode_state["mode_id"]' not in simulation_impl
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
     ):

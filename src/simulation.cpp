@@ -290,7 +290,7 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     }
 
     players_[action.player_id].last_seq = action.seq;
-    AccumulateAcceptedModeAction(action);
+    pending_mode_actions_by_tick_[action.tick].push_back(action);
     return result;
 }
 
@@ -323,6 +323,7 @@ BattleSnapshot BattleSimulation::Tick() {
     }
 
     current_tick_ = tick_to_apply;
+    ApplyModeActionsForTick(tick_to_apply);
     SpawnBulletsForTick();
     AdvanceBullets();
     return Snapshot("full");
@@ -511,6 +512,28 @@ void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input)
 
     player.x_milli = ClampMilli(player.x_milli + axis_x * speed, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
     player.y_milli = ClampMilli(player.y_milli + axis_y * speed, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+}
+
+void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
+    const auto actions_it = pending_mode_actions_by_tick_.find(tick);
+    if (actions_it == pending_mode_actions_by_tick_.end()) {
+        return;
+    }
+
+    auto actions = actions_it->second;
+    std::sort(actions.begin(), actions.end(), [](const BattleModeAction& left, const BattleModeAction& right) {
+        if (left.seq != right.seq) {
+            return left.seq < right.seq;
+        }
+        if (left.player_id != right.player_id) {
+            return left.player_id < right.player_id;
+        }
+        return left.action_id < right.action_id;
+    });
+    for (const auto& action : actions) {
+        AccumulateAcceptedModeAction(action);
+    }
+    pending_mode_actions_by_tick_.erase(actions_it);
 }
 
 void BattleSimulation::SpawnBulletsForTick() {
