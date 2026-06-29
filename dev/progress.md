@@ -43,6 +43,10 @@ Status date: 2026-06-29
 
 ## 2026-06-29 Verification
 
+- Current tick-bound mode-action sample: direct `g++ -std=c++17 ... /tmp/phk_battle_tests` build and `/tmp/phk_battle_tests` pass, including queued mode-action replay invisibility before the target tick and event/hash projection after the tick advances.
+- Current tick-bound mode-action sample: `python3 tools/check_battle_server.py` passes.
+- Current tick-bound mode-action sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
+- Current tick-bound mode-action sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
 - Current fallback replay audit sample: `python3 tools/check_battle_server.py` passes.
 - Current fallback replay audit sample: direct `g++ -std=c++17 ... /tmp/phk_battle_tests` build and `/tmp/phk_battle_tests` pass, including `FallbackInputReplayAudit`.
 - Current fallback replay audit sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
