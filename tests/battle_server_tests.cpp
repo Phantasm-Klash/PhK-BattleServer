@@ -780,6 +780,26 @@ bool TestBuildSignedBattleResultCallback() {
             "\"event_cursor\":" + std::to_string(built.replay_summary.event_count)
         ) != std::string::npos
     );
+    auto missing_zero_cursor = built.signed_result;
+    missing_zero_cursor.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"event_cursor\":" + std::to_string(built.replay_summary.event_count) + ",",
+        ""
+    );
+    const auto missing_zero_cursor_result = server.SubmitBattleResult(missing_zero_cursor);
+    CHECK_TRUE(!missing_zero_cursor_result.ok);
+    CHECK_EQ(missing_zero_cursor_result.reason, std::string("event_cursor_mismatch"));
+
+    auto wrong_zero_cursor = built.signed_result;
+    wrong_zero_cursor.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"event_cursor\":" + std::to_string(built.replay_summary.event_count),
+        "\"event_cursor\":1"
+    );
+    const auto wrong_zero_cursor_result = server.SubmitBattleResult(wrong_zero_cursor);
+    CHECK_TRUE(!wrong_zero_cursor_result.ok);
+    CHECK_EQ(wrong_zero_cursor_result.reason, std::string("event_cursor_mismatch"));
+
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"final_tick\":" + std::to_string(built.replay_summary.final_tick)

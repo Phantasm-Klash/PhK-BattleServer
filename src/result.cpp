@@ -138,7 +138,7 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "player_ids_mismatch");
         return verification;
     }
-    if (options.required_event_cursor > 0 &&
+    if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
         !ContainsJsonUintField(result.mode_result_json, "event_cursor", options.required_event_cursor)) {
         Fail(verification, "event_cursor_mismatch");
         return verification;
