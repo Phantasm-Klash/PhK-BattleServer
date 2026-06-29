@@ -240,6 +240,7 @@ def main() -> int:
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
     if (
         "CanonicalStateHash" not in simulation_impl
+        or "IsReconnectModeAction" not in simulation_impl
         or "BuildReplayInputStreamSummary" not in simulation_impl
         or "BuildReplayFixture" not in simulation_impl
         or "CanonicalReplayInputStreamSummaryRecord" not in simulation_impl
@@ -253,6 +254,7 @@ def main() -> int:
         or "mode_action_client_result_forbidden" not in simulation_impl
         or "mode_action_type_unsupported" not in simulation_impl
         or "player_disconnected" not in simulation_impl
+        or "player_it->second.connected = true" not in simulation_impl
         or "seq_too_far_ahead" not in simulation_impl
         or "event_cursor_ahead" not in simulation_impl
         or 'snapshot.mode_state["missed_event_count"]' not in simulation_impl
@@ -429,6 +431,9 @@ def main() -> int:
         or "KcpAeadPacketAdapterBoundary" not in tests_text
         or "remote_endpoint_mismatch" not in tests_text
         or "reconnect_result" not in tests_text
+        or "disconnected_card_action" not in tests_text
+        or "action-reconnect-p2" not in tests_text
+        or "last_mode_action_type" not in tests_text
         or "adapter.Stats().accepted_datagrams" not in tests_text
         or "adapter.Stats().rejected_datagrams" not in tests_text
         or "adapter.Stats().remote_endpoint_mismatches" not in tests_text

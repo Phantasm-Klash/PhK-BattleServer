@@ -1274,19 +1274,46 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(server.MatchReplaySummary("match-001").event_count, mode_action_summary.event_count + 1);
     CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("connection|disconnected|p2") != std::string::npos);
 
-    const auto reconnected = server.SetPlayerConnected("match-001", "p2", true);
-    CHECK_TRUE(reconnected.ok);
+    auto disconnected_card_action = MakeModeAction(3);
+    disconnected_card_action.player_id = "p2";
+    disconnected_card_action.tick = 3;
+    disconnected_card_action.action_id = "action-card-while-disconnected";
+    disconnected_card_action.action_type = "cast_card";
+    const auto disconnected_card_result = server.AcceptModeAction(disconnected_card_action);
+    CHECK_TRUE(!disconnected_card_result.ok);
+    CHECK_EQ(disconnected_card_result.reason, std::string("player_disconnected"));
+
+    auto reconnect_action = MakeModeAction(3);
+    reconnect_action.player_id = "p2";
+    reconnect_action.tick = 3;
+    reconnect_action.action_id = "action-reconnect-p2";
+    reconnect_action.action_type = "reconnect";
+    reconnect_action.payload_json = "{\"last_seen_event_cursor\":" + std::to_string(mode_action_summary.event_count) + "}";
+    const auto reconnect_action_result = server.AcceptModeAction(reconnect_action);
+    CHECK_TRUE(reconnect_action_result.ok);
+    CHECK_TRUE(!server.MatchSnapshot("match-001").players.empty());
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("1"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 3, 3, 1u << 3)).ok);
+    const auto reconnect_action_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(reconnect_action_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
+    CHECK_EQ(reconnect_action_snapshot.mode_state.at("connected_player_count"), std::string("2"));
+    CHECK_EQ(reconnect_action_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
+    CHECK_EQ(reconnect_action_snapshot.mode_state.at("last_mode_action_id"), reconnect_action.action_id);
+    CHECK_EQ(reconnect_action_snapshot.mode_state.at("last_mode_action_type"), std::string("reconnect"));
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace[server.MatchReplaySummary("match-001").event_trace.size() - 2].find("connection|connected|p2") != std::string::npos);
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("mode_action|p2|tick=3|seq=3") != std::string::npos);
+
     const auto reconnect_snapshot = server.ReconnectSnapshot("match-001", "p2", mode_action_summary.event_count);
     CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
     CHECK_EQ(reconnect_snapshot.mode_state.at("reconnect_player_id"), std::string("p2"));
-    CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("2"));
-    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("connection|connected|p2") != std::string::npos);
+    CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("3"));
     const auto cursor_ahead_snapshot = server.ReconnectSnapshot("match-001", "p2", 999);
     CHECK_EQ(cursor_ahead_snapshot.snapshot_kind, std::string("event_cursor_ahead"));
     CHECK_EQ(cursor_ahead_snapshot.mode_state.at("requested_event_cursor"), std::string("999"));
     const auto unknown_reconnect_snapshot = server.ReconnectSnapshot("match-001", "p3", 0);
     CHECK_EQ(unknown_reconnect_snapshot.snapshot_kind, std::string("player_unknown"));
-    const auto reconnected_input = server.AcceptInput(MakeInput("p2", 3, 3, 1u << 2));
+    const auto reconnected_input = server.AcceptInput(MakeInput("p2", 4, 4, 1u << 2));
     CHECK_TRUE(reconnected_input.ok);
     const auto reconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));
@@ -1297,13 +1324,13 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_TRUE(!unknown_player_result.ok);
     CHECK_EQ(unknown_player_result.reason, std::string("player_unknown"));
 
-    auto forged_action = MakeModeAction(3);
-    forged_action.tick = 3;
+    auto forged_action = MakeModeAction(4);
+    forged_action.tick = 4;
     forged_action.client_result_authoritative = true;
     const auto forged_result = server.AcceptModeAction(forged_action);
     CHECK_TRUE(!forged_result.ok);
     CHECK_EQ(forged_result.reason, std::string("mode_action_client_result_forbidden"));
-    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, action.action_id);
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, reconnect_action.action_id);
 
     auto wrong_match = MakeInput("p1", 1, 1, 0);
     wrong_match.match_id = "missing-match";

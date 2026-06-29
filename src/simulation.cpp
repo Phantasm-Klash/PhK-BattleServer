@@ -63,6 +63,10 @@ bool IsAllowedModeActionType(std::string_view action_type) {
         action_type == "reconnect";
 }
 
+bool IsReconnectModeAction(std::string_view action_type) {
+    return action_type == "reconnect";
+}
+
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
     std::ostringstream out;
     out << snapshot.match_id << '|'
@@ -293,7 +297,7 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "player_unknown";
         return result;
     }
-    if (!player_it->second.connected) {
+    if (!player_it->second.connected && !IsReconnectModeAction(action.action_type)) {
         result.code = InputValidationCode::PlayerDisconnected;
         result.reason = "player_disconnected";
         return result;
@@ -721,6 +725,13 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
         return left.action_id < right.action_id;
     });
     for (const auto& action : actions) {
+        if (IsReconnectModeAction(action.action_type)) {
+            auto player_it = players_.find(action.player_id);
+            if (player_it != players_.end() && !player_it->second.connected) {
+                player_it->second.connected = true;
+                AccumulateConnectionEvent(player_it->second);
+            }
+        }
         AccumulateAcceptedModeAction(action);
     }
     pending_mode_actions_by_tick_.erase(actions_it);
