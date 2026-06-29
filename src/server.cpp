@@ -426,11 +426,8 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         return result;
     }
 
-    result.replay_summary = simulation_it->second.Summary();
-    const ReplayInputStreamSummaryRecord replay_summary_record =
-        simulation_it->second.BuildReplayInputStreamSummary();
-    const std::string replay_summary_hash = DevReplayInputStreamSummaryHash(replay_summary_record);
-    const std::string replay_fixture_hash = DevReplayFixtureHash(simulation_it->second.BuildReplayFixture());
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
+    result.replay_summary = replay_fixture.summary;
     BattleResult& battle_result = result.signed_result.result;
     battle_result.match_id = match_id;
     battle_result.mode_id = simulation_it->second.Config().mode_id;
@@ -439,37 +436,7 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     battle_result.replay_id = DevReplayIdFromReplaySummary(result.replay_summary);
     battle_result.reward_projection_json =
         "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}";
-    battle_result.mode_result_json =
-        "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
-        std::to_string(result.replay_summary.event_count) +
-        ",\"final_tick\":" +
-        std::to_string(result.replay_summary.final_tick) +
-        ",\"input_count\":" +
-        std::to_string(result.replay_summary.input_count) +
-        ",\"fallback_input_count\":" +
-        std::to_string(result.replay_summary.fallback_input_count) +
-        ",\"neutral_fallback_count\":" +
-        std::to_string(result.replay_summary.neutral_fallback_count) +
-        ",\"held_input_fallback_count\":" +
-        std::to_string(result.replay_summary.held_input_fallback_count) +
-        ",\"mode_action_count\":" +
-        std::to_string(result.replay_summary.mode_action_count) +
-        ",\"input_trace_count\":" +
-        std::to_string(result.replay_summary.input_trace.size()) +
-        ",\"event_trace_count\":" +
-        std::to_string(result.replay_summary.event_trace.size()) +
-        ",\"input_stream_hash\":\"" +
-        result.replay_summary.input_stream_hash +
-        "\",\"event_stream_hash\":\"" +
-        result.replay_summary.event_stream_hash +
-        "\",\"final_state_hash\":\"" +
-        result.replay_summary.final_state_hash +
-        "\",\"replay_summary_hash\":\"" +
-        replay_summary_hash +
-        "\",\"replay_fixture_hash\":\"" +
-        replay_fixture_hash +
-        "\"" +
-        "}";
+    battle_result.mode_result_json = DevModeResultJsonFromReplayFixture(replay_fixture);
     battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
 
     for (const auto& item : sessions_by_ticket_) {
@@ -510,7 +477,8 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_ruleset_version = simulation_it->second.Config().ruleset_version;
     options.required_key_id = config_.server_id;
     options.now_ms = config_.now_ms;
-    const ReplaySummary summary = simulation_it->second.Summary();
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
+    const ReplaySummary& summary = replay_fixture.summary;
     options.required_result_hash = DevResultHashFromReplaySummary(summary);
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
@@ -525,10 +493,8 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_input_stream_hash = summary.input_stream_hash;
     options.required_event_stream_hash = summary.event_stream_hash;
     options.required_final_state_hash = summary.final_state_hash;
-    options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(
-        simulation_it->second.BuildReplayInputStreamSummary()
-    );
-    options.required_replay_fixture_hash = DevReplayFixtureHash(simulation_it->second.BuildReplayFixture());
+    options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record);
+    options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture);
     options.require_replay_counter_fields = true;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;

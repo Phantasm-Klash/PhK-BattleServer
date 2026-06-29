@@ -67,46 +67,30 @@ std::string ReplaySummaryHashForSummary(const phk::battle::ReplaySummary& summar
     return phk::battle::DevReplayInputStreamSummaryHash(record);
 }
 
-std::string ModeResultJsonForSummary(const phk::battle::ReplaySummary& summary) {
-    const std::string replay_fixture_hash = summary.match_id == "match-001"
-        ? "sha256:dev-fnv64-4e12f244398ab1eb"
-        : "";
-    return "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
-        std::to_string(summary.event_count) +
-        ",\"final_tick\":" +
-        std::to_string(summary.final_tick) +
-        ",\"input_count\":" +
-        std::to_string(summary.input_count) +
-        ",\"fallback_input_count\":" +
-        std::to_string(summary.fallback_input_count) +
-        ",\"neutral_fallback_count\":" +
-        std::to_string(summary.neutral_fallback_count) +
-        ",\"held_input_fallback_count\":" +
-        std::to_string(summary.held_input_fallback_count) +
-        ",\"mode_action_count\":" +
-        std::to_string(summary.mode_action_count) +
-        ",\"input_trace_count\":" +
-        std::to_string(summary.input_trace.size()) +
-        ",\"event_trace_count\":" +
-        std::to_string(summary.event_trace.size()) +
-        ",\"input_stream_hash\":\"" +
-        summary.input_stream_hash +
-        "\",\"event_stream_hash\":\"" +
-        summary.event_stream_hash +
-        "\",\"final_state_hash\":\"" +
-        summary.final_state_hash +
-        "\",\"replay_summary_hash\":\"" +
-        ReplaySummaryHashForSummary(summary) +
-        "\",\"replay_fixture_hash\":\"" +
-        replay_fixture_hash +
-        "\"}";
-}
-
 std::string ReplaceFirst(std::string value, const std::string& old_value, const std::string& new_value) {
     const auto offset = value.find(old_value);
     if (offset != std::string::npos) {
         value.replace(offset, old_value.size(), new_value);
     }
+    return value;
+}
+
+std::string ReplaceJsonStringField(
+    std::string value,
+    const std::string& field_name,
+    const std::string& new_value
+) {
+    const std::string prefix = "\"" + field_name + "\":\"";
+    const auto value_start = value.find(prefix);
+    if (value_start == std::string::npos) {
+        return value;
+    }
+    const auto string_start = value_start + prefix.size();
+    const auto string_end = value.find('"', string_start);
+    if (string_end == std::string::npos) {
+        return value;
+    }
+    value.replace(string_start, string_end - string_start, new_value);
     return value;
 }
 
@@ -140,31 +124,6 @@ phk::battle::SignedBattleTicket MakeTicketForBob() {
 	ticket.ticket.business_session_id = "session-ref:dev-bob";
 	ticket.ticket.ticket_nonce_hex = "ffeeddccbbaa998877665544";
 	return ticket;
-}
-
-phk::battle::SignedBattleResult MakeBattleResult() {
-	phk::battle::SignedBattleResult signed_result;
-	signed_result.result.match_id = std::string(phk::v1::kBattleResultCallbackMatchId);
-	signed_result.result.mode_id = std::string(phk::v1::kBattleResultCallbackModeId);
-	signed_result.result.result_hash = std::string(phk::v1::kBattleResultCallbackResultHash);
-	signed_result.result.replay_id = std::string(phk::v1::kBattleResultCallbackReplayId);
-	signed_result.result.player_ids = {"p1", "p2"};
-	signed_result.result.reward_projection_json = std::string(phk::v1::kBattleResultCallbackRewardProjectionJson);
-	signed_result.result.mode_result_json = std::string(phk::v1::kBattleResultCallbackModeResultJson);
-	signed_result.result.settled_at_ms = phk::v1::kBattleResultCallbackSettledAtMs;
-	signed_result.key_id = std::string(phk::v1::kBattleResultCallbackKeyId);
-	signed_result.public_key_hex = std::string(phk::v1::kBattleResultCallbackPublicKeyHex);
-	signed_result.signature_hex = std::string(phk::v1::kBattleResultCallbackSignatureHex);
-	signed_result.server_authoritative = true;
-	return signed_result;
-}
-
-phk::battle::SignedBattleResult MakeBattleResultForSummary(const phk::battle::ReplaySummary& summary) {
-    auto signed_result = MakeBattleResult();
-    signed_result.result.result_hash = ExpectedDevResultHash(summary);
-    signed_result.result.replay_id = ExpectedDevReplayId(summary);
-    signed_result.result.mode_result_json = ModeResultJsonForSummary(summary);
-    return signed_result;
 }
 
 phk::battle::BattleInput MakeInput(
@@ -386,6 +345,19 @@ bool TestGoldenReplaySummaryFixture() {
     CHECK_EQ(std::string(phk::v1::kGoldenReplaySummaryReplayId), std::string(phk::v1::kBattleResultCallbackReplayId));
     CHECK_EQ(summary.match_id, std::string(phk::v1::kBattleResultCallbackMatchId));
     CHECK_EQ(std::string(phk::v1::kGoldenReplaySummaryOwnerUserId), std::string("user-alice"));
+    CHECK_EQ(std::string(phk::v1::kBattleResultCallbackResultHash), std::string("sha256:0123456789abcdef"));
+    CHECK_EQ(
+        std::string(phk::v1::kBattleResultCallbackRewardProjectionJson),
+        std::string("{\"source\":\"battle-server\"}")
+    );
+    CHECK_EQ(
+        std::string(phk::v1::kBattleResultCallbackModeResultJson),
+        std::string("{\"battle_result_owner\":\"cpp\"}")
+    );
+    CHECK_EQ(phk::v1::kBattleResultCallbackSettledAtMs, static_cast<std::int64_t>(1782489610000));
+    CHECK_EQ(std::string(phk::v1::kBattleResultCallbackKeyId), std::string("battle-local-1"));
+    CHECK_EQ(std::string(phk::v1::kBattleResultCallbackPublicKeyHex).size(), static_cast<std::size_t>(64));
+    CHECK_EQ(std::string(phk::v1::kBattleResultCallbackSignatureHex).size(), static_cast<std::size_t>(128));
     CHECK_EQ(summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
@@ -588,40 +560,44 @@ bool TestBattleResultSubmission() {
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(1));
+    const auto built_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built_result.ok);
+    CHECK_EQ(built_result.replay_summary.final_state_hash, summary.final_state_hash);
+    const auto valid_result = built_result.signed_result;
 
-	auto wrong_players = MakeBattleResultForSummary(summary);
+	auto wrong_players = valid_result;
 	wrong_players.result.player_ids = {"p1"};
 	const auto wrong_players_result = server.SubmitBattleResult(wrong_players);
 	CHECK_TRUE(!wrong_players_result.ok);
 	CHECK_EQ(wrong_players_result.reason, std::string("player_ids_mismatch"));
 
-    auto wrong_mode = MakeBattleResultForSummary(summary);
+    auto wrong_mode = valid_result;
     wrong_mode.result.mode_id = "battle_royale";
     const auto wrong_mode_result = server.SubmitBattleResult(wrong_mode);
     CHECK_TRUE(!wrong_mode_result.ok);
     CHECK_EQ(wrong_mode_result.reason, std::string("mode_mismatch"));
 
-    auto wrong_ruleset = MakeBattleResultForSummary(summary);
+    auto wrong_ruleset = valid_result;
     wrong_ruleset.result.version.ruleset_version = "ruleset-other";
     const auto wrong_ruleset_result = server.SubmitBattleResult(wrong_ruleset);
     CHECK_TRUE(!wrong_ruleset_result.ok);
     CHECK_EQ(wrong_ruleset_result.reason, std::string("ruleset_version_mismatch"));
 
-    auto wrong_hash = MakeBattleResultForSummary(summary);
+    auto wrong_hash = valid_result;
     wrong_hash.result.result_hash = "sha256:wrong";
     const auto wrong_hash_result = server.SubmitBattleResult(wrong_hash);
     CHECK_TRUE(!wrong_hash_result.ok);
     CHECK_EQ(wrong_hash_result.reason, std::string("result_hash_mismatch"));
 
-    auto wrong_replay = MakeBattleResultForSummary(summary);
+    auto wrong_replay = valid_result;
     wrong_replay.result.replay_id = "battle-replay:wrong";
     const auto wrong_replay_result = server.SubmitBattleResult(wrong_replay);
     CHECK_TRUE(!wrong_replay_result.ok);
     CHECK_EQ(wrong_replay_result.reason, std::string("replay_id_mismatch"));
 
-    auto wrong_cursor = MakeBattleResultForSummary(summary);
+    auto wrong_cursor = valid_result;
     wrong_cursor.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"event_cursor\":" + std::to_string(summary.event_count),
         "\"event_cursor\":999"
     );
@@ -629,16 +605,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_cursor_result.ok);
     CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
 
-    auto missing_replay_counts = MakeBattleResultForSummary(summary);
+    auto missing_replay_counts = valid_result;
     missing_replay_counts.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
         std::to_string(summary.event_count) + "}";
     const auto missing_replay_counts_result = server.SubmitBattleResult(missing_replay_counts);
     CHECK_TRUE(!missing_replay_counts_result.ok);
     CHECK_EQ(missing_replay_counts_result.reason, std::string("final_tick_mismatch"));
 
-    auto wrong_final_tick = MakeBattleResultForSummary(summary);
+    auto wrong_final_tick = valid_result;
     wrong_final_tick.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"final_tick\":" + std::to_string(summary.final_tick),
         "\"final_tick\":999"
     );
@@ -646,9 +622,9 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_tick_result.ok);
     CHECK_EQ(wrong_final_tick_result.reason, std::string("final_tick_mismatch"));
 
-    auto wrong_mode_action_count = MakeBattleResultForSummary(summary);
+    auto wrong_mode_action_count = valid_result;
     wrong_mode_action_count.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"mode_action_count\":" + std::to_string(summary.mode_action_count),
         "\"mode_action_count\":999"
     );
@@ -656,9 +632,9 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_mode_action_count_result.ok);
     CHECK_EQ(wrong_mode_action_count_result.reason, std::string("mode_action_count_mismatch"));
 
-    auto wrong_event_trace_count = MakeBattleResultForSummary(summary);
+    auto wrong_event_trace_count = valid_result;
     wrong_event_trace_count.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"event_trace_count\":" + std::to_string(summary.event_trace.size()),
         "\"event_trace_count\":999"
     );
@@ -666,9 +642,9 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_event_trace_count_result.ok);
     CHECK_EQ(wrong_event_trace_count_result.reason, std::string("event_trace_count_mismatch"));
 
-    auto wrong_input_stream_hash = MakeBattleResultForSummary(summary);
+    auto wrong_input_stream_hash = valid_result;
     wrong_input_stream_hash.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"input_stream_hash\":\"" + summary.input_stream_hash + "\"",
         "\"input_stream_hash\":\"fnv64:0000000000000000\""
     );
@@ -676,9 +652,9 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_input_stream_hash_result.ok);
     CHECK_EQ(wrong_input_stream_hash_result.reason, std::string("input_stream_hash_mismatch"));
 
-    auto wrong_event_stream_hash = MakeBattleResultForSummary(summary);
+    auto wrong_event_stream_hash = valid_result;
     wrong_event_stream_hash.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"event_stream_hash\":\"" + summary.event_stream_hash + "\"",
         "\"event_stream_hash\":\"fnv64:0000000000000000\""
     );
@@ -686,9 +662,9 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_event_stream_hash_result.ok);
     CHECK_EQ(wrong_event_stream_hash_result.reason, std::string("event_stream_hash_mismatch"));
 
-    auto wrong_final_state_hash = MakeBattleResultForSummary(summary);
+    auto wrong_final_state_hash = valid_result;
     wrong_final_state_hash.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
+        valid_result.result.mode_result_json,
         "\"final_state_hash\":\"" + summary.final_state_hash + "\"",
         "\"final_state_hash\":\"fnv64:0000000000000000\""
     );
@@ -696,39 +672,39 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_state_hash_result.ok);
     CHECK_EQ(wrong_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
 
-    auto wrong_replay_summary_hash = MakeBattleResultForSummary(summary);
-    wrong_replay_summary_hash.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
-        "\"replay_summary_hash\":\"" + ReplaySummaryHashForSummary(summary) + "\"",
-        "\"replay_summary_hash\":\"sha256:dev-fnv64-0000000000000000\""
+    auto wrong_replay_summary_hash = valid_result;
+    wrong_replay_summary_hash.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "replay_summary_hash",
+        "sha256:dev-fnv64-0000000000000000"
     );
     const auto wrong_replay_summary_hash_result = server.SubmitBattleResult(wrong_replay_summary_hash);
     CHECK_TRUE(!wrong_replay_summary_hash_result.ok);
     CHECK_EQ(wrong_replay_summary_hash_result.reason, std::string("replay_summary_hash_mismatch"));
 
-    auto wrong_replay_fixture_hash = MakeBattleResultForSummary(summary);
-    wrong_replay_fixture_hash.result.mode_result_json = ReplaceFirst(
-        ModeResultJsonForSummary(summary),
-        "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e12f244398ab1eb\"",
-        "\"replay_fixture_hash\":\"sha256:dev-fnv64-0000000000000000\""
+    auto wrong_replay_fixture_hash = valid_result;
+    wrong_replay_fixture_hash.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "replay_fixture_hash",
+        "sha256:dev-fnv64-0000000000000000"
     );
     const auto wrong_replay_fixture_hash_result = server.SubmitBattleResult(wrong_replay_fixture_hash);
     CHECK_TRUE(!wrong_replay_fixture_hash_result.ok);
     CHECK_EQ(wrong_replay_fixture_hash_result.reason, std::string("replay_fixture_hash_mismatch"));
 
-    auto mutating_projection = MakeBattleResultForSummary(summary);
+    auto mutating_projection = valid_result;
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
     const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);
     CHECK_TRUE(!mutating_projection_result.ok);
     CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
 
-	const auto accepted = server.SubmitBattleResult(MakeBattleResultForSummary(summary));
+	const auto accepted = server.SubmitBattleResult(valid_result);
 	CHECK_TRUE(accepted.ok);
 	CHECK_EQ(accepted.reason, std::string("ok"));
 	CHECK_EQ(accepted.settlement_key, std::string(phk::v1::kBattleResultCallbackSettlementKey));
 	CHECK_TRUE(!accepted.verification.warnings.empty());
 
-	const auto duplicate = server.SubmitBattleResult(MakeBattleResultForSummary(summary));
+	const auto duplicate = server.SubmitBattleResult(valid_result);
 	CHECK_TRUE(duplicate.ok);
 	CHECK_TRUE(duplicate.duplicate);
 	CHECK_EQ(duplicate.reason, std::string("ok"));

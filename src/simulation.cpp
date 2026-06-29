@@ -669,6 +669,39 @@ std::string DevReplayFixtureHash(const ReplayFixture& fixture) {
     return out.str();
 }
 
+std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
+    const ReplaySummary& summary = fixture.summary;
+    return "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(summary.final_tick) +
+        ",\"input_count\":" +
+        std::to_string(summary.input_count) +
+        ",\"fallback_input_count\":" +
+        std::to_string(summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(summary.held_input_fallback_count) +
+        ",\"mode_action_count\":" +
+        std::to_string(summary.mode_action_count) +
+        ",\"input_trace_count\":" +
+        std::to_string(summary.input_trace.size()) +
+        ",\"event_trace_count\":" +
+        std::to_string(summary.event_trace.size()) +
+        ",\"input_stream_hash\":\"" +
+        summary.input_stream_hash +
+        "\",\"event_stream_hash\":\"" +
+        summary.event_stream_hash +
+        "\",\"final_state_hash\":\"" +
+        summary.final_state_hash +
+        "\",\"replay_summary_hash\":\"" +
+        DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
+        "\",\"replay_fixture_hash\":\"" +
+        DevReplayFixtureHash(fixture) +
+        "\"}";
+}
+
 std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     std::uint64_t hash = kFnvOffset;
     hash = HashAppend(hash, summary.match_id);

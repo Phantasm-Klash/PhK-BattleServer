@@ -326,6 +326,7 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash" not in simulation_text
         or "CanonicalReplayFixturePayload" not in simulation_text
         or "DevReplayFixtureHash" not in simulation_text
+        or "DevModeResultJsonFromReplayFixture" not in simulation_text
         or "DevResultHashFromReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
         or "pending_mode_actions_by_tick_" not in simulation_text
@@ -382,6 +383,9 @@ def main() -> int:
         or "HashAppend(hash, item)" not in simulation_impl
         or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
         or "CanonicalSnapshotPayload" not in simulation_impl
+        or "DevModeResultJsonFromReplayFixture" not in simulation_impl
+        or "DevReplayInputStreamSummaryHash(fixture.replay_summary_record)" not in simulation_impl
+        or "DevReplayFixtureHash(fixture)" not in simulation_impl
         or "player.x_milli" not in simulation_impl
         or "bullet.pattern_id" not in simulation_impl
         or "snapshot.mode_state" not in simulation_impl
@@ -414,6 +418,7 @@ def main() -> int:
         or "encrypted_payload_type_invalid" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
         or "CanonicalBattleResultPayload" not in server_impl
+        or "DevModeResultJsonFromReplayFixture(replay_fixture)" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
         or "DevReplayIdFromReplaySummary" not in server_impl
         or "projection_only" not in server_impl
@@ -422,8 +427,8 @@ def main() -> int:
         or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
         or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
-        or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash" not in server_impl
-        or "options.required_replay_fixture_hash = DevReplayFixtureHash" not in server_impl
+        or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record)" not in server_impl
+        or "options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture)" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
@@ -540,10 +545,14 @@ def main() -> int:
         or "tampered_fixture_mode_state" not in tests_text
         or "tampered_fixture_authority" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
+        or "BuildSignedBattleResult(\"match-001\")" not in tests_text
+        or "const auto valid_result = built_result.signed_result" not in tests_text
+        or "ReplaceJsonStringField" not in tests_text
+        or "ModeResultJsonForSummary" in tests_text
+        or "MakeBattleResultForSummary" in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
         or "sha256:dev-fnv64-4e23b1e341f35e87" not in tests_text
         or "sha256:dev-fnv64-f286e5b4976a50da" not in tests_text
-        or "sha256:dev-fnv64-4e12f244398ab1eb" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
