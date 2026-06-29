@@ -38,9 +38,18 @@ struct BattleResultVerificationOptions {
     std::string required_replay_id;
     std::vector<std::string> required_player_ids;
     std::uint64_t required_event_cursor = 0;
+    std::uint64_t required_final_tick = 0;
+    std::uint64_t required_input_count = 0;
+    std::uint64_t required_fallback_input_count = 0;
+    std::uint64_t required_neutral_fallback_count = 0;
+    std::uint64_t required_held_input_fallback_count = 0;
+    std::uint64_t required_mode_action_count = 0;
+    std::uint64_t required_input_trace_count = 0;
+    std::uint64_t required_event_trace_count = 0;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
     bool require_projection_only_reward = true;
+    bool require_replay_counter_fields = false;
 };
 
 struct BattleResultVerification {

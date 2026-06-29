@@ -100,7 +100,24 @@ phk::battle::SignedBattleResult MakeBattleResultForSummary(const phk::battle::Re
     signed_result.result.result_hash = ExpectedDevResultHash(summary);
     signed_result.result.replay_id = ExpectedDevReplayId(summary);
     signed_result.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
-        std::to_string(summary.event_count) + "}";
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(summary.final_tick) +
+        ",\"input_count\":" +
+        std::to_string(summary.input_count) +
+        ",\"fallback_input_count\":" +
+        std::to_string(summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(summary.held_input_fallback_count) +
+        ",\"mode_action_count\":" +
+        std::to_string(summary.mode_action_count) +
+        ",\"input_trace_count\":" +
+        std::to_string(summary.input_trace.size()) +
+        ",\"event_trace_count\":" +
+        std::to_string(summary.event_trace.size()) +
+        "}";
     return signed_result;
 }
 
@@ -448,10 +465,72 @@ bool TestBattleResultSubmission() {
     CHECK_EQ(wrong_replay_result.reason, std::string("replay_id_mismatch"));
 
     auto wrong_cursor = MakeBattleResultForSummary(summary);
-    wrong_cursor.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":999}";
+    wrong_cursor.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":999"
+        ",\"final_tick\":1,\"input_count\":0,\"fallback_input_count\":0,\"neutral_fallback_count\":0"
+        ",\"held_input_fallback_count\":0,\"mode_action_count\":1,\"input_trace_count\":0,\"event_trace_count\":1}";
     const auto wrong_cursor_result = server.SubmitBattleResult(wrong_cursor);
     CHECK_TRUE(!wrong_cursor_result.ok);
     CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
+
+    auto missing_replay_counts = MakeBattleResultForSummary(summary);
+    missing_replay_counts.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) + "}";
+    const auto missing_replay_counts_result = server.SubmitBattleResult(missing_replay_counts);
+    CHECK_TRUE(!missing_replay_counts_result.ok);
+    CHECK_EQ(missing_replay_counts_result.reason, std::string("final_tick_mismatch"));
+
+    auto wrong_final_tick = MakeBattleResultForSummary(summary);
+    wrong_final_tick.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":999,\"input_count\":0,\"fallback_input_count\":0,\"neutral_fallback_count\":0"
+        ",\"held_input_fallback_count\":0,\"mode_action_count\":1,\"input_trace_count\":0,\"event_trace_count\":1}";
+    const auto wrong_final_tick_result = server.SubmitBattleResult(wrong_final_tick);
+    CHECK_TRUE(!wrong_final_tick_result.ok);
+    CHECK_EQ(wrong_final_tick_result.reason, std::string("final_tick_mismatch"));
+
+    auto wrong_mode_action_count = MakeBattleResultForSummary(summary);
+    wrong_mode_action_count.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(summary.final_tick) +
+        ",\"input_count\":" +
+        std::to_string(summary.input_count) +
+        ",\"fallback_input_count\":" +
+        std::to_string(summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(summary.held_input_fallback_count) +
+        ",\"mode_action_count\":999,\"input_trace_count\":" +
+        std::to_string(summary.input_trace.size()) +
+        ",\"event_trace_count\":" +
+        std::to_string(summary.event_trace.size()) +
+        "}";
+    const auto wrong_mode_action_count_result = server.SubmitBattleResult(wrong_mode_action_count);
+    CHECK_TRUE(!wrong_mode_action_count_result.ok);
+    CHECK_EQ(wrong_mode_action_count_result.reason, std::string("mode_action_count_mismatch"));
+
+    auto wrong_event_trace_count = MakeBattleResultForSummary(summary);
+    wrong_event_trace_count.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(summary.final_tick) +
+        ",\"input_count\":" +
+        std::to_string(summary.input_count) +
+        ",\"fallback_input_count\":" +
+        std::to_string(summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(summary.held_input_fallback_count) +
+        ",\"mode_action_count\":" +
+        std::to_string(summary.mode_action_count) +
+        ",\"input_trace_count\":" +
+        std::to_string(summary.input_trace.size()) +
+        ",\"event_trace_count\":999}";
+    const auto wrong_event_trace_count_result = server.SubmitBattleResult(wrong_event_trace_count);
+    CHECK_TRUE(!wrong_event_trace_count_result.ok);
+    CHECK_EQ(wrong_event_trace_count_result.reason, std::string("event_trace_count_mismatch"));
 
     auto mutating_projection = MakeBattleResultForSummary(summary);
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
@@ -513,12 +592,32 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
+            "\"final_tick\":" + std::to_string(built.replay_summary.final_tick)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"input_count\":" + std::to_string(built.replay_summary.input_count)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
             "\"fallback_input_count\":" + std::to_string(built.replay_summary.fallback_input_count)
         ) != std::string::npos
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"mode_action_count\":" + std::to_string(built.replay_summary.mode_action_count)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"input_trace_count\":" + std::to_string(built.replay_summary.input_trace.size())
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"event_trace_count\":" + std::to_string(built.replay_summary.event_trace.size())
         ) != std::string::npos
     );
 

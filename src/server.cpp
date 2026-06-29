@@ -396,6 +396,8 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         std::to_string(result.replay_summary.event_count) +
         ",\"final_tick\":" +
         std::to_string(result.replay_summary.final_tick) +
+        ",\"input_count\":" +
+        std::to_string(result.replay_summary.input_count) +
         ",\"fallback_input_count\":" +
         std::to_string(result.replay_summary.fallback_input_count) +
         ",\"neutral_fallback_count\":" +
@@ -404,6 +406,10 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         std::to_string(result.replay_summary.held_input_fallback_count) +
         ",\"mode_action_count\":" +
         std::to_string(result.replay_summary.mode_action_count) +
+        ",\"input_trace_count\":" +
+        std::to_string(result.replay_summary.input_trace.size()) +
+        ",\"event_trace_count\":" +
+        std::to_string(result.replay_summary.event_trace.size()) +
         "}";
     battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
 
@@ -449,6 +455,15 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_result_hash = DevResultHashFromReplaySummary(summary);
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
+    options.required_final_tick = summary.final_tick;
+    options.required_input_count = summary.input_count;
+    options.required_fallback_input_count = summary.fallback_input_count;
+    options.required_neutral_fallback_count = summary.neutral_fallback_count;
+    options.required_held_input_fallback_count = summary.held_input_fallback_count;
+    options.required_mode_action_count = summary.mode_action_count;
+    options.required_input_trace_count = summary.input_trace.size();
+    options.required_event_trace_count = summary.event_trace.size();
+    options.require_replay_counter_fields = true;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
         if (session.match_id == signed_result.result.match_id) {

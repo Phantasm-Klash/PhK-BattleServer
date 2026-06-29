@@ -126,6 +126,54 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "event_cursor_mismatch");
         return verification;
     }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "final_tick", options.required_final_tick)) {
+        Fail(verification, "final_tick_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "input_count", options.required_input_count)) {
+        Fail(verification, "input_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "fallback_input_count", options.required_fallback_input_count)) {
+        Fail(verification, "fallback_input_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "neutral_fallback_count",
+            options.required_neutral_fallback_count
+        )) {
+        Fail(verification, "neutral_fallback_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "held_input_fallback_count",
+            options.required_held_input_fallback_count
+        )) {
+        Fail(verification, "held_input_fallback_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "mode_action_count", options.required_mode_action_count)) {
+        Fail(verification, "mode_action_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "input_trace_count", options.required_input_trace_count)) {
+        Fail(verification, "input_trace_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "event_trace_count", options.required_event_trace_count)) {
+        Fail(verification, "event_trace_count_mismatch");
+        return verification;
+    }
     if (result.reward_projection_json.empty()) {
         Fail(verification, "reward_projection_missing");
         return verification;

@@ -280,9 +280,14 @@ def main() -> int:
         or "result_hash_mismatch" not in result_impl
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
+        or "final_tick_mismatch" not in result_impl
+        or "input_count_mismatch" not in result_impl
+        or "mode_action_count_mismatch" not in result_impl
+        or "input_trace_count_mismatch" not in result_impl
+        or "event_trace_count_mismatch" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
     ):
-        print("result boundary missing ruleset/hash/replay/cursor verification or projection-only result shape", file=sys.stderr)
+        print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace verification or projection-only result shape", file=sys.stderr)
         return 1
 
     protocol_text = (ROOT / "include" / "phk" / "battle" / "protocol.hpp").read_text(encoding="utf-8")
