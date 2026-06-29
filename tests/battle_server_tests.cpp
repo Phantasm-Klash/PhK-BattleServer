@@ -137,7 +137,11 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq);
 
 void FillEncryptedHeaderShape(phk::battle::BattlePacketHeader& header) {
     header.key_id = "battle-local-1";
-    header.nonce_hex = RepeatHex('1', 24);
+    header.nonce_hex = phk::battle::DevAeadNonceHex(header);
+}
+
+void RefreshDevAeadNonce(phk::battle::BattlePacketHeader& header) {
+    header.nonce_hex = phk::battle::DevAeadNonceHex(header);
 }
 
 phk::battle::BattleHandshakeAccept AcceptHandshakeForTicket(
@@ -1435,6 +1439,7 @@ bool TestDispatcher() {
     mode_action.seq = phk::v1::kBattleModeActionSeq;
     mode_action.tick = phk::v1::kBattleModeActionTick;
     mode_action.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    RefreshDevAeadNonce(mode_action);
     phk::battle::BattleModeAction action = MakeModeAction();
     CHECK_TRUE(!action.client_result_authoritative);
     const auto mode_action_result = dispatcher.Dispatch(mode_action, {'{', '}'});
@@ -1445,9 +1450,18 @@ bool TestDispatcher() {
     phk::battle::BattlePacketHeader empty_mode_action = mode_action;
     empty_mode_action.seq = phk::v1::kBattleModeActionSeq + 1;
     empty_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
+    RefreshDevAeadNonce(empty_mode_action);
     const auto empty_mode_action_result = dispatcher.Dispatch(empty_mode_action, {});
     CHECK_TRUE(empty_mode_action_result.ok);
     CHECK_EQ(empty_mode_action_result.response_kind, std::string("mode_action_empty_payload"));
+
+    phk::battle::BattlePacketHeader nonce_mismatch = ping;
+    nonce_mismatch.player_id = "p2";
+    nonce_mismatch.seq = 1;
+    nonce_mismatch.nonce_hex = RepeatHex('f', 24);
+    const auto nonce_mismatch_result = dispatcher.Dispatch(nonce_mismatch, {'p'});
+    CHECK_TRUE(!nonce_mismatch_result.ok);
+    CHECK_EQ(nonce_mismatch_result.reason, std::string("nonce_mismatch"));
 
     phk::battle::BattlePacketHeader forbidden = ping;
     forbidden.seq = phk::v1::kBattleModeActionSeq + 2;
@@ -1515,6 +1529,7 @@ bool TestEncryptedPacketAdapterShape() {
     auto bad_tag = packet;
     bad_tag.header.player_id = "p2";
     bad_tag.header.seq = 2;
+    RefreshDevAeadNonce(bad_tag.header);
     bad_tag.auth_tag.assign(15, 0x7a);
     const auto bad_tag_result = dispatcher.DispatchEncrypted(bad_tag);
     CHECK_TRUE(!bad_tag_result.ok);
@@ -1540,6 +1555,7 @@ bool TestEncryptedPacketAdapterShape() {
     result_packet.header.player_id = "p2";
     result_packet.header.seq = 5;
     result_packet.header.payload_type = phk::battle::BattlePayloadType::Result;
+    RefreshDevAeadNonce(result_packet.header);
     const auto result_packet_result = dispatcher.DispatchEncrypted(result_packet);
     CHECK_TRUE(!result_packet_result.ok);
     CHECK_EQ(result_packet_result.reason, std::string("client_result_forbidden"));
@@ -1548,9 +1564,18 @@ bool TestEncryptedPacketAdapterShape() {
     event_packet.header.player_id = "p2";
     event_packet.header.seq = 6;
     event_packet.header.payload_type = phk::battle::BattlePayloadType::Event;
+    RefreshDevAeadNonce(event_packet.header);
     const auto event_packet_result = dispatcher.DispatchEncrypted(event_packet);
     CHECK_TRUE(!event_packet_result.ok);
     CHECK_EQ(event_packet_result.reason, std::string("encrypted_payload_type_invalid"));
+
+    auto nonce_mismatch = packet;
+    nonce_mismatch.header.player_id = "p2";
+    nonce_mismatch.header.seq = 7;
+    nonce_mismatch.header.nonce_hex = RepeatHex('e', 24);
+    const auto nonce_mismatch_result = dispatcher.DispatchEncrypted(nonce_mismatch);
+    CHECK_TRUE(!nonce_mismatch_result.ok);
+    CHECK_EQ(nonce_mismatch_result.reason, std::string("nonce_mismatch"));
     return true;
 }
 
@@ -1589,11 +1614,13 @@ bool TestServerEncryptedPacketSessionBoundary() {
 
     auto ticket_key_packet = packet;
     ticket_key_packet.header.key_id = config.signing_key_id;
+    RefreshDevAeadNonce(ticket_key_packet.header);
     const auto ticket_key_result = server.DispatchEncrypted(ticket_key_packet);
     CHECK_TRUE(!ticket_key_result.ok);
     CHECK_EQ(ticket_key_result.reason, std::string("session_key_mismatch"));
 
     packet.header.key_id = accept.client_to_server_key_ref;
+    RefreshDevAeadNonce(packet.header);
     const auto accepted = server.DispatchEncrypted(packet);
     CHECK_TRUE(accepted.ok);
     CHECK_EQ(accepted.response_kind, std::string("input"));
@@ -1607,8 +1634,8 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto wrong_key = packet;
     wrong_key.header.player_id = "p2";
     wrong_key.header.seq = 1;
-    wrong_key.header.nonce_hex = RepeatHex('2', 24);
     wrong_key.header.key_id = "other-key";
+    RefreshDevAeadNonce(wrong_key.header);
     const auto wrong_key_result = server.DispatchEncrypted(wrong_key);
     CHECK_TRUE(!wrong_key_result.ok);
     CHECK_EQ(wrong_key_result.reason, std::string("session_key_mismatch"));
@@ -1618,7 +1645,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     ack_ahead.header.key_id = bob_accept.client_to_server_key_ref;
     ack_ahead.header.seq = 1;
     ack_ahead.header.ack = 1;
-    ack_ahead.header.nonce_hex = RepeatHex('8', 24);
+    RefreshDevAeadNonce(ack_ahead.header);
     const auto ack_ahead_result = server.DispatchEncrypted(ack_ahead);
     CHECK_TRUE(!ack_ahead_result.ok);
     CHECK_EQ(ack_ahead_result.reason, std::string("encrypted_ack_ahead"));
@@ -1628,7 +1655,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     far_future_tick.header.key_id = bob_accept.client_to_server_key_ref;
     far_future_tick.header.seq = 1;
     far_future_tick.header.tick = 99;
-    far_future_tick.header.nonce_hex = RepeatHex('6', 24);
+    RefreshDevAeadNonce(far_future_tick.header);
     const auto far_future_tick_result = server.DispatchEncrypted(far_future_tick);
     CHECK_TRUE(!far_future_tick_result.ok);
     CHECK_EQ(far_future_tick_result.reason, std::string("encrypted_tick_too_far_ahead"));
@@ -1640,7 +1667,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     stale_tick.header.key_id = bob_accept.client_to_server_key_ref;
     stale_tick.header.seq = 2;
     stale_tick.header.tick = 1;
-    stale_tick.header.nonce_hex = RepeatHex('7', 24);
+    RefreshDevAeadNonce(stale_tick.header);
     const auto stale_tick_result = server.DispatchEncrypted(stale_tick);
     CHECK_TRUE(!stale_tick_result.ok);
     CHECK_EQ(stale_tick_result.reason, std::string("encrypted_tick_too_old"));
@@ -1651,7 +1678,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     current_ack.header.seq = 2;
     current_ack.header.tick = 2;
     current_ack.header.ack = 1;
-    current_ack.header.nonce_hex = RepeatHex('9', 24);
+    RefreshDevAeadNonce(current_ack.header);
     const auto current_ack_result = server.DispatchEncrypted(current_ack);
     CHECK_TRUE(current_ack_result.ok);
     CHECK_EQ(current_ack_result.response_kind, std::string("input"));
@@ -1663,14 +1690,15 @@ bool TestServerEncryptedPacketSessionBoundary() {
     ping_ack_ahead.header.seq = 3;
     ping_ack_ahead.header.tick = 1;
     ping_ack_ahead.header.ack = 2;
-    ping_ack_ahead.header.nonce_hex = RepeatHex('0', 24);
     ping_ack_ahead.ciphertext = {'p', 'i', 'n', 'g'};
+    RefreshDevAeadNonce(ping_ack_ahead.header);
     const auto ping_ack_ahead_result = server.DispatchEncrypted(ping_ack_ahead);
     CHECK_TRUE(!ping_ack_ahead_result.ok);
     CHECK_EQ(ping_ack_ahead_result.reason, std::string("encrypted_ack_ahead"));
 
     auto ping_current_ack = ping_ack_ahead;
     ping_current_ack.header.ack = 1;
+    RefreshDevAeadNonce(ping_current_ack.header);
     const auto ping_current_ack_result = server.DispatchEncrypted(ping_current_ack);
     CHECK_TRUE(ping_current_ack_result.ok);
     CHECK_EQ(ping_current_ack_result.response_kind, std::string("pong"));
@@ -1682,7 +1710,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     disconnected_input.header.seq = 4;
     disconnected_input.header.tick = 2;
     disconnected_input.header.ack = 1;
-    disconnected_input.header.nonce_hex = RepeatHex('a', 24);
+    RefreshDevAeadNonce(disconnected_input.header);
     const auto disconnected_input_result = server.DispatchEncrypted(disconnected_input);
     CHECK_TRUE(!disconnected_input_result.ok);
     CHECK_EQ(disconnected_input_result.reason, std::string("encrypted_player_disconnected"));
@@ -1695,7 +1723,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     reconnect_cursor_ahead.header.seq = 5;
     reconnect_cursor_ahead.header.tick = 1;
     reconnect_cursor_ahead.header.ack = server.MatchReplaySummary("match-001").event_count + 1;
-    reconnect_cursor_ahead.header.nonce_hex = RepeatHex('b', 24);
+    RefreshDevAeadNonce(reconnect_cursor_ahead.header);
     const auto reconnect_cursor_ahead_result = server.DispatchEncrypted(reconnect_cursor_ahead);
     CHECK_TRUE(!reconnect_cursor_ahead_result.ok);
     CHECK_EQ(reconnect_cursor_ahead_result.reason, std::string("encrypted_event_cursor_ahead"));
@@ -1707,7 +1735,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     reconnect_current_cursor.header.seq = 5;
     reconnect_current_cursor.header.tick = 1;
     reconnect_current_cursor.header.ack = server.MatchReplaySummary("match-001").event_count;
-    reconnect_current_cursor.header.nonce_hex = RepeatHex('c', 24);
+    RefreshDevAeadNonce(reconnect_current_cursor.header);
     const auto reconnect_current_cursor_result = server.DispatchEncrypted(reconnect_current_cursor);
     CHECK_TRUE(reconnect_current_cursor_result.ok);
     CHECK_EQ(reconnect_current_cursor_result.response_kind, std::string("reconnect"));
@@ -1715,7 +1743,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto unknown_player = packet;
     unknown_player.header.player_id = "p3";
     unknown_player.header.seq = 1;
-    unknown_player.header.nonce_hex = RepeatHex('3', 24);
+    RefreshDevAeadNonce(unknown_player.header);
     const auto unknown_player_result = server.DispatchEncrypted(unknown_player);
     CHECK_TRUE(!unknown_player_result.ok);
     CHECK_EQ(unknown_player_result.reason, std::string("player_unknown"));
@@ -1723,7 +1751,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto unknown_match = packet;
     unknown_match.header.match_id = "match-missing";
     unknown_match.header.seq = 1;
-    unknown_match.header.nonce_hex = RepeatHex('4', 24);
+    RefreshDevAeadNonce(unknown_match.header);
     const auto unknown_match_result = server.DispatchEncrypted(unknown_match);
     CHECK_TRUE(!unknown_match_result.ok);
     CHECK_EQ(unknown_match_result.reason, std::string("match_unknown"));
@@ -1731,8 +1759,8 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto result_packet = packet;
     result_packet.header.player_id = "p2";
     result_packet.header.seq = 1;
-    result_packet.header.nonce_hex = RepeatHex('5', 24);
     result_packet.header.payload_type = phk::battle::BattlePayloadType::Result;
+    RefreshDevAeadNonce(result_packet.header);
     const auto result_packet_result = server.DispatchEncrypted(result_packet);
     CHECK_TRUE(!result_packet_result.ok);
     CHECK_EQ(result_packet_result.reason, std::string("client_result_forbidden"));
@@ -1743,14 +1771,14 @@ bool TestServerEncryptedPacketSessionBoundary() {
     event_packet.header.key_id = bob_accept.client_to_server_key_ref;
     event_packet.header.seq = 6;
     event_packet.header.tick = 2;
-    event_packet.header.nonce_hex = RepeatHex('d', 24);
+    RefreshDevAeadNonce(event_packet.header);
     const auto event_packet_result = server.DispatchEncrypted(event_packet);
     CHECK_TRUE(!event_packet_result.ok);
     CHECK_EQ(event_packet_result.reason, std::string("encrypted_payload_type_invalid"));
 
     auto snapshot_packet = event_packet;
     snapshot_packet.header.payload_type = phk::battle::BattlePayloadType::Snapshot;
-    snapshot_packet.header.nonce_hex = RepeatHex('e', 24);
+    RefreshDevAeadNonce(snapshot_packet.header);
     const auto snapshot_packet_result = server.DispatchEncrypted(snapshot_packet);
     CHECK_TRUE(!snapshot_packet_result.ok);
     CHECK_EQ(snapshot_packet_result.reason, std::string("encrypted_payload_type_invalid"));
@@ -1761,7 +1789,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     valid_after_invalid_payload.header.seq = 6;
     valid_after_invalid_payload.header.tick = 2;
     valid_after_invalid_payload.header.ack = 1;
-    valid_after_invalid_payload.header.nonce_hex = RepeatHex('d', 24);
+    RefreshDevAeadNonce(valid_after_invalid_payload.header);
     const auto valid_after_invalid_payload_result = server.DispatchEncrypted(valid_after_invalid_payload);
     CHECK_TRUE(valid_after_invalid_payload_result.ok);
     CHECK_EQ(valid_after_invalid_payload_result.response_kind, std::string("input"));
@@ -1906,7 +1934,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
     packet.header.seq = 1;
     packet.header.payload_type = phk::battle::BattlePayloadType::Input;
     packet.header.key_id = accept.client_to_server_key_ref;
-    packet.header.nonce_hex = RepeatHex('c', 24);
+    RefreshDevAeadNonce(packet.header);
     packet.ciphertext = {'i', 'n', 'p', 'u', 't'};
     packet.auth_tag.assign(16, 0x33);
 
@@ -1916,7 +1944,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
 
     auto wrong_key = packet;
     wrong_key.header.key_id = "wrong-key";
-    wrong_key.header.nonce_hex = RepeatHex('d', 24);
+    RefreshDevAeadNonce(wrong_key.header);
     const auto rejected = adapter.ProcessEncryptedDatagram(wrong_key, datagram);
     CHECK_TRUE(!rejected.ok);
     CHECK_EQ(rejected.reason, std::string("session_key_mismatch"));
@@ -1944,7 +1972,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
 
     auto remote_mismatch = packet;
     remote_mismatch.header.seq = 2;
-    remote_mismatch.header.nonce_hex = RepeatHex('e', 24);
+    RefreshDevAeadNonce(remote_mismatch.header);
     auto other_remote = datagram;
     other_remote.remote_endpoint = "127.0.0.1:52002";
     const auto remote_rejected = adapter.ProcessEncryptedDatagram(remote_mismatch, other_remote);
@@ -1967,7 +1995,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
     auto reconnect = packet;
     reconnect.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect.header.seq = 3;
-    reconnect.header.nonce_hex = RepeatHex('f', 24);
+    RefreshDevAeadNonce(reconnect.header);
     const auto reconnect_result = adapter.ProcessEncryptedDatagram(reconnect, other_remote);
     CHECK_TRUE(reconnect_result.ok);
     CHECK_EQ(reconnect_result.reason, std::string("reconnect"));
@@ -1981,7 +2009,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
 
     auto old_remote_after_reconnect = packet;
     old_remote_after_reconnect.header.seq = 4;
-    old_remote_after_reconnect.header.nonce_hex = RepeatHex('a', 24);
+    RefreshDevAeadNonce(old_remote_after_reconnect.header);
     const auto old_remote_result = adapter.ProcessEncryptedDatagram(old_remote_after_reconnect, datagram);
     CHECK_TRUE(!old_remote_result.ok);
     CHECK_EQ(old_remote_result.reason, std::string("remote_endpoint_mismatch"));

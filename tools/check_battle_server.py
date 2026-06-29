@@ -466,14 +466,21 @@ def main() -> int:
         return 1
 
     protocol_text = (ROOT / "include" / "phk" / "battle" / "protocol.hpp").read_text(encoding="utf-8")
-    if "BattleEncryptedPacket" not in protocol_text or "DispatchEncrypted" not in protocol_text:
+    if (
+        "BattleEncryptedPacket" not in protocol_text
+        or "DispatchEncrypted" not in protocol_text
+        or "DevAeadNonceHex" not in protocol_text
+    ):
         print("protocol boundary missing encrypted packet adapter shape", file=sys.stderr)
         return 1
 
     protocol_impl = (ROOT / "src" / "protocol.cpp").read_text(encoding="utf-8")
+    tests_text = (ROOT / "tests" / "battle_server_tests.cpp").read_text(encoding="utf-8")
     if (
         "key_id_missing" not in protocol_impl
         or "nonce_invalid" not in protocol_impl
+        or "nonce_mismatch" not in protocol_impl
+        or "DevAeadNonceHex" not in protocol_impl
         or "payload_type_missing" not in protocol_impl
         or "ciphertext_missing" not in protocol_impl
         or "auth_tag_invalid" not in protocol_impl
@@ -482,6 +489,9 @@ def main() -> int:
         or "encrypted_payload_type_invalid" not in protocol_impl
     ):
         print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
+        return 1
+    if "nonce_mismatch_result" not in tests_text or "RefreshDevAeadNonce" not in tests_text:
+        print("protocol tests missing header-bound development nonce mismatch coverage", file=sys.stderr)
         return 1
 
     kcp_text = (ROOT / "include" / "phk" / "battle" / "kcp_endpoint.hpp").read_text(encoding="utf-8")

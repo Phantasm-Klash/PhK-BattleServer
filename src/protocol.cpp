@@ -2,6 +2,9 @@
 
 #include "phk/battle/ticket.hpp"
 
+#include <iomanip>
+#include <sstream>
+
 namespace phk::battle {
 
 namespace {
@@ -23,6 +26,28 @@ bool HasExpectedAeadTagShape(const std::vector<std::uint8_t>& auth_tag) {
 
 bool HasExpectedAeadNonceShape(const std::string& nonce_hex) {
     return nonce_hex.size() == 24 && IsHex(nonce_hex);
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string Hex64(std::uint64_t value) {
+    std::ostringstream out;
+    out << std::hex << std::setw(16) << std::setfill('0') << value;
+    return out.str();
 }
 
 std::string NonceReplayKey(const BattlePacketHeader& header) {
@@ -65,6 +90,10 @@ DispatchResult BattleDispatcher::Dispatch(
         }
         if (!HasExpectedAeadNonceShape(header.nonce_hex)) {
             result.reason = "nonce_invalid";
+            return result;
+        }
+        if (header.nonce_hex != DevAeadNonceHex(header)) {
+            result.reason = "nonce_mismatch";
             return result;
         }
     }
@@ -175,6 +204,21 @@ std::string PayloadTypeName(BattlePayloadType type) {
         default:
             return "unspecified";
     }
+}
+
+std::string DevAeadNonceHex(const BattlePacketHeader& header, std::string_view direction_label) {
+    std::uint64_t first = 1469598103934665603ull;
+    first = HashAppend(first, direction_label);
+    first = HashAppend(first, header.key_id);
+    first = HashAppend(first, header.match_id);
+    first = HashAppend(first, header.player_id);
+    first = HashAppend(first, static_cast<std::uint64_t>(header.payload_type));
+    first = HashAppend(first, header.tick);
+    first = HashAppend(first, header.seq);
+    first = HashAppend(first, header.ack);
+
+    std::uint64_t second = HashAppend(first, "nonce-tail");
+    return (Hex64(first) + Hex64(second)).substr(0, 24);
 }
 
 }  // namespace phk::battle
