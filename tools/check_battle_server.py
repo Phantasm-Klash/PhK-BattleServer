@@ -195,6 +195,13 @@ def main() -> int:
     if "require_projection_only_reward" not in result_text:
         print("result boundary missing projection-only reward guard option", file=sys.stderr)
         return 1
+    if (
+        "required_input_stream_hash" not in result_text
+        or "required_event_stream_hash" not in result_text
+        or "required_final_state_hash" not in result_text
+    ):
+        print("result boundary missing replay stream/state hash requirements", file=sys.stderr)
+        return 1
 
     version_text = (ROOT / "include" / "phk" / "battle" / "version.hpp").read_text(encoding="utf-8")
     if "phk/v1/manifest.hpp" not in version_text or "phk::v1::kRulesetVersion" not in version_text:
@@ -291,6 +298,12 @@ def main() -> int:
         or "projection_only" not in server_impl
         or "fallback_input_count" not in server_impl
         or "mode_action_count" not in server_impl
+        or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
+        or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
+        or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
+        or "input_stream_hash" not in server_impl
+        or "event_stream_hash" not in server_impl
+        or "final_state_hash" not in server_impl
     ):
         print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
         return 1
@@ -307,9 +320,12 @@ def main() -> int:
         or "mode_action_count_mismatch" not in result_impl
         or "input_trace_count_mismatch" not in result_impl
         or "event_trace_count_mismatch" not in result_impl
+        or "input_stream_hash_mismatch" not in result_impl
+        or "event_stream_hash_mismatch" not in result_impl
+        or "final_state_hash_mismatch" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
     ):
-        print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace verification or projection-only result shape", file=sys.stderr)
+        print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace/digest verification or projection-only result shape", file=sys.stderr)
         return 1
 
     protocol_text = (ROOT / "include" / "phk" / "battle" / "protocol.hpp").read_text(encoding="utf-8")
@@ -373,6 +389,9 @@ def main() -> int:
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
+        or "input_stream_hash_mismatch" not in tests_text
+        or "event_stream_hash_mismatch" not in tests_text
+        or "final_state_hash_mismatch" not in tests_text
         or "handshake_required" not in tests_text
         or "client_to_server_key_ref" not in tests_text
         or "KcpAeadPacketAdapterBoundary" not in tests_text

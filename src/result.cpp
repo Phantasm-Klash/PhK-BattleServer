@@ -40,6 +40,23 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
     return next == ',' || next == '}';
 }
 
+bool ContainsJsonStringField(const std::string& json, std::string_view field_name, const std::string& expected) {
+    if (expected.empty()) {
+        return true;
+    }
+    const std::string needle = "\"" + std::string(field_name) + "\":\"" + expected + "\"";
+    const std::size_t offset = json.find(needle);
+    if (offset == std::string::npos) {
+        return false;
+    }
+    const std::size_t after_value = offset + needle.size();
+    if (after_value == json.size()) {
+        return true;
+    }
+    const char next = json[after_value];
+    return next == ',' || next == '}';
+}
+
 std::string LowerAscii(std::string_view value) {
     std::string lowered(value);
     std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
@@ -172,6 +189,21 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_replay_counter_fields &&
         !ContainsJsonUintField(result.mode_result_json, "event_trace_count", options.required_event_trace_count)) {
         Fail(verification, "event_trace_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "input_stream_hash", options.required_input_stream_hash)) {
+        Fail(verification, "input_stream_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "event_stream_hash", options.required_event_stream_hash)) {
+        Fail(verification, "event_stream_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "final_state_hash", options.required_final_state_hash)) {
+        Fail(verification, "final_state_hash_mismatch");
         return verification;
     }
     if (result.reward_projection_json.empty()) {

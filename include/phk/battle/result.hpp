@@ -46,6 +46,9 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_mode_action_count = 0;
     std::uint64_t required_input_trace_count = 0;
     std::uint64_t required_event_trace_count = 0;
+    std::string required_input_stream_hash;
+    std::string required_event_stream_hash;
+    std::string required_final_state_hash;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
     bool require_projection_only_reward = true;

@@ -434,6 +434,13 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         std::to_string(result.replay_summary.input_trace.size()) +
         ",\"event_trace_count\":" +
         std::to_string(result.replay_summary.event_trace.size()) +
+        ",\"input_stream_hash\":\"" +
+        result.replay_summary.input_stream_hash +
+        "\",\"event_stream_hash\":\"" +
+        result.replay_summary.event_stream_hash +
+        "\",\"final_state_hash\":\"" +
+        result.replay_summary.final_state_hash +
+        "\"" +
         "}";
     battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
 
@@ -487,6 +494,9 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_mode_action_count = summary.mode_action_count;
     options.required_input_trace_count = summary.input_trace.size();
     options.required_event_trace_count = summary.event_trace.size();
+    options.required_input_stream_hash = summary.input_stream_hash;
+    options.required_event_stream_hash = summary.event_stream_hash;
+    options.required_final_state_hash = summary.final_state_hash;
     options.require_replay_counter_fields = true;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
