@@ -341,6 +341,23 @@ def main() -> int:
         print("handshake boundary missing client key/random/aead checks, dev key refs, or transcript signature material", file=sys.stderr)
         return 1
 
+    tests_text = (ROOT / "tests" / "battle_server_tests.cpp").read_text(encoding="utf-8")
+    if (
+        "MakeAuthoritativeReplay60Config" not in tests_text
+        or "DriveAuthoritativeReplay60Ticks" not in tests_text
+        or "fnv64:183370bd6f8c18e7" not in tests_text
+        or "fnv64:7c13fa803ae1b2dd" not in tests_text
+        or "sha256:dev-fnv64-eb5d3d3884abf76a" not in tests_text
+        or "fnv64:a0b383d4a7be0bf7" not in tests_text
+        or "fnv64:8049946f03724f36" not in tests_text
+        or "sha256:dev-fnv64-a7519545ad65902e" not in tests_text
+        or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
+        or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
+        or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
+    ):
+        print("battle server tests missing pinned 60Hz replay/result boundary fingerprints", file=sys.stderr)
+        return 1
+
     if args.build:
         build_dir = ROOT / "build"
         run(["cmake", "-S", str(ROOT), "-B", str(build_dir)], ROOT)

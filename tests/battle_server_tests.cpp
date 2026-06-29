@@ -1,6 +1,7 @@
 ﻿#include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "phk/v1/manifest.hpp"
@@ -133,6 +134,53 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq);
 void FillEncryptedHeaderShape(phk::battle::BattlePacketHeader& header) {
     header.key_id = "battle-local-1";
     header.nonce_hex = RepeatHex('1', 24);
+}
+
+phk::battle::SimulationConfig MakeAuthoritativeReplay60Config(std::string match_id) {
+    phk::battle::SimulationConfig config;
+    config.match_id = std::move(match_id);
+    config.mode_id = "pvp_duel";
+    config.match_seed = 424242;
+    config.max_input_ahead_ticks = 16;
+    config.max_seq_ahead = 128;
+    config.spawn_period_ticks = 15;
+    return config;
+}
+
+bool AddReplayFixturePlayers(phk::battle::BattleSimulation& simulation) {
+    CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
+    return true;
+}
+
+bool DriveAuthoritativeReplay60Ticks(
+    phk::battle::BattleSimulation& first,
+    phk::battle::BattleSimulation* second = nullptr
+) {
+    for (std::uint64_t tick = 1; tick <= 60; ++tick) {
+        std::uint32_t p1_direction = (tick <= 30) ? (1u << 3) : (1u << 0);
+        std::uint32_t p2_direction = (tick <= 30) ? (1u << 2) : (1u << 1);
+        auto p1_input = MakeInput("p1", tick, tick, p1_direction);
+        auto p2_input = MakeInput("p2", tick, tick, p2_direction);
+        p1_input.match_id = first.Config().match_id;
+        p2_input.match_id = first.Config().match_id;
+        p1_input.slow = (tick % 2) == 0;
+        p2_input.slow = (tick % 3) == 0;
+        CHECK_TRUE(first.AcceptInput(p1_input).ok);
+        CHECK_TRUE(first.AcceptInput(p2_input).ok);
+        if (second != nullptr) {
+            auto second_p1_input = p1_input;
+            auto second_p2_input = p2_input;
+            second_p1_input.match_id = second->Config().match_id;
+            second_p2_input.match_id = second->Config().match_id;
+            CHECK_TRUE(second->AcceptInput(second_p1_input).ok);
+            CHECK_TRUE(second->AcceptInput(second_p2_input).ok);
+            CHECK_EQ(first.Tick().state_hash, second->Tick().state_hash);
+        } else {
+            first.Tick();
+        }
+    }
+    return true;
 }
 
 bool TestTicketVerifier() {
@@ -572,16 +620,41 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(built.replay_summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(built.replay_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(built.replay_summary.mode_action_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(built.replay_summary.input_stream_hash, std::string("fnv64:6b09da7d62e0941e"));
+    CHECK_EQ(built.replay_summary.event_stream_hash, std::string("fnv64:14650fb0739d0383"));
+    CHECK_EQ(built.replay_summary.final_state_hash, std::string("fnv64:72a3385f1a7c7fe3"));
     CHECK_EQ(built.signed_result.result.match_id, std::string("match-001"));
     CHECK_EQ(built.signed_result.result.mode_id, std::string("certification"));
     CHECK_EQ(built.signed_result.result.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(built.signed_result.result.result_hash, ExpectedDevResultHash(built.replay_summary));
+    CHECK_EQ(built.signed_result.result.result_hash, std::string("sha256:dev-fnv64-7cd25aafda3bc356"));
     CHECK_EQ(built.signed_result.result.replay_id, ExpectedDevReplayId(built.replay_summary));
+    CHECK_EQ(built.signed_result.result.replay_id, std::string("battle-replay:match-001:1"));
     CHECK_EQ(built.signed_result.result.player_ids.size(), static_cast<std::size_t>(2));
     CHECK_EQ(built.signed_result.key_id, config.server_id);
-    CHECK_EQ(built.signed_result.public_key_hex.size(), static_cast<std::size_t>(64));
-    CHECK_EQ(built.signed_result.signature_hex.size(), static_cast<std::size_t>(128));
+    CHECK_EQ(
+        built.signed_result.public_key_hex,
+        std::string("951038137a33596eb40aff1c8522a38f571aaa016454c52c7615710a6f440f4d")
+    );
+    CHECK_EQ(
+        built.signed_result.signature_hex,
+        std::string(
+            "84f7fb87cdd4daad65fd347ec2e5908cc2ed8999e3b36eefa3f2c290d8c424c"
+            "e090cdf63a217b229ea12185a9728680847026d75b7f6466b2807a66cad06fc4a"
+        )
+    );
     CHECK_TRUE(built.signed_result.server_authoritative);
+    CHECK_EQ(
+        phk::battle::CanonicalBattleResultPayload(built.signed_result.result),
+        std::string(
+            "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|match-001|certification|"
+            "sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|p1,p2,|"
+            "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}|"
+            "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"input_count\":2,"
+            "\"fallback_input_count\":0,\"neutral_fallback_count\":0,\"held_input_fallback_count\":0,"
+            "\"mode_action_count\":0,\"input_trace_count\":2,\"event_trace_count\":0}|1782489630000"
+        )
+    );
     CHECK_TRUE(
         built.signed_result.result.reward_projection_json.find("projection_only") != std::string::npos
     );
@@ -830,36 +903,13 @@ bool TestFallbackInputReplayAudit() {
 }
 
 bool TestAuthoritativeReplay60TickFixture() {
-    phk::battle::SimulationConfig config;
-    config.match_id = "match-replay-60";
-    config.mode_id = "pvp_duel";
-    config.match_seed = 424242;
-    config.max_input_ahead_ticks = 16;
-    config.max_seq_ahead = 128;
-    config.spawn_period_ticks = 15;
+    phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
     phk::battle::BattleSimulation first(config);
     phk::battle::BattleSimulation second(config);
-    CHECK_TRUE(first.AddPlayer("p1", -20000, 0));
-    CHECK_TRUE(first.AddPlayer("p2", 20000, 0));
-    CHECK_TRUE(second.AddPlayer("p1", -20000, 0));
-    CHECK_TRUE(second.AddPlayer("p2", 20000, 0));
-
-    for (std::uint64_t tick = 1; tick <= 60; ++tick) {
-        std::uint32_t p1_direction = (tick <= 30) ? (1u << 3) : (1u << 0);
-        std::uint32_t p2_direction = (tick <= 30) ? (1u << 2) : (1u << 1);
-        auto p1_input = MakeInput("p1", tick, tick, p1_direction);
-        auto p2_input = MakeInput("p2", tick, tick, p2_direction);
-        p1_input.match_id = config.match_id;
-        p2_input.match_id = config.match_id;
-        p1_input.slow = (tick % 2) == 0;
-        p2_input.slow = (tick % 3) == 0;
-        CHECK_TRUE(first.AcceptInput(p1_input).ok);
-        CHECK_TRUE(first.AcceptInput(p2_input).ok);
-        CHECK_TRUE(second.AcceptInput(p1_input).ok);
-        CHECK_TRUE(second.AcceptInput(p2_input).ok);
-        CHECK_EQ(first.Tick().state_hash, second.Tick().state_hash);
-    }
+    CHECK_TRUE(AddReplayFixturePlayers(first));
+    CHECK_TRUE(AddReplayFixturePlayers(second));
+    CHECK_TRUE(DriveAuthoritativeReplay60Ticks(first, &second));
 
     const auto first_summary = first.Summary();
     const auto second_summary = second.Summary();
@@ -882,6 +932,12 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.input_stream_hash, second_summary.input_stream_hash);
     CHECK_EQ(first_summary.event_stream_hash, second_summary.event_stream_hash);
     CHECK_EQ(first_summary.final_state_hash, second_summary.final_state_hash);
+    CHECK_EQ(first_summary.input_stream_hash, std::string("fnv64:183370bd6f8c18e7"));
+    CHECK_EQ(first_summary.event_stream_hash, std::string("fnv64:daa6853bacb4fdd3"));
+    CHECK_EQ(first_summary.final_state_hash, std::string("fnv64:7c13fa803ae1b2dd"));
+    CHECK_EQ(ExpectedDevResultHash(first_summary), std::string("sha256:dev-fnv64-eb5d3d3884abf76a"));
+    CHECK_EQ(ExpectedDevReplayId(first_summary), std::string("battle-replay:match-replay-60:60"));
+    CHECK_EQ(first.BulletCount(), static_cast<std::size_t>(10));
     CHECK_EQ(first.Snapshot().mode_state.at("tick_rate_hz"), std::string("60"));
     CHECK_EQ(first.Snapshot().mode_state.at("mode_id"), std::string("pvp_duel"));
     CHECK_EQ(first.Snapshot().mode_state.at("accepted_input_count"), std::string("120"));
@@ -899,29 +955,11 @@ bool TestAuthoritativeReplay60TickFixture() {
 }
 
 bool TestReplayFixtureBoundary() {
-    phk::battle::SimulationConfig config;
-    config.match_id = "match-replay-fixture";
-    config.mode_id = "pvp_duel";
-    config.match_seed = 424242;
-    config.max_input_ahead_ticks = 16;
-    config.max_seq_ahead = 128;
-    config.spawn_period_ticks = 15;
+    phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-fixture");
 
     phk::battle::BattleSimulation simulation(config);
-    CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
-    CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
-
-    for (std::uint64_t tick = 1; tick <= 60; ++tick) {
-        auto p1_input = MakeInput("p1", tick, tick, (tick <= 30) ? (1u << 3) : (1u << 0));
-        auto p2_input = MakeInput("p2", tick, tick, (tick <= 30) ? (1u << 2) : (1u << 1));
-        p1_input.match_id = config.match_id;
-        p2_input.match_id = config.match_id;
-        p1_input.slow = (tick % 2) == 0;
-        p2_input.slow = (tick % 3) == 0;
-        CHECK_TRUE(simulation.AcceptInput(p1_input).ok);
-        CHECK_TRUE(simulation.AcceptInput(p2_input).ok);
-        simulation.Tick();
-    }
+    CHECK_TRUE(AddReplayFixturePlayers(simulation));
+    CHECK_TRUE(DriveAuthoritativeReplay60Ticks(simulation));
 
     const auto fixture = simulation.BuildReplayFixture("user-alice");
     CHECK_EQ(fixture.replay_id, ExpectedDevReplayId(fixture.summary));
@@ -953,6 +991,11 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.summary.input_count, static_cast<std::uint64_t>(120));
     CHECK_EQ(fixture.summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(fixture.summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(fixture.summary.input_stream_hash, std::string("fnv64:a0b383d4a7be0bf7"));
+    CHECK_EQ(fixture.summary.event_stream_hash, std::string("fnv64:daa6853bacb4fdd3"));
+    CHECK_EQ(fixture.summary.final_state_hash, std::string("fnv64:8049946f03724f36"));
+    CHECK_EQ(fixture.result_hash, std::string("sha256:dev-fnv64-a7519545ad65902e"));
+    CHECK_EQ(fixture.replay_id, std::string("battle-replay:match-replay-fixture:60"));
     CHECK_TRUE(fixture.input_trace == fixture.summary.input_trace);
     CHECK_TRUE(fixture.event_trace == fixture.summary.event_trace);
     CHECK_EQ(fixture.input_trace.size(), static_cast<std::size_t>(120));
@@ -970,6 +1013,8 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.final_snapshot.mode_state.at("tick_rate_hz"), std::string("60"));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("accepted_input_count"), std::string("120"));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.players.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(fixture.final_snapshot.bullets_delta.size(), static_cast<std::size_t>(10));
     CHECK_TRUE(fixture.result_hash.rfind("sha256:dev-fnv64-", 0) == 0);
 
     const auto summary_record = simulation.BuildReplayInputStreamSummary("user-alice");
@@ -983,8 +1028,10 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(summary_record.final_state_hash, fixture.summary.final_state_hash);
     CHECK_EQ(summary_record.final_tick, static_cast<std::uint64_t>(60));
     CHECK_TRUE(
-        phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record).find("battle-replay:match-replay-fixture:60") !=
-        std::string::npos
+        phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record) ==
+        "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-replay-fixture:60|"
+        "user-alice|match-replay-fixture|120|4|fnv64:a0b383d4a7be0bf7|"
+        "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|60"
     );
     auto tampered_record = summary_record;
     tampered_record.final_tick = 61;

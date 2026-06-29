@@ -85,6 +85,10 @@ Status date: 2026-06-29
 
 ## 2026-06-29 Verification
 
+- Current pinned 60Hz replay/result fingerprint sample: `python3 tools/check_battle_server.py` passes and now gates the fixed 60-tick authoritative replay hashes, canonical replay-summary record, and development signed-result canonical payload fingerprints.
+- Current pinned 60Hz replay/result fingerprint sample: `docker-compose --profile test run --rm test` passes with a clean container CMake build and CTest run.
+- Current pinned 60Hz replay/result fingerprint sample: `python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
+- Host `python3 tools/check_battle_server.py --build` remains blocked because this host does not have `cmake`; container regression covers the CMake/CTest path.
 - Current replay summary manifest sample: `python3 tools/check_battle_server.py` passes.
 - Current replay summary manifest sample: direct `g++ -std=c++17 -Iinclude -I../PhK-Protocol/gen/cpp tests/battle_server_tests.cpp src/ticket.cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes, including `ReplayFixtureBoundary` record checks.
 - Current replay summary manifest sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
