@@ -53,6 +53,7 @@ struct ReplaySummary {
     std::uint64_t fallback_input_count = 0;
     std::uint64_t neutral_fallback_count = 0;
     std::uint64_t held_input_fallback_count = 0;
+    std::uint64_t mode_action_count = 0;
     std::uint64_t event_count = 0;
     std::uint64_t last_mode_action_tick = 0;
     std::uint64_t last_mode_action_seq = 0;
@@ -133,6 +134,7 @@ private:
     std::uint64_t fallback_input_count_ = 0;
     std::uint64_t neutral_fallback_count_ = 0;
     std::uint64_t held_input_fallback_count_ = 0;
+    std::uint64_t mode_action_count_ = 0;
     std::uint64_t input_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_count_ = 0;

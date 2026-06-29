@@ -69,6 +69,7 @@ std::string ExpectedDevResultHash(const phk::battle::ReplaySummary& summary) {
     hash = HashAppend(hash, summary.fallback_input_count);
     hash = HashAppend(hash, summary.neutral_fallback_count);
     hash = HashAppend(hash, summary.held_input_fallback_count);
+    hash = HashAppend(hash, summary.mode_action_count);
     hash = HashAppend(hash, summary.event_count);
     std::ostringstream out;
     out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
@@ -288,6 +289,7 @@ bool TestGoldenReplaySummaryFixture() {
     CHECK_EQ(summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(summary.held_input_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(summary.mode_action_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(summary.final_tick, phk::v1::kBattleSnapshotSnapshotTick);
     CHECK_EQ(summary.final_state_hash, std::string(phk::v1::kBattleSnapshotStateHash));
@@ -496,6 +498,7 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(built.replay_summary.final_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(built.replay_summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(built.replay_summary.fallback_input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(built.replay_summary.mode_action_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(built.signed_result.result.match_id, std::string("match-001"));
     CHECK_EQ(built.signed_result.result.mode_id, std::string("certification"));
     CHECK_EQ(built.signed_result.result.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
@@ -517,6 +520,11 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"fallback_input_count\":" + std::to_string(built.replay_summary.fallback_input_count)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"mode_action_count\":" + std::to_string(built.replay_summary.mode_action_count)
         ) != std::string::npos
     );
 
@@ -618,6 +626,12 @@ bool TestSimulationDeterminism() {
     const auto missing_action_result = first.AcceptModeAction(missing_action);
     CHECK_TRUE(!missing_action_result.ok);
     CHECK_EQ(missing_action_result.reason, std::string("mode_action_missing_fields"));
+    auto unsupported_action = MakeModeAction(3);
+    unsupported_action.tick = 2;
+    unsupported_action.action_type = "grant_reward";
+    const auto unsupported_action_result = first.AcceptModeAction(unsupported_action);
+    CHECK_TRUE(!unsupported_action_result.ok);
+    CHECK_EQ(unsupported_action_result.reason, std::string("mode_action_type_unsupported"));
     auto far_action = MakeModeAction(3);
     far_action.tick = 99;
     const auto far_action_result = first.AcceptModeAction(far_action);
@@ -643,6 +657,7 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().fallback_input_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.Summary().neutral_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first.Summary().mode_action_count, static_cast<std::uint64_t>(1));
     CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(first.Summary().last_mode_action_id, action.action_id);
     CHECK_EQ(first.Summary().last_mode_action_type, action.action_type);
@@ -659,6 +674,7 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
     CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("held_input_fallback_count"), std::string("4"));
+    CHECK_EQ(first_snapshot.mode_state.at("mode_action_count"), std::string("1"));
     return true;
 }
 
@@ -678,6 +694,7 @@ bool TestFallbackInputReplayAudit() {
     CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(neutral_snapshot.mode_state.at("fallback_input_count"), std::string("2"));
     CHECK_EQ(neutral_snapshot.mode_state.at("neutral_fallback_count"), std::string("2"));
 
@@ -741,6 +758,7 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.held_input_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(first_summary.mode_action_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.event_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.BulletCount(), second.BulletCount());
     CHECK_EQ(first_summary.input_stream_hash, second_summary.input_stream_hash);
@@ -801,12 +819,14 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(mode_action_summary.last_mode_action_player_id, action.player_id);
     CHECK_EQ(mode_action_summary.last_mode_action_tick, action.tick);
     CHECK_EQ(mode_action_summary.last_mode_action_seq, action.seq);
+    CHECK_EQ(mode_action_summary.mode_action_count, static_cast<std::uint64_t>(1));
     const auto after_action_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(after_action_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
+    CHECK_EQ(after_action_snapshot.mode_state.at("mode_action_count"), std::string("1"));
     CHECK_EQ(after_action_snapshot.mode_state.at("connected_player_count"), std::string("2"));
     CHECK_EQ(after_action_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
 

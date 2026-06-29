@@ -32,6 +32,7 @@ Status date: 2026-06-29
 - Extended the 1v1 60Hz replay fixture to assert reconnect snapshots at the final replay tick, including stable state hash, event cursor, missed-event count, and event-cursor-ahead rejection.
 - Added replay-summary fallback input audit counters for missing-input ticks. The simulation now separates accepted inputs, neutral fallback ticks, and held-input fallback ticks, exposes those counters in snapshots/reconnect snapshots, folds them into the canonical state/input hash path, and includes them in development signed-result callback material so result hashes cannot ignore latency or missing-input fallback behavior.
 - Added focused CTest coverage for neutral and held fallback audit paths alongside the existing fully supplied 60Hz 1v1 replay fixture, and extended the repository checker to require the fallback audit boundary while the protobuf replay summary remains manifest-backed.
+- Added a shared mode-action type gate for the current scaffold: `cast_card`, `select_round_card`, `transfer_card`, `ready`, and `reconnect` are accepted, while unknown action types such as reward-grant attempts are rejected before replay state advances. Accepted mode actions now have an explicit replay-summary/snapshot count that is folded into the canonical state hash and development signed-result material, so result hashes cannot ignore mode-intent traffic.
 
 ## 2026-06-29 Verification
 
@@ -52,6 +53,10 @@ Status date: 2026-06-29
 - Direct host `g++ -std=c++17 -Iinclude -I../PhK-Protocol/gen/cpp tests/battle_server_tests.cpp src/ticket.cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes.
 - Docker regression passes with legacy Compose: `docker-compose run --rm test`.
 - `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
+- Current mode-action boundary sample: `python3 tools/check_battle_server.py` passes.
+- Current mode-action boundary sample: direct `g++ -std=c++17 ... /tmp/phk_battle_tests` build and `/tmp/phk_battle_tests` pass, including unsupported mode-action type rejection and mode-action audit projection.
+- Current mode-action boundary sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
+- Current mode-action boundary sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
 
 ## 2026-06-28 Verification
 

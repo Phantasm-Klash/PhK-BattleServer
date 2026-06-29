@@ -51,6 +51,14 @@ std::int32_t DirectionAxis(bool negative, bool positive) {
     return positive ? 1 : -1;
 }
 
+bool IsAllowedModeActionType(std::string_view action_type) {
+    return action_type == "cast_card" ||
+        action_type == "select_round_card" ||
+        action_type == "transfer_card" ||
+        action_type == "ready" ||
+        action_type == "reconnect";
+}
+
 }  // namespace
 
 BattleSimulation::BattleSimulation(SimulationConfig config)
@@ -258,6 +266,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_missing_fields";
         return result;
     }
+    if (!IsAllowedModeActionType(action.action_type)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_type_unsupported";
+        return result;
+    }
     if (action.client_result_authoritative) {
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_client_result_forbidden";
@@ -330,6 +343,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["fallback_input_count"] = std::to_string(fallback_input_count_);
     snapshot.mode_state["neutral_fallback_count"] = std::to_string(neutral_fallback_count_);
     snapshot.mode_state["held_input_fallback_count"] = std::to_string(held_input_fallback_count_);
+    snapshot.mode_state["mode_action_count"] = std::to_string(mode_action_count_);
     std::size_t connected_player_count = 0;
     for (const auto& item : players_) {
         if (item.second.connected) {
@@ -416,6 +430,7 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.fallback_input_count = fallback_input_count_;
     summary.neutral_fallback_count = neutral_fallback_count_;
     summary.held_input_fallback_count = held_input_fallback_count_;
+    summary.mode_action_count = mode_action_count_;
     summary.event_count = event_count_;
     if (has_last_mode_action_) {
         summary.last_mode_action_id = last_mode_action_.action_id;
@@ -446,6 +461,7 @@ std::string BattleSimulation::CanonicalStateHash() const {
     hash = HashAppend(hash, fallback_input_count_);
     hash = HashAppend(hash, neutral_fallback_count_);
     hash = HashAppend(hash, held_input_fallback_count_);
+    hash = HashAppend(hash, mode_action_count_);
 
     for (const auto& item : players_) {
         const PlayerState& player = item.second;
@@ -588,6 +604,7 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_type);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.payload_json);
+    ++mode_action_count_;
     ++event_count_;
 }
 

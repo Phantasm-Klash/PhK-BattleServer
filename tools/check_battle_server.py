@@ -212,16 +212,19 @@ def main() -> int:
         "CanonicalStateHash" not in simulation_impl
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
+        or "mode_action_type_unsupported" not in simulation_impl
         or "player_disconnected" not in simulation_impl
         or "seq_too_far_ahead" not in simulation_impl
         or "event_cursor_ahead" not in simulation_impl
         or 'snapshot.mode_state["missed_event_count"]' not in simulation_impl
         or 'snapshot.mode_state["fallback_input_count"]' not in simulation_impl
+        or 'snapshot.mode_state["mode_action_count"]' not in simulation_impl
         or "AccumulateFallbackInput" not in simulation_impl
+        or "mode_action_count_" not in simulation_impl
         or 'snapshot.mode_state["mode_id"]' not in simulation_impl
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
     ):
-        print("simulation implementation missing canonical hash, mode/ruleset projection, reconnect, fallback replay audit, or authoritative input/mode-action validation", file=sys.stderr)
+        print("simulation implementation missing canonical hash, mode/ruleset projection, reconnect, fallback/mode-action replay audit, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
@@ -243,8 +246,9 @@ def main() -> int:
         or "CanonicalBattleResultPayload" not in server_impl
         or "projection_only" not in server_impl
         or "fallback_input_count" not in server_impl
+        or "mode_action_count" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, encrypted tick-window, fallback-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, encrypted tick-window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
