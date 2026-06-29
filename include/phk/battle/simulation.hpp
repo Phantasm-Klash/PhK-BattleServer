@@ -50,6 +50,9 @@ struct ReplaySummary {
     std::string last_mode_action_player_id;
     std::uint64_t final_tick = 0;
     std::uint64_t input_count = 0;
+    std::uint64_t fallback_input_count = 0;
+    std::uint64_t neutral_fallback_count = 0;
+    std::uint64_t held_input_fallback_count = 0;
     std::uint64_t event_count = 0;
     std::uint64_t last_mode_action_tick = 0;
     std::uint64_t last_mode_action_seq = 0;
@@ -119,6 +122,7 @@ private:
     void SpawnBulletsForTick();
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
+    void AccumulateFallbackInput(const PlayerState& player, const BattleInput& input);
     void AccumulateAcceptedModeAction(const BattleModeAction& action);
     void AccumulateConnectionEvent(const PlayerState& player);
 
@@ -126,6 +130,9 @@ private:
     std::uint64_t current_tick_ = 0;
     std::uint64_t next_bullet_id_ = 1;
     std::uint64_t accepted_input_count_ = 0;
+    std::uint64_t fallback_input_count_ = 0;
+    std::uint64_t neutral_fallback_count_ = 0;
+    std::uint64_t held_input_fallback_count_ = 0;
     std::uint64_t input_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_count_ = 0;

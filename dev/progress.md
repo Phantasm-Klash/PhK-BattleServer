@@ -30,9 +30,15 @@ Status date: 2026-06-29
 - Tightened the encrypted adapter nonce shape from "at least 96-bit hex" to exactly 24 hex characters, matching the migration-time ChaCha20-Poly1305 nonce contract before real AEAD lands.
 - Added a server-facade encrypted input ack boundary: encrypted input and mode-action headers cannot acknowledge snapshots beyond the authoritative simulation tick, while current-tick acknowledgements remain accepted.
 - Extended the 1v1 60Hz replay fixture to assert reconnect snapshots at the final replay tick, including stable state hash, event cursor, missed-event count, and event-cursor-ahead rejection.
+- Added replay-summary fallback input audit counters for missing-input ticks. The simulation now separates accepted inputs, neutral fallback ticks, and held-input fallback ticks, exposes those counters in snapshots/reconnect snapshots, folds them into the canonical state/input hash path, and includes them in development signed-result callback material so result hashes cannot ignore latency or missing-input fallback behavior.
+- Added focused CTest coverage for neutral and held fallback audit paths alongside the existing fully supplied 60Hz 1v1 replay fixture, and extended the repository checker to require the fallback audit boundary while the protobuf replay summary remains manifest-backed.
 
 ## 2026-06-29 Verification
 
+- Current fallback replay audit sample: `python3 tools/check_battle_server.py` passes.
+- Current fallback replay audit sample: direct `g++ -std=c++17 ... /tmp/phk_battle_tests` build and `/tmp/phk_battle_tests` pass, including `FallbackInputReplayAudit`.
+- Current fallback replay audit sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
+- Current fallback replay audit sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
 - Current signed-result callback sample: `python3 tools/check_battle_server.py` passes.
 - Current signed-result callback sample: direct `g++ -std=c++17 ... /tmp/phk_battle_tests` build and `/tmp/phk_battle_tests` pass, including `BuildSignedBattleResultCallback`.
 - Current signed-result callback sample: `python3 tools/check_battle_server.py --build` is still blocked on the host because `cmake` is not installed.

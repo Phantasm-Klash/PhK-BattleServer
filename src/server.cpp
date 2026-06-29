@@ -74,6 +74,9 @@ std::string DevSha256RefFromSummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.final_state_hash);
     hash = HashAppend(hash, summary.final_tick);
     hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.fallback_input_count);
+    hash = HashAppend(hash, summary.neutral_fallback_count);
+    hash = HashAppend(hash, summary.held_input_fallback_count);
     hash = HashAppend(hash, summary.event_count);
 
     std::ostringstream out;
@@ -406,6 +409,12 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         std::to_string(result.replay_summary.event_count) +
         ",\"final_tick\":" +
         std::to_string(result.replay_summary.final_tick) +
+        ",\"fallback_input_count\":" +
+        std::to_string(result.replay_summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(result.replay_summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(result.replay_summary.held_input_fallback_count) +
         "}";
     battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
 

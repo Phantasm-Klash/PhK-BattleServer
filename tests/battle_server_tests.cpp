@@ -66,6 +66,9 @@ std::string ExpectedDevResultHash(const phk::battle::ReplaySummary& summary) {
     hash = HashAppend(hash, summary.final_state_hash);
     hash = HashAppend(hash, summary.final_tick);
     hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.fallback_input_count);
+    hash = HashAppend(hash, summary.neutral_fallback_count);
+    hash = HashAppend(hash, summary.held_input_fallback_count);
     hash = HashAppend(hash, summary.event_count);
     std::ostringstream out;
     out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
@@ -282,6 +285,9 @@ bool TestGoldenReplaySummaryFixture() {
     CHECK_EQ(summary.match_id, std::string(phk::v1::kBattleResultCallbackMatchId));
     CHECK_EQ(std::string(phk::v1::kGoldenReplaySummaryOwnerUserId), std::string("user-alice"));
     CHECK_EQ(summary.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(summary.fallback_input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(summary.held_input_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(summary.event_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(summary.final_tick, phk::v1::kBattleSnapshotSnapshotTick);
     CHECK_EQ(summary.final_state_hash, std::string(phk::v1::kBattleSnapshotStateHash));
@@ -489,6 +495,7 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(built.reason, std::string("ok"));
     CHECK_EQ(built.replay_summary.final_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(built.replay_summary.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(built.replay_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(built.signed_result.result.match_id, std::string("match-001"));
     CHECK_EQ(built.signed_result.result.mode_id, std::string("certification"));
     CHECK_EQ(built.signed_result.result.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
@@ -505,6 +512,11 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"event_cursor\":" + std::to_string(built.replay_summary.event_count)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"fallback_input_count\":" + std::to_string(built.replay_summary.fallback_input_count)
         ) != std::string::npos
     );
 
@@ -628,6 +640,9 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
     CHECK_EQ(first.Summary().event_stream_hash, second.Summary().event_stream_hash);
     CHECK_EQ(first.Summary().final_state_hash, first_snapshot.state_hash);
+    CHECK_EQ(first.Summary().fallback_input_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first.Summary().neutral_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(first.Summary().last_mode_action_id, action.action_id);
     CHECK_EQ(first.Summary().last_mode_action_type, action.action_type);
@@ -640,6 +655,50 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
+    CHECK_EQ(first_snapshot.mode_state.at("accepted_input_count"), std::string("2"));
+    CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
+    CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
+    CHECK_EQ(first_snapshot.mode_state.at("held_input_fallback_count"), std::string("4"));
+    return true;
+}
+
+bool TestFallbackInputReplayAudit() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-fallback";
+    config.mode_id = "pvp_duel";
+    config.match_seed = 7;
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
+    CHECK_TRUE(simulation.AddPlayer("p2", 10000, 0));
+
+    const auto neutral_snapshot = simulation.Tick();
+    CHECK_EQ(neutral_snapshot.snapshot_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(neutral_snapshot.mode_state.at("fallback_input_count"), std::string("2"));
+    CHECK_EQ(neutral_snapshot.mode_state.at("neutral_fallback_count"), std::string("2"));
+
+    auto input = MakeInput("p1", 2, 1, 1u << 3);
+    input.match_id = config.match_id;
+    CHECK_TRUE(simulation.AcceptInput(input).ok);
+    const auto mixed_snapshot = simulation.Tick();
+    CHECK_EQ(mixed_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(3));
+    CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(3));
+    CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(0));
+
+    const auto held_snapshot = simulation.Tick();
+    CHECK_EQ(held_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
+    CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(5));
+    CHECK_EQ(simulation.Summary().neutral_fallback_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(simulation.Summary().held_input_fallback_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(held_snapshot.mode_state.at("held_input_fallback_count"), std::string("1"));
+    CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
+    CHECK_EQ(simulation.Summary().final_state_hash, held_snapshot.state_hash);
     return true;
 }
 
@@ -679,6 +738,9 @@ bool TestAuthoritativeReplay60TickFixture() {
     const auto second_summary = second.Summary();
     CHECK_EQ(first_summary.final_tick, static_cast<std::uint64_t>(60));
     CHECK_EQ(first_summary.input_count, static_cast<std::uint64_t>(120));
+    CHECK_EQ(first_summary.fallback_input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(first_summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(first_summary.held_input_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.event_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.BulletCount(), second.BulletCount());
     CHECK_EQ(first_summary.input_stream_hash, second_summary.input_stream_hash);
@@ -686,6 +748,8 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.final_state_hash, second_summary.final_state_hash);
     CHECK_EQ(first.Snapshot().mode_state.at("tick_rate_hz"), std::string("60"));
     CHECK_EQ(first.Snapshot().mode_state.at("mode_id"), std::string("pvp_duel"));
+    CHECK_EQ(first.Snapshot().mode_state.at("accepted_input_count"), std::string("120"));
+    CHECK_EQ(first.Snapshot().mode_state.at("fallback_input_count"), std::string("0"));
     const auto reconnect_snapshot = first.ReconnectSnapshot("p1", first_summary.event_count - 1);
     CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
     CHECK_EQ(reconnect_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
@@ -721,6 +785,7 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(replay_summary.ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(replay_summary.final_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(replay_summary.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(replay_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(replay_summary.final_state_hash, snapshot.state_hash);
 
     auto action = MakeModeAction();
@@ -1078,6 +1143,7 @@ int main() {
 		{"BattleResultSubmission", TestBattleResultSubmission},
 		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},
 		{"SimulationDeterminism", TestSimulationDeterminism},
+		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
