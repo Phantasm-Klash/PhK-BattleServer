@@ -1474,14 +1474,27 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_TRUE(current_ack_result.ok);
     CHECK_EQ(current_ack_result.response_kind, std::string("input"));
 
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", false).ok);
+    auto disconnected_input = packet;
+    disconnected_input.header.player_id = "p2";
+    disconnected_input.header.key_id = bob_accept.client_to_server_key_ref;
+    disconnected_input.header.seq = 3;
+    disconnected_input.header.tick = 2;
+    disconnected_input.header.ack = 1;
+    disconnected_input.header.nonce_hex = RepeatHex('a', 24);
+    const auto disconnected_input_result = server.DispatchEncrypted(disconnected_input);
+    CHECK_TRUE(!disconnected_input_result.ok);
+    CHECK_EQ(disconnected_input_result.reason, std::string("encrypted_player_disconnected"));
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+
     auto reconnect_cursor_ahead = packet;
     reconnect_cursor_ahead.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect_cursor_ahead.header.player_id = "p2";
     reconnect_cursor_ahead.header.key_id = bob_accept.client_to_server_key_ref;
-    reconnect_cursor_ahead.header.seq = 3;
+    reconnect_cursor_ahead.header.seq = 4;
     reconnect_cursor_ahead.header.tick = 1;
     reconnect_cursor_ahead.header.ack = server.MatchReplaySummary("match-001").event_count + 1;
-    reconnect_cursor_ahead.header.nonce_hex = RepeatHex('a', 24);
+    reconnect_cursor_ahead.header.nonce_hex = RepeatHex('b', 24);
     const auto reconnect_cursor_ahead_result = server.DispatchEncrypted(reconnect_cursor_ahead);
     CHECK_TRUE(!reconnect_cursor_ahead_result.ok);
     CHECK_EQ(reconnect_cursor_ahead_result.reason, std::string("encrypted_event_cursor_ahead"));
@@ -1490,10 +1503,10 @@ bool TestServerEncryptedPacketSessionBoundary() {
     reconnect_current_cursor.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect_current_cursor.header.player_id = "p2";
     reconnect_current_cursor.header.key_id = bob_accept.client_to_server_key_ref;
-    reconnect_current_cursor.header.seq = 3;
+    reconnect_current_cursor.header.seq = 4;
     reconnect_current_cursor.header.tick = 1;
     reconnect_current_cursor.header.ack = server.MatchReplaySummary("match-001").event_count;
-    reconnect_current_cursor.header.nonce_hex = RepeatHex('b', 24);
+    reconnect_current_cursor.header.nonce_hex = RepeatHex('c', 24);
     const auto reconnect_current_cursor_result = server.DispatchEncrypted(reconnect_current_cursor);
     CHECK_TRUE(reconnect_current_cursor_result.ok);
     CHECK_EQ(reconnect_current_cursor_result.response_kind, std::string("reconnect"));

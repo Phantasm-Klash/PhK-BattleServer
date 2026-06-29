@@ -218,6 +218,7 @@ def main() -> int:
         or "mode_id" not in simulation_text
         or "ruleset_version" not in simulation_text
         or "SetPlayerConnected" not in simulation_text
+        or "IsPlayerConnected" not in simulation_text
         or "ReconnectSnapshot" not in simulation_text
         or "max_seq_ahead" not in simulation_text
         or "fallback_input_count" not in simulation_text
@@ -278,6 +279,7 @@ def main() -> int:
         or "session_key_mismatch" not in server_impl
         or "encrypted_ack_ahead" not in server_impl
         or "encrypted_event_cursor_ahead" not in server_impl
+        or "encrypted_player_disconnected" not in server_impl
         or "encrypted_tick_too_old" not in server_impl
         or "encrypted_tick_too_far_ahead" not in server_impl
         or "match_full" not in server_impl

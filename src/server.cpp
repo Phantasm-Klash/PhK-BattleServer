@@ -273,6 +273,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     }
     if (IsInputWindowBoundPayload(packet.header.payload_type)) {
         const BattleSimulation& simulation = simulation_it->second;
+        if (!simulation.IsPlayerConnected(packet.header.player_id)) {
+            result.reason = "encrypted_player_disconnected";
+            return result;
+        }
         if (packet.header.ack > simulation.CurrentTick()) {
             result.reason = "encrypted_ack_ahead";
             return result;

@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - Rejected encrypted packets now leave KCP endpoint datagram counters unchanged and produce no replies on this adapter path, keeping failed session key, nonce replay, tick-window, and reconnect-cursor checks outside the transport work queue until real KCP/AEAD decrypt/decode lands.
 - CTest coverage now checks session-key rejection, accepted forwarding, nonce replay rejection after acceptance, and endpoint stat behavior. `tools/check_battle_server.py` gates the adapter type and dispatch-before-forward implementation.
 
+## 2026-06-29 Encrypted Disconnect Boundary
+
+- Added a simulation-level connected-state query and wired it into `BattleServer::DispatchEncrypted` for encrypted input and mode-action packets.
+- Disconnected players are now rejected with `encrypted_player_disconnected` before dispatcher seq/nonce state advances, keeping the KCP/AEAD scaffold aligned with the authoritative reconnect boundary while protobuf decoding remains pending.
+- CTest coverage now checks the disconnected encrypted-input rejection and reconnection recovery path in `ServerEncryptedPacketSessionBoundary`; `tools/check_battle_server.py` gates the new boundary.
+
 ## 2026-06-29 Replay Summary Manifest Boundary
 
 - Added `ReplayInputStreamSummaryRecord` and `BattleSimulation::BuildReplayInputStreamSummary`, a dependency-light record shaped to the generated `PhK-Protocol` `ReplayInputStreamSummary` fields: version, replay id, owner user id, match id, input/event counts, input/event stream hashes, final state hash, and final tick.
@@ -97,6 +103,10 @@ Status date: 2026-06-29
 
 ## 2026-06-29 Verification
 
+- Current encrypted disconnect boundary sample: `python3 tools/check_battle_server.py` passes.
+- Current encrypted disconnect boundary sample: direct `g++ -std=c++17 -Iinclude -I../PhK-Protocol/gen/cpp tests/battle_server_tests.cpp src/ticket.cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes, including disconnected encrypted-input rejection before dispatcher state advances.
+- Current encrypted disconnect boundary sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.
+- Current encrypted disconnect boundary sample: `env HOME=/root GOCACHE=/tmp/go-build-cache python3 /root/gotouhou/docs/ops/protocol_audit_check.py` passes across PhK-Protocol, Gensoulkyo, and PhK-BattleServer.
 - Current KCP/AEAD adapter sample: `python3 tools/check_battle_server.py` passes and gates the adapter dispatch-before-forward boundary.
 - Current KCP/AEAD adapter sample: direct `g++ -std=c++17 -Iinclude -I../PhK-Protocol/gen/cpp tests/battle_server_tests.cpp src/ticket.cpp src/handshake.cpp src/kcp_endpoint.cpp src/protocol.cpp src/result.cpp src/server.cpp src/simulation.cpp -o /tmp/phk_battle_tests && /tmp/phk_battle_tests` passes, including `KcpAeadPacketAdapterBoundary`.
 - Current KCP/AEAD adapter sample: `docker-compose run --rm test` passes with a clean container CMake build and CTest run.

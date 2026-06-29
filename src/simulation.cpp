@@ -104,6 +104,11 @@ std::uint64_t BattleSimulation::AcceptedInputCount() const {
     return accepted_input_count_;
 }
 
+bool BattleSimulation::IsPlayerConnected(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    return player_it != players_.end() && player_it->second.connected;
+}
+
 bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
     if (player_id.empty() || players_.find(player_id) != players_.end()) {
         return false;
