@@ -184,6 +184,13 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_tick_too_far_ahead";
         return result;
     }
+    const auto pending_tick_it = pending_inputs_by_tick_.find(input.tick);
+    if (pending_tick_it != pending_inputs_by_tick_.end() &&
+        pending_tick_it->second.find(input.player_id) != pending_tick_it->second.end()) {
+        result.code = InputValidationCode::DuplicateInputForTick;
+        result.reason = "input_tick_duplicate";
+        return result;
+    }
     if ((input.direction_bits & ~0x0fu) != 0) {
         result.code = InputValidationCode::InvalidDirectionBits;
         result.reason = "invalid_direction_bits";
@@ -655,6 +662,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "seq_missing";
         case InputValidationCode::SeqReplay:
             return "seq_replay";
+        case InputValidationCode::DuplicateInputForTick:
+            return "input_tick_duplicate";
         case InputValidationCode::TickTooOld:
             return "input_tick_too_old";
         case InputValidationCode::TickTooFarAhead:

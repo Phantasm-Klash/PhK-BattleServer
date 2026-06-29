@@ -38,6 +38,7 @@ Status: v0.1 skeleton.
 - Handshake hello messages must provide non-empty client key/random material and at least one supported ChaCha20-Poly1305-compatible AEAD label.
 - Battle input and mode actions must come from a player with a registered server session for that match.
 - Battle input and mode-action seq numbers must increase within the configured server window; old, replayed, or implausibly jumped seq values are rejected.
+- A player may queue only one input for a given authoritative tick. A later higher-seq packet for the same player/tick is rejected instead of replacing the buffered input, so replay hash material and applied simulation state cannot diverge.
 - Mode actions are limited to the shared server-interface action surface: `cast_card`, `select_round_card`, `transfer_card`, `ready`, and `reconnect`. Unknown action types are rejected until full protobuf/native mode dispatch replaces this scaffold.
 - Accepted mode actions are buffered by target tick and only folded into replay/event/hash state when the authoritative simulation advances that tick.
 - Client packets cannot submit battle results.

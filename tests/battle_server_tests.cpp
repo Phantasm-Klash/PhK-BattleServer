@@ -601,6 +601,9 @@ bool TestSimulationDeterminism() {
 
     const auto accepted = first.AcceptInput(MakeInput("p1", 1, 1, 1u << 3));
     CHECK_TRUE(accepted.ok);
+    const auto duplicate_tick = first.AcceptInput(MakeInput("p1", 1, 2, 1u << 0));
+    CHECK_TRUE(!duplicate_tick.ok);
+    CHECK_EQ(duplicate_tick.reason, std::string("input_tick_duplicate"));
     const auto replay = first.AcceptInput(MakeInput("p1", 2, 1, 1u << 3));
     CHECK_TRUE(!replay.ok);
     CHECK_EQ(replay.reason, std::string("seq_replay"));

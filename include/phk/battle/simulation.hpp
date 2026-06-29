@@ -22,6 +22,7 @@ enum class InputValidationCode {
     PlayerUnknown,
     SeqMissing,
     SeqReplay,
+    DuplicateInputForTick,
     TickTooOld,
     TickTooFarAhead,
     InvalidDirectionBits,

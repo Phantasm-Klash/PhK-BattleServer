@@ -212,6 +212,7 @@ def main() -> int:
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
     if (
         "CanonicalStateHash" not in simulation_impl
+        or "input_tick_duplicate" not in simulation_impl
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
         or "mode_action_type_unsupported" not in simulation_impl
