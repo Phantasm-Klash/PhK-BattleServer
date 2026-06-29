@@ -22,6 +22,20 @@ bool SessionExistsForPlayer(
     return false;
 }
 
+const BattleSessionRecord* SessionForPlayer(
+    const std::map<std::string, BattleSessionRecord>& sessions,
+    const std::string& match_id,
+    const std::string& player_id
+) {
+    for (const auto& item : sessions) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id == match_id && session.player_id == player_id) {
+            return &session;
+        }
+    }
+    return nullptr;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -189,6 +203,47 @@ DispatchResult BattleServer::Dispatch(
     const std::vector<std::uint8_t>& plaintext_payload
 ) {
     return dispatcher_.Dispatch(header, plaintext_payload);
+}
+
+DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& packet) {
+    DispatchResult result;
+    result.payload_type = packet.header.payload_type;
+
+    if (packet.ciphertext.empty()) {
+        result.reason = "ciphertext_missing";
+        return result;
+    }
+    if (packet.auth_tag.size() != 16) {
+        result.reason = "auth_tag_invalid";
+        return result;
+    }
+    if (packet.header.payload_type == BattlePayloadType::Result) {
+        result.reason = "client_result_forbidden";
+        return result;
+    }
+    if (packet.header.match_id.empty() || packet.header.player_id.empty()) {
+        result.reason = "identity_missing";
+        return result;
+    }
+    const auto simulation_it = simulations_by_match_.find(packet.header.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
+        return result;
+    }
+    const BattleSessionRecord* session = SessionForPlayer(
+        sessions_by_ticket_,
+        packet.header.match_id,
+        packet.header.player_id
+    );
+    if (session == nullptr) {
+        result.reason = "player_unknown";
+        return result;
+    }
+    if (packet.header.key_id != session->key_id) {
+        result.reason = "session_key_mismatch";
+        return result;
+    }
+    return dispatcher_.DispatchEncrypted(packet);
 }
 
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {

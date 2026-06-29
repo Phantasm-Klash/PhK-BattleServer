@@ -54,6 +54,7 @@ public:
 	RegisterTicketResult RegisterTicket(const SignedBattleTicket& signed_ticket);
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello) const;
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
+	DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
 	InputValidationResult SetPlayerConnected(const std::string& match_id, const std::string& player_id, bool connected);
