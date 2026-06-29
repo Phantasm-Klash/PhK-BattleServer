@@ -41,7 +41,12 @@ REQUIRED_CPP_MANIFEST_FIELDS = {
     "BattleTicket": ["match_id", "player_id", "ruleset_version", "expires_at_ms"],
     "BattlePacketHeader": ["match_id", "player_id", "tick", "seq", "ack", "payload_type", "nonce"],
     "BattleInput": ["match_id", "player_id", "tick", "seq", "direction_bits", "slow", "shoot", "bomb", "card_slot"],
-    "BattleResult": ["match_id", "mode_id", "result_hash", "replay_id"],
+    "BattleModeAction": ["match_id", "player_id", "tick", "seq", "action_id", "action_type", "client_result_authoritative"],
+    "BattleSnapshot": ["match_id", "snapshot_tick", "state_hash", "event_cursor", "players", "bullets_delta", "mode_state"],
+    "BattleEvent": ["match_id", "tick", "cursor", "type", "server_authoritative"],
+    "BattleResult": ["match_id", "mode_id", "result_hash", "replay_id", "reward_projection_json", "mode_result_json"],
+    "SignedBattleResult": ["result", "signature_alg", "signature", "key_id"],
+    "ReplayInputStreamSummary": ["match_id", "input_count", "event_count", "input_stream_hash", "final_state_hash", "final_tick"],
 }
 
 
@@ -173,6 +178,9 @@ def main() -> int:
     if "SignedBattleResult" not in result_text or "BattleResultVerifier" not in result_text:
         print("result boundary missing SignedBattleResult/BattleResultVerifier", file=sys.stderr)
         return 1
+    if "require_projection_only_reward" not in result_text:
+        print("result boundary missing projection-only reward guard option", file=sys.stderr)
+        return 1
 
     version_text = (ROOT / "include" / "phk" / "battle" / "version.hpp").read_text(encoding="utf-8")
     if "phk/v1/manifest.hpp" not in version_text or "phk::v1::kRulesetVersion" not in version_text:
@@ -230,8 +238,14 @@ def main() -> int:
         or "result_hash_mismatch" not in result_impl
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
+        or "reward_projection_mutation_forbidden" not in result_impl
     ):
         print("result boundary missing ruleset/hash/replay/cursor verification or projection-only result shape", file=sys.stderr)
+        return 1
+
+    protocol_impl = (ROOT / "src" / "protocol.cpp").read_text(encoding="utf-8")
+    if "key_id_missing" not in protocol_impl or "nonce_invalid" not in protocol_impl or "payload_type_missing" not in protocol_impl:
+        print("protocol dispatcher missing encrypted packet key/nonce/payload shape guards", file=sys.stderr)
         return 1
 
     handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")

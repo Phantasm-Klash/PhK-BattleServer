@@ -1,6 +1,7 @@
 #include "phk/battle/result.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 #include "phk/battle/ticket.hpp"
@@ -37,6 +38,34 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
     }
     const char next = json[after_value];
     return next == ',' || next == '}';
+}
+
+std::string LowerAscii(std::string_view value) {
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lowered;
+}
+
+bool ContainsForbiddenRewardMutation(std::string_view json) {
+    const std::string lowered = LowerAscii(json);
+    for (const std::string_view needle : {
+        "inventory",
+        "wallet",
+        "currency",
+        "grant",
+        "reward_grant",
+        "item_id",
+        "balance",
+        "database",
+        "steam_inventory",
+    }) {
+        if (lowered.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -95,6 +124,15 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.required_event_cursor > 0 &&
         !ContainsJsonUintField(result.mode_result_json, "event_cursor", options.required_event_cursor)) {
         Fail(verification, "event_cursor_mismatch");
+        return verification;
+    }
+    if (result.reward_projection_json.empty()) {
+        Fail(verification, "reward_projection_missing");
+        return verification;
+    }
+    if (options.require_projection_only_reward &&
+        ContainsForbiddenRewardMutation(result.reward_projection_json)) {
+        Fail(verification, "reward_projection_mutation_forbidden");
         return verification;
     }
     if (result.settled_at_ms <= 0) {

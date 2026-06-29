@@ -136,6 +136,11 @@ phk::battle::SignedBattleResult MakeBattleResultForSummary(const phk::battle::Re
 
 phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq);
 
+void FillEncryptedHeaderShape(phk::battle::BattlePacketHeader& header) {
+    header.key_id = "battle-local-1";
+    header.nonce_hex = RepeatHex('1', 24);
+}
+
 bool TestTicketVerifier() {
 	phk::battle::TicketVerifier verifier;
     phk::battle::TicketVerificationOptions options;
@@ -184,9 +189,15 @@ bool TestProtocolManifest() {
     CHECK_EQ(std::string(phk::battle::kRulesetHash), std::string(phk::v1::kRulesetHash));
     CHECK_TRUE(phk::v1::HasMessageField("BattleTicket", "ruleset_version"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "seq"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "nonce"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleInput", "direction_bits"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleModeAction", "client_result_authoritative"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleSnapshot", "mode_state"));
+    CHECK_TRUE(phk::v1::HasMessageField("SignedBattleResult", "signature"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "final_state_hash"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "result_hash"));
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleInput") >= 10);
+    CHECK_TRUE(phk::v1::MessageFieldCount("BattleResult") >= 9);
     return true;
 }
 
@@ -427,6 +438,12 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_cursor_result.ok);
     CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
 
+    auto mutating_projection = MakeBattleResultForSummary(summary);
+    mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
+    const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);
+    CHECK_TRUE(!mutating_projection_result.ok);
+    CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
+
 	const auto accepted = server.SubmitBattleResult(MakeBattleResultForSummary(summary));
 	CHECK_TRUE(accepted.ok);
 	CHECK_EQ(accepted.reason, std::string("ok"));
@@ -562,6 +579,52 @@ bool TestSimulationDeterminism() {
     return true;
 }
 
+bool TestAuthoritativeReplay60TickFixture() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-replay-60";
+    config.mode_id = "pvp_duel";
+    config.match_seed = 424242;
+    config.max_input_ahead_ticks = 16;
+    config.max_seq_ahead = 128;
+    config.spawn_period_ticks = 15;
+
+    phk::battle::BattleSimulation first(config);
+    phk::battle::BattleSimulation second(config);
+    CHECK_TRUE(first.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(first.AddPlayer("p2", 20000, 0));
+    CHECK_TRUE(second.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(second.AddPlayer("p2", 20000, 0));
+
+    for (std::uint64_t tick = 1; tick <= 60; ++tick) {
+        std::uint32_t p1_direction = (tick <= 30) ? (1u << 3) : (1u << 0);
+        std::uint32_t p2_direction = (tick <= 30) ? (1u << 2) : (1u << 1);
+        auto p1_input = MakeInput("p1", tick, tick, p1_direction);
+        auto p2_input = MakeInput("p2", tick, tick, p2_direction);
+        p1_input.match_id = config.match_id;
+        p2_input.match_id = config.match_id;
+        p1_input.slow = (tick % 2) == 0;
+        p2_input.slow = (tick % 3) == 0;
+        CHECK_TRUE(first.AcceptInput(p1_input).ok);
+        CHECK_TRUE(first.AcceptInput(p2_input).ok);
+        CHECK_TRUE(second.AcceptInput(p1_input).ok);
+        CHECK_TRUE(second.AcceptInput(p2_input).ok);
+        CHECK_EQ(first.Tick().state_hash, second.Tick().state_hash);
+    }
+
+    const auto first_summary = first.Summary();
+    const auto second_summary = second.Summary();
+    CHECK_EQ(first_summary.final_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(first_summary.input_count, static_cast<std::uint64_t>(120));
+    CHECK_EQ(first_summary.event_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first.BulletCount(), second.BulletCount());
+    CHECK_EQ(first_summary.input_stream_hash, second_summary.input_stream_hash);
+    CHECK_EQ(first_summary.event_stream_hash, second_summary.event_stream_hash);
+    CHECK_EQ(first_summary.final_state_hash, second_summary.final_state_hash);
+    CHECK_EQ(first.Snapshot().mode_state.at("tick_rate_hz"), std::string("60"));
+    CHECK_EQ(first.Snapshot().mode_state.at("mode_id"), std::string("pvp_duel"));
+    return true;
+}
+
 bool TestServerAuthoritativeInputAndSnapshot() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -677,6 +740,7 @@ bool TestDispatcher() {
     ping.tick = 10;
     ping.seq = 1;
     ping.payload_type = phk::battle::BattlePayloadType::Ping;
+    FillEncryptedHeaderShape(ping);
 
     const auto pong = dispatcher.Dispatch(ping, {'p', 'i', 'n', 'g'});
     CHECK_TRUE(pong.ok);
@@ -712,6 +776,22 @@ bool TestDispatcher() {
     const auto forbidden_result = dispatcher.Dispatch(forbidden, {});
     CHECK_TRUE(!forbidden_result.ok);
     CHECK_EQ(forbidden_result.reason, std::string("client_result_forbidden"));
+
+    phk::battle::BattlePacketHeader missing_key = ping;
+    missing_key.player_id = "p2";
+    missing_key.seq = 1;
+    missing_key.key_id.clear();
+    const auto missing_key_result = dispatcher.Dispatch(missing_key, {'p'});
+    CHECK_TRUE(!missing_key_result.ok);
+    CHECK_EQ(missing_key_result.reason, std::string("key_id_missing"));
+
+    phk::battle::BattlePacketHeader bad_nonce = ping;
+    bad_nonce.player_id = "p2";
+    bad_nonce.seq = 2;
+    bad_nonce.nonce_hex = "not-hex";
+    const auto bad_nonce_result = dispatcher.Dispatch(bad_nonce, {'p'});
+    CHECK_TRUE(!bad_nonce_result.ok);
+    CHECK_EQ(bad_nonce_result.reason, std::string("nonce_invalid"));
     return true;
 }
 
@@ -741,6 +821,7 @@ int main() {
         {"RoomCapacityGuard", TestRoomCapacityGuard},
 		{"BattleResultSubmission", TestBattleResultSubmission},
 		{"SimulationDeterminism", TestSimulationDeterminism},
+		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
 		{"KcpPlaceholder", TestKcpPlaceholder},
