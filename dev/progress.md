@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - `ReplayFixture` now embeds that record alongside the final authoritative snapshot and ordered trace material, so protobuf replacement has a concrete record boundary instead of only aggregate C++ structs.
 - CTest now checks the record against the generated manifest field gates and canonical serialization/tamper behavior. `tools/check_battle_server.py` gates replay id, owner user id, event-stream hash, and the record builder while full protobuf C++ bindings remain pending.
 
+## 2026-06-29 Handshake-Bound Encrypted Session Key Boundary
+
+- Server-facade encrypted packet dispatch now requires a registered session to complete handshake before encrypted input/mode-action/ping/reconnect packets are accepted.
+- Accepted handshakes promote the session from the temporary ticket signing key id to the development `client_to_server` key reference and retain the `server_to_client` key reference, selected AEAD, and transcript hash as session material for the future X25519/HKDF replacement.
+- CTest coverage now rejects encrypted packets before handshake as `handshake_required`, rejects reuse of the ticket signing key after handshake as `session_key_mismatch`, and accepts packets only when the header key id matches the handshake-derived inbound key reference. `tools/check_battle_server.py` gates this boundary while real AEAD/protobuf remain pending.
+
 ## 2026-06-29 Signed Result Replay Counter Boundary
 
 - Signed-result callback material now includes accepted-input count, fallback-input counters, mode-action count, final tick, and input/event trace counts in `mode_result_json`.

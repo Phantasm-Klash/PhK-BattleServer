@@ -143,6 +143,21 @@ void FillEncryptedHeaderShape(phk::battle::BattlePacketHeader& header) {
     header.nonce_hex = RepeatHex('1', 24);
 }
 
+phk::battle::BattleHandshakeAccept AcceptHandshakeForTicket(
+    phk::battle::BattleServer& server,
+    phk::battle::SignedBattleTicket ticket
+) {
+    phk::battle::BattleHandshakeHello hello;
+    hello.battle_ticket = std::move(ticket);
+    FillDistinctHandshakeBytes(hello);
+    hello.supported_aead = {"CHACHA20_POLY1305"};
+    return server.AcceptHandshake(hello);
+}
+
+phk::battle::BattleHandshakeAccept AcceptDefaultHandshake(phk::battle::BattleServer& server) {
+    return AcceptHandshakeForTicket(server, MakeTicket());
+}
+
 phk::battle::SimulationConfig MakeAuthoritativeReplay60Config(std::string match_id) {
     phk::battle::SimulationConfig config;
     config.match_id = std::move(match_id);
@@ -1371,10 +1386,32 @@ bool TestServerEncryptedPacketSessionBoundary() {
     packet.header.seq = 1;
     packet.header.payload_type = phk::battle::BattlePayloadType::Input;
     FillEncryptedHeaderShape(packet.header);
-    packet.header.key_id = "dev-ed25519-local";
     packet.ciphertext = {'i', 'n', 'p', 'u', 't'};
     packet.auth_tag.assign(16, 0x42);
 
+    const auto before_handshake = server.DispatchEncrypted(packet);
+    CHECK_TRUE(!before_handshake.ok);
+    CHECK_EQ(before_handshake.reason, std::string("handshake_required"));
+
+    const auto accept = AcceptDefaultHandshake(server);
+    CHECK_TRUE(accept.ok);
+    CHECK_EQ(accept.player_id, std::string("p1"));
+    CHECK_EQ(accept.client_to_server_key_ref.rfind("hkdf-dev:client_to_server:", 0), static_cast<std::size_t>(0));
+    CHECK_EQ(accept.server_to_client_key_ref.rfind("hkdf-dev:server_to_client:", 0), static_cast<std::size_t>(0));
+    CHECK_TRUE(accept.client_to_server_key_ref != config.signing_key_id);
+    CHECK_TRUE(accept.server_to_client_key_ref != config.signing_key_id);
+    const auto bob_accept = AcceptHandshakeForTicket(server, MakeTicketForBob());
+    CHECK_TRUE(bob_accept.ok);
+    CHECK_EQ(bob_accept.player_id, std::string("p2"));
+    CHECK_TRUE(bob_accept.client_to_server_key_ref != accept.client_to_server_key_ref);
+
+    auto ticket_key_packet = packet;
+    ticket_key_packet.header.key_id = config.signing_key_id;
+    const auto ticket_key_result = server.DispatchEncrypted(ticket_key_packet);
+    CHECK_TRUE(!ticket_key_result.ok);
+    CHECK_EQ(ticket_key_result.reason, std::string("session_key_mismatch"));
+
+    packet.header.key_id = accept.client_to_server_key_ref;
     const auto accepted = server.DispatchEncrypted(packet);
     CHECK_TRUE(accepted.ok);
     CHECK_EQ(accepted.response_kind, std::string("input"));
@@ -1396,6 +1433,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
 
     auto ack_ahead = packet;
     ack_ahead.header.player_id = "p2";
+    ack_ahead.header.key_id = bob_accept.client_to_server_key_ref;
     ack_ahead.header.seq = 1;
     ack_ahead.header.ack = 1;
     ack_ahead.header.nonce_hex = RepeatHex('8', 24);
@@ -1405,6 +1443,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
 
     auto far_future_tick = packet;
     far_future_tick.header.player_id = "p2";
+    far_future_tick.header.key_id = bob_accept.client_to_server_key_ref;
     far_future_tick.header.seq = 1;
     far_future_tick.header.tick = 99;
     far_future_tick.header.nonce_hex = RepeatHex('6', 24);
@@ -1416,6 +1455,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     auto stale_tick = packet;
     stale_tick.header.player_id = "p2";
+    stale_tick.header.key_id = bob_accept.client_to_server_key_ref;
     stale_tick.header.seq = 2;
     stale_tick.header.tick = 1;
     stale_tick.header.nonce_hex = RepeatHex('7', 24);
@@ -1425,6 +1465,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
 
     auto current_ack = packet;
     current_ack.header.player_id = "p2";
+    current_ack.header.key_id = bob_accept.client_to_server_key_ref;
     current_ack.header.seq = 2;
     current_ack.header.tick = 2;
     current_ack.header.ack = 1;
@@ -1436,6 +1477,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto reconnect_cursor_ahead = packet;
     reconnect_cursor_ahead.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect_cursor_ahead.header.player_id = "p2";
+    reconnect_cursor_ahead.header.key_id = bob_accept.client_to_server_key_ref;
     reconnect_cursor_ahead.header.seq = 3;
     reconnect_cursor_ahead.header.tick = 1;
     reconnect_cursor_ahead.header.ack = server.MatchReplaySummary("match-001").event_count + 1;
@@ -1447,6 +1489,7 @@ bool TestServerEncryptedPacketSessionBoundary() {
     auto reconnect_current_cursor = packet;
     reconnect_current_cursor.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect_current_cursor.header.player_id = "p2";
+    reconnect_current_cursor.header.key_id = bob_accept.client_to_server_key_ref;
     reconnect_current_cursor.header.seq = 3;
     reconnect_current_cursor.header.tick = 1;
     reconnect_current_cursor.header.ack = server.MatchReplaySummary("match-001").event_count;

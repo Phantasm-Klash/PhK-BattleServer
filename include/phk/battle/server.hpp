@@ -27,6 +27,10 @@ struct BattleSessionRecord {
     std::string mode_id;
     std::uint32_t kcp_conv = 0;
     std::string key_id;
+    std::string server_to_client_key_id;
+    std::string handshake_transcript_hash;
+    std::string selected_aead;
+    bool handshake_accepted = false;
 };
 
 struct RegisterTicketResult {
@@ -59,7 +63,7 @@ public:
     [[nodiscard]] std::size_t ActiveSessionCount() const;
 
 	RegisterTicketResult RegisterTicket(const SignedBattleTicket& signed_ticket);
-	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello) const;
+	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello);
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
 	DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
 	InputValidationResult AcceptInput(const BattleInput& input);

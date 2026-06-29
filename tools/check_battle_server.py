@@ -272,6 +272,9 @@ def main() -> int:
         or "options.required_event_cursor" not in server_impl
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
+        or "handshake_required" not in server_impl
+        or "handshake_accepted" not in server_impl
+        or "client_to_server_key_ref" not in server_impl
         or "session_key_mismatch" not in server_impl
         or "encrypted_ack_ahead" not in server_impl
         or "encrypted_event_cursor_ahead" not in server_impl
@@ -354,8 +357,10 @@ def main() -> int:
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
+        or "handshake_required" not in tests_text
+        or "client_to_server_key_ref" not in tests_text
     ):
-        print("battle server tests missing pinned 60Hz replay/result boundary fingerprints", file=sys.stderr)
+        print("battle server tests missing pinned 60Hz replay/result fingerprints or handshake-bound encrypted session coverage", file=sys.stderr)
         return 1
 
     if args.build:

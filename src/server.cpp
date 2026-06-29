@@ -177,7 +177,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     return result;
 }
 
-BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) const {
+BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) {
     BattleHandshakeAccept rejected;
     TicketVerificationOptions options;
     options.now_ms = config_.now_ms;
@@ -203,7 +203,23 @@ BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& 
         rejected.reason = "session_ticket_mismatch";
         return rejected;
     }
-    return handshake_manager_.Accept(hello, hello.battle_ticket.ticket, config_.signing_key_id);
+    BattleHandshakeAccept accept = handshake_manager_.Accept(
+        hello,
+        hello.battle_ticket.ticket,
+        config_.signing_key_id
+    );
+    if (!accept.ok) {
+        return accept;
+    }
+
+    BattleSessionRecord& mutable_session = sessions_by_ticket_[hello.battle_ticket.ticket.ticket_id];
+    mutable_session.kcp_conv = accept.kcp_conv;
+    mutable_session.key_id = accept.client_to_server_key_ref;
+    mutable_session.server_to_client_key_id = accept.server_to_client_key_ref;
+    mutable_session.handshake_transcript_hash = accept.transcript_hash_hex;
+    mutable_session.selected_aead = accept.selected_aead;
+    mutable_session.handshake_accepted = true;
+    return accept;
 }
 
 DispatchResult BattleServer::Dispatch(
@@ -245,6 +261,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     );
     if (session == nullptr) {
         result.reason = "player_unknown";
+        return result;
+    }
+    if (!session->handshake_accepted) {
+        result.reason = "handshake_required";
         return result;
     }
     if (packet.header.key_id != session->key_id) {
