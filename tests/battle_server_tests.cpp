@@ -865,6 +865,70 @@ bool TestEncryptedPacketAdapterShape() {
     return true;
 }
 
+bool TestServerEncryptedPacketSessionBoundary() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+
+    phk::battle::BattleEncryptedPacket packet;
+    packet.header.match_id = "match-001";
+    packet.header.player_id = "p1";
+    packet.header.tick = 1;
+    packet.header.seq = 1;
+    packet.header.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(packet.header);
+    packet.header.key_id = "dev-ed25519-local";
+    packet.ciphertext = {'i', 'n', 'p', 'u', 't'};
+    packet.auth_tag.assign(16, 0x42);
+
+    const auto accepted = server.DispatchEncrypted(packet);
+    CHECK_TRUE(accepted.ok);
+    CHECK_EQ(accepted.response_kind, std::string("input"));
+
+    auto nonce_replay = packet;
+    nonce_replay.header.seq = 2;
+    const auto nonce_replay_result = server.DispatchEncrypted(nonce_replay);
+    CHECK_TRUE(!nonce_replay_result.ok);
+    CHECK_EQ(nonce_replay_result.reason, std::string("nonce_replay"));
+
+    auto wrong_key = packet;
+    wrong_key.header.player_id = "p2";
+    wrong_key.header.seq = 1;
+    wrong_key.header.nonce_hex = RepeatHex('2', 24);
+    wrong_key.header.key_id = "other-key";
+    const auto wrong_key_result = server.DispatchEncrypted(wrong_key);
+    CHECK_TRUE(!wrong_key_result.ok);
+    CHECK_EQ(wrong_key_result.reason, std::string("session_key_mismatch"));
+
+    auto unknown_player = packet;
+    unknown_player.header.player_id = "p3";
+    unknown_player.header.seq = 1;
+    unknown_player.header.nonce_hex = RepeatHex('3', 24);
+    const auto unknown_player_result = server.DispatchEncrypted(unknown_player);
+    CHECK_TRUE(!unknown_player_result.ok);
+    CHECK_EQ(unknown_player_result.reason, std::string("player_unknown"));
+
+    auto unknown_match = packet;
+    unknown_match.header.match_id = "match-missing";
+    unknown_match.header.seq = 1;
+    unknown_match.header.nonce_hex = RepeatHex('4', 24);
+    const auto unknown_match_result = server.DispatchEncrypted(unknown_match);
+    CHECK_TRUE(!unknown_match_result.ok);
+    CHECK_EQ(unknown_match_result.reason, std::string("match_unknown"));
+
+    auto result_packet = packet;
+    result_packet.header.player_id = "p2";
+    result_packet.header.seq = 1;
+    result_packet.header.nonce_hex = RepeatHex('5', 24);
+    result_packet.header.payload_type = phk::battle::BattlePayloadType::Result;
+    const auto result_packet_result = server.DispatchEncrypted(result_packet);
+    CHECK_TRUE(!result_packet_result.ok);
+    CHECK_EQ(result_packet_result.reason, std::string("client_result_forbidden"));
+    return true;
+}
+
 bool TestKcpPlaceholder() {
     phk::battle::KcpEchoEndpoint endpoint;
     phk::battle::UdpDatagram datagram;
@@ -895,6 +959,7 @@ int main() {
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
+		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"KcpPlaceholder", TestKcpPlaceholder},
 	};
 

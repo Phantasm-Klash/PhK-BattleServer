@@ -23,6 +23,7 @@ Status date: 2026-06-29
 - Added a deterministic 1v1 60-tick authoritative replay/hash fixture with two players, 120 accepted inputs, stable replay hashes, 60Hz snapshot projection, and deterministic bullet-event counts.
 - Added encrypted adapter nonce replay rejection keyed by `match_id:player_id:key_id:nonce`, so a reused nonce is rejected before real ChaCha20-Poly1305 lands. This is still a development replay guard and does not replace production AEAD verification.
 - Tightened the C++ manifest gate to cover signed-ticket and handshake hello/accept fields, including future `server_signature`, so the temporary manifest bridge fails sooner if the generated protobuf shape drifts.
+- Added a server-facade encrypted packet session boundary: encrypted packet dispatch now requires a registered match/player session and the session key id before the dispatcher records seq or nonce state. This keeps the current KCP/AEAD placeholder tied to allocated battle tickets while real session keys are pending.
 
 ## 2026-06-29 Verification
 

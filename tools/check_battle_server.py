@@ -229,10 +229,12 @@ def main() -> int:
         or "options.required_result_hash" not in server_impl
         or "options.required_event_cursor" not in server_impl
         or "ReconnectSnapshot" not in server_impl
+        or "DispatchEncrypted" not in server_impl
+        or "session_key_mismatch" not in server_impl
         or "match_full" not in server_impl
         or "ticket_not_registered" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
