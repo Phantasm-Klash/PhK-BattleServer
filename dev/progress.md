@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - Development result-hash derivation now folds the trace lines into `DevResultHashFromReplaySummary`, so a result callback or replay fixture cannot preserve aggregate counters while changing ordered replay material unnoticed.
 - CTest coverage now checks deterministic trace parity across two 60Hz simulations, fallback trace classification, fixture trace export, connection/mode-action trace entries, and result-hash sensitivity to trace tampering. The repository checker also gates trace fields and hash wiring while full protobuf replay bindings are pending.
 
+## 2026-06-29 Encrypted Reconnect Cursor Boundary
+
+- Server-facade encrypted reconnect packets now bind header `ack` to the authoritative replay event cursor and reject impossible future cursors with `encrypted_event_cursor_ahead` before dispatcher seq/nonce state advances.
+- CTest coverage now checks both the rejection path and an accepted reconnect packet at the current event cursor, keeping the encrypted KCP/AEAD scaffold aligned with `ReconnectSnapshot(..., last_seen_event_cursor)` until generated protobuf decoding carries the cursor explicitly.
+- `tools/check_battle_server.py` and `docs/architecture.md` now gate and document the reconnect cursor boundary alongside the existing encrypted session and tick-window checks.
+
 ## 2026-06-29 Handshake Transcript Boundary
 
 - `BattleHandshakeAccept` now exposes development client-to-server and server-to-client key references plus Ed25519-shaped server transcript signature material derived from the accepted ticket transcript.

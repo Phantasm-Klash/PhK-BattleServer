@@ -1206,6 +1206,28 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_TRUE(current_ack_result.ok);
     CHECK_EQ(current_ack_result.response_kind, std::string("input"));
 
+    auto reconnect_cursor_ahead = packet;
+    reconnect_cursor_ahead.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
+    reconnect_cursor_ahead.header.player_id = "p2";
+    reconnect_cursor_ahead.header.seq = 3;
+    reconnect_cursor_ahead.header.tick = 1;
+    reconnect_cursor_ahead.header.ack = server.MatchReplaySummary("match-001").event_count + 1;
+    reconnect_cursor_ahead.header.nonce_hex = RepeatHex('a', 24);
+    const auto reconnect_cursor_ahead_result = server.DispatchEncrypted(reconnect_cursor_ahead);
+    CHECK_TRUE(!reconnect_cursor_ahead_result.ok);
+    CHECK_EQ(reconnect_cursor_ahead_result.reason, std::string("encrypted_event_cursor_ahead"));
+
+    auto reconnect_current_cursor = packet;
+    reconnect_current_cursor.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
+    reconnect_current_cursor.header.player_id = "p2";
+    reconnect_current_cursor.header.seq = 3;
+    reconnect_current_cursor.header.tick = 1;
+    reconnect_current_cursor.header.ack = server.MatchReplaySummary("match-001").event_count;
+    reconnect_current_cursor.header.nonce_hex = RepeatHex('b', 24);
+    const auto reconnect_current_cursor_result = server.DispatchEncrypted(reconnect_current_cursor);
+    CHECK_TRUE(reconnect_current_cursor_result.ok);
+    CHECK_EQ(reconnect_current_cursor_result.response_kind, std::string("reconnect"));
+
     auto unknown_player = packet;
     unknown_player.header.player_id = "p3";
     unknown_player.header.seq = 1;

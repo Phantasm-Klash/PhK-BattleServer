@@ -41,6 +41,10 @@ bool IsInputWindowBoundPayload(BattlePayloadType payload_type) {
         payload_type == BattlePayloadType::ModeAction;
 }
 
+bool IsReconnectPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Reconnect;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -259,6 +263,13 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         }
         if (packet.header.tick > simulation.CurrentTick() + simulation.Config().max_input_ahead_ticks) {
             result.reason = "encrypted_tick_too_far_ahead";
+            return result;
+        }
+    }
+    if (IsReconnectPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.ack > simulation.Summary().event_count) {
+            result.reason = "encrypted_event_cursor_ahead";
             return result;
         }
     }
