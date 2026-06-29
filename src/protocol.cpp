@@ -1,11 +1,20 @@
 #include "phk/battle/protocol.hpp"
 
+#include "phk/battle/ticket.hpp"
+
 namespace phk::battle {
 
 namespace {
 
 std::string PlayerSeqKey(const BattlePacketHeader& header) {
     return header.match_id + ":" + header.player_id;
+}
+
+bool RequiresEncryptedPacketShape(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction ||
+        payload_type == BattlePayloadType::Ping ||
+        payload_type == BattlePayloadType::Reconnect;
 }
 
 }  // namespace
@@ -32,6 +41,20 @@ DispatchResult BattleDispatcher::Dispatch(
     if (header.payload_type == BattlePayloadType::Result) {
         result.reason = "client_result_forbidden";
         return result;
+    }
+    if (header.payload_type == BattlePayloadType::Unspecified) {
+        result.reason = "payload_type_missing";
+        return result;
+    }
+    if (RequiresEncryptedPacketShape(header.payload_type)) {
+        if (header.key_id.empty()) {
+            result.reason = "key_id_missing";
+            return result;
+        }
+        if (header.nonce_hex.size() < 24 || !IsHex(header.nonce_hex)) {
+            result.reason = "nonce_invalid";
+            return result;
+        }
     }
 
     const std::string seq_key = PlayerSeqKey(header);
