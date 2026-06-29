@@ -190,12 +190,18 @@ bool TestProtocolManifest() {
     CHECK_TRUE(phk::v1::HasMessageField("BattleTicket", "ruleset_version"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "seq"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "nonce"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleHandshakeHello", "client_x25519_pub"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleHandshakeAccept", "server_signature"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleEncryptedPacket", "auth_tag"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleInput", "direction_bits"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleModeAction", "client_result_authoritative"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleSnapshot", "mode_state"));
+    CHECK_TRUE(phk::v1::HasMessageField("SignedBattleTicket", "signature"));
     CHECK_TRUE(phk::v1::HasMessageField("SignedBattleResult", "signature"));
     CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "final_state_hash"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "result_hash"));
+    CHECK_TRUE(phk::v1::MessageFieldCount("BattleHandshakeHello") >= 5);
+    CHECK_TRUE(phk::v1::MessageFieldCount("BattleHandshakeAccept") >= 10);
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleInput") >= 10);
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleResult") >= 9);
     return true;
@@ -810,6 +816,12 @@ bool TestEncryptedPacketAdapterShape() {
     const auto accepted = dispatcher.DispatchEncrypted(packet);
     CHECK_TRUE(accepted.ok);
     CHECK_EQ(accepted.response_kind, std::string("input"));
+
+    auto nonce_replay = packet;
+    nonce_replay.header.seq = 2;
+    const auto nonce_replay_result = dispatcher.DispatchEncrypted(nonce_replay);
+    CHECK_TRUE(!nonce_replay_result.ok);
+    CHECK_EQ(nonce_replay_result.reason, std::string("nonce_replay"));
 
     auto missing_ciphertext = packet;
     missing_ciphertext.header.player_id = "p2";

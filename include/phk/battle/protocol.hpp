@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,7 @@ public:
 private:
     std::map<std::string, std::uint64_t> last_seq_by_player_;
     std::map<std::string, std::uint64_t> last_tick_by_match_;
+    std::set<std::string> seen_encrypted_nonces_;
 };
 
 [[nodiscard]] std::string PayloadTypeName(BattlePayloadType type);
