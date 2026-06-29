@@ -303,6 +303,7 @@ def main() -> int:
         "required_input_stream_hash" not in result_text
         or "required_event_stream_hash" not in result_text
         or "required_final_state_hash" not in result_text
+        or "required_replay_fixture_hash" not in result_text
     ):
         print("result boundary missing replay stream/state hash requirements", file=sys.stderr)
         return 1
@@ -418,9 +419,11 @@ def main() -> int:
         or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
         or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
+        or "options.required_replay_fixture_hash = DevReplayFixtureHash" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
+        or "replay_fixture_hash" not in server_impl
     ):
         print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
         return 1
@@ -440,6 +443,7 @@ def main() -> int:
         or "input_stream_hash_mismatch" not in result_impl
         or "event_stream_hash_mismatch" not in result_impl
         or "final_state_hash_mismatch" not in result_impl
+        or "replay_fixture_hash_mismatch" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
     ):
         print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace/digest verification or projection-only result shape", file=sys.stderr)
@@ -529,6 +533,9 @@ def main() -> int:
         or "tampered_fixture_authority" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
+        or "sha256:dev-fnv64-4e23b1e341f35e87" not in tests_text
+        or "sha256:dev-fnv64-4e12f244398ab1eb" not in tests_text
+        or "replay_fixture_hash_mismatch" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
         or "final_state_hash_mismatch" not in tests_text

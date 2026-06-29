@@ -55,6 +55,9 @@ std::string ExpectedDevReplayId(const phk::battle::ReplaySummary& summary) {
 }
 
 std::string ModeResultJsonForSummary(const phk::battle::ReplaySummary& summary) {
+    const std::string replay_fixture_hash = summary.match_id == "match-001"
+        ? "sha256:dev-fnv64-4e12f244398ab1eb"
+        : "";
     return "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
         std::to_string(summary.event_count) +
         ",\"final_tick\":" +
@@ -79,6 +82,8 @@ std::string ModeResultJsonForSummary(const phk::battle::ReplaySummary& summary) 
         summary.event_stream_hash +
         "\",\"final_state_hash\":\"" +
         summary.final_state_hash +
+        "\",\"replay_fixture_hash\":\"" +
+        replay_fixture_hash +
         "\"}";
 }
 
@@ -676,6 +681,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_state_hash_result.ok);
     CHECK_EQ(wrong_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
 
+    auto wrong_replay_fixture_hash = MakeBattleResultForSummary(summary);
+    wrong_replay_fixture_hash.result.mode_result_json = ReplaceFirst(
+        ModeResultJsonForSummary(summary),
+        "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e12f244398ab1eb\"",
+        "\"replay_fixture_hash\":\"sha256:dev-fnv64-0000000000000000\""
+    );
+    const auto wrong_replay_fixture_hash_result = server.SubmitBattleResult(wrong_replay_fixture_hash);
+    CHECK_TRUE(!wrong_replay_fixture_hash_result.ok);
+    CHECK_EQ(wrong_replay_fixture_hash_result.reason, std::string("replay_fixture_hash_mismatch"));
+
     auto mutating_projection = MakeBattleResultForSummary(summary);
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
     const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);
@@ -735,8 +750,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "5c980f233dd972e07b92d62c48c8bd019a8d9d3553b80722b988643e5ea75143"
-            "d8832b4769969b64f77df2507485e5851678b9597f752fa6357380628a6479c7"
+            "e7df3a698be77c8806da017296d6c6a925d4c87ba1c610ca44cf8f84acb55aeb"
+            "63ca568db7a4a50c82c51d96c293ef2da1bfe49fcd83394ec0baaba8d872836f"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -751,7 +766,8 @@ bool TestBuildSignedBattleResultCallback() {
             "\"mode_action_count\":0,\"input_trace_count\":2,\"event_trace_count\":0,"
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
-            "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\"}|1782489630000"
+            "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e23b1e341f35e87\"}|1782489630000"
         )
     );
     CHECK_TRUE(
@@ -805,6 +821,11 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"final_state_hash\":\"" + built.replay_summary.final_state_hash + "\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e23b1e341f35e87\""
         ) != std::string::npos
     );
 

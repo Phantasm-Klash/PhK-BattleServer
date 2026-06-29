@@ -206,6 +206,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "final_state_hash_mismatch");
         return verification;
     }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "replay_fixture_hash", options.required_replay_fixture_hash)) {
+        Fail(verification, "replay_fixture_hash_mismatch");
+        return verification;
+    }
     if (result.reward_projection_json.empty()) {
         Fail(verification, "reward_projection_missing");
         return verification;
