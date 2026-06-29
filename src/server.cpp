@@ -45,6 +45,13 @@ bool IsReconnectPayload(BattlePayloadType payload_type) {
     return payload_type == BattlePayloadType::Reconnect;
 }
 
+bool IsClientToServerEncryptedPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction ||
+        payload_type == BattlePayloadType::Ping ||
+        payload_type == BattlePayloadType::Reconnect;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -243,6 +250,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     }
     if (packet.header.payload_type == BattlePayloadType::Result) {
         result.reason = "client_result_forbidden";
+        return result;
+    }
+    if (!IsClientToServerEncryptedPayload(packet.header.payload_type)) {
+        result.reason = "encrypted_payload_type_invalid";
         return result;
     }
     if (packet.header.match_id.empty() || packet.header.player_id.empty()) {

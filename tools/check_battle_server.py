@@ -296,6 +296,8 @@ def main() -> int:
         or "encrypted_tick_too_far_ahead" not in server_impl
         or "match_full" not in server_impl
         or "ticket_not_registered" not in server_impl
+        or "IsClientToServerEncryptedPayload" not in server_impl
+        or "encrypted_payload_type_invalid" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
         or "CanonicalBattleResultPayload" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
@@ -310,7 +312,7 @@ def main() -> int:
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")

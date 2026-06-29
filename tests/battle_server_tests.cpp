@@ -1611,6 +1611,35 @@ bool TestServerEncryptedPacketSessionBoundary() {
     const auto result_packet_result = server.DispatchEncrypted(result_packet);
     CHECK_TRUE(!result_packet_result.ok);
     CHECK_EQ(result_packet_result.reason, std::string("client_result_forbidden"));
+
+    auto event_packet = packet;
+    event_packet.header.payload_type = phk::battle::BattlePayloadType::Event;
+    event_packet.header.player_id = "p2";
+    event_packet.header.key_id = bob_accept.client_to_server_key_ref;
+    event_packet.header.seq = 5;
+    event_packet.header.tick = 2;
+    event_packet.header.nonce_hex = RepeatHex('d', 24);
+    const auto event_packet_result = server.DispatchEncrypted(event_packet);
+    CHECK_TRUE(!event_packet_result.ok);
+    CHECK_EQ(event_packet_result.reason, std::string("encrypted_payload_type_invalid"));
+
+    auto snapshot_packet = event_packet;
+    snapshot_packet.header.payload_type = phk::battle::BattlePayloadType::Snapshot;
+    snapshot_packet.header.nonce_hex = RepeatHex('e', 24);
+    const auto snapshot_packet_result = server.DispatchEncrypted(snapshot_packet);
+    CHECK_TRUE(!snapshot_packet_result.ok);
+    CHECK_EQ(snapshot_packet_result.reason, std::string("encrypted_payload_type_invalid"));
+
+    auto valid_after_invalid_payload = packet;
+    valid_after_invalid_payload.header.player_id = "p2";
+    valid_after_invalid_payload.header.key_id = bob_accept.client_to_server_key_ref;
+    valid_after_invalid_payload.header.seq = 5;
+    valid_after_invalid_payload.header.tick = 2;
+    valid_after_invalid_payload.header.ack = 1;
+    valid_after_invalid_payload.header.nonce_hex = RepeatHex('d', 24);
+    const auto valid_after_invalid_payload_result = server.DispatchEncrypted(valid_after_invalid_payload);
+    CHECK_TRUE(valid_after_invalid_payload_result.ok);
+    CHECK_EQ(valid_after_invalid_payload_result.response_kind, std::string("input"));
     return true;
 }
 

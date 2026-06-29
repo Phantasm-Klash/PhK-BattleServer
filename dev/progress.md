@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - `BattleResultVerifier` binds those three digest fields to the server-owned `ReplaySummary`, rejecting result callbacks that preserve result hash/replay id while advertising stale or forged replay digest material.
 - CTest coverage now rejects mismatched input stream, event stream, and final state hashes; `tools/check_battle_server.py` gates the digest options, server callback JSON, verifier mismatch reasons, and focused test coverage while real protobuf result bindings remain pending.
 
+## 2026-06-29 Encrypted Client Payload Boundary
+
+- Server-facade encrypted packet dispatch now rejects server-to-client or handshake payload types (`snapshot`, `event`, `handshake_hello`, `handshake_accept`) with `encrypted_payload_type_invalid` before dispatcher seq/nonce state advances.
+- The facade allowlist is limited to client-to-server encrypted payloads: `input`, `mode_action`, `ping`, and `reconnect`; client-authored `result` packets remain rejected as `client_result_forbidden`.
+- CTest coverage proves rejected event/snapshot attempts do not consume the next valid seq/nonce, and `tools/check_battle_server.py` now gates the facade allowlist while full protobuf/KCP decoding remains pending.
+
 ## 2026-06-29 Canonical Replay Fixture Payload Boundary
 
 - Added `CanonicalReplayFixturePayload` and `DevReplayFixtureHash` so the development replay fixture has one canonical protobuf-replacement payload that binds replay id, owner, match/mode/ruleset, result hash, tick rate, event cursor, server-authoritative flag, manifest-shaped replay summary record, final snapshot hash/cursor, ordered players, and input/event traces.
