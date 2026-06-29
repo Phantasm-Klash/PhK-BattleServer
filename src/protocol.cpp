@@ -17,6 +17,10 @@ bool RequiresEncryptedPacketShape(BattlePayloadType payload_type) {
         payload_type == BattlePayloadType::Reconnect;
 }
 
+bool HasExpectedAeadTagShape(const std::vector<std::uint8_t>& auth_tag) {
+    return auth_tag.size() == 16;
+}
+
 }  // namespace
 
 DispatchResult BattleDispatcher::Dispatch(
@@ -87,6 +91,34 @@ DispatchResult BattleDispatcher::Dispatch(
         result.response_kind = "mode_action_empty_payload";
     }
     return result;
+}
+
+DispatchResult BattleDispatcher::DispatchEncrypted(const BattleEncryptedPacket& packet) {
+    DispatchResult result;
+    result.payload_type = packet.header.payload_type;
+
+    if (packet.ciphertext.empty()) {
+        result.reason = "ciphertext_missing";
+        return result;
+    }
+    if (!HasExpectedAeadTagShape(packet.auth_tag)) {
+        result.reason = "auth_tag_invalid";
+        return result;
+    }
+    if (!RequiresEncryptedPacketShape(packet.header.payload_type)) {
+        result.reason = packet.header.payload_type == BattlePayloadType::Result
+            ? "client_result_forbidden"
+            : "encrypted_payload_type_invalid";
+        return result;
+    }
+
+    DispatchResult dispatched = Dispatch(packet.header, packet.ciphertext);
+    if (dispatched.ok && dispatched.response_kind == "input_empty_payload") {
+        dispatched.response_kind = "input_encrypted";
+    } else if (dispatched.ok && dispatched.response_kind == "mode_action_empty_payload") {
+        dispatched.response_kind = "mode_action_encrypted";
+    }
+    return dispatched;
 }
 
 std::string PayloadTypeName(BattlePayloadType type) {
