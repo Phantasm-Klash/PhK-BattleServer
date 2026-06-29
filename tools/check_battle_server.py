@@ -39,6 +39,9 @@ REQUIRED = [
 
 REQUIRED_CPP_MANIFEST_FIELDS = {
     "BattleTicket": ["match_id", "player_id", "ruleset_version", "expires_at_ms"],
+    "SignedBattleTicket": ["ticket", "signature_alg", "signature", "key_id"],
+    "BattleHandshakeHello": ["battle_ticket", "client_x25519_pub", "client_random", "supported_aead"],
+    "BattleHandshakeAccept": ["match_id", "player_id", "server_x25519_pub", "server_random", "selected_aead", "kcp_conv", "key_id", "transcript_hash", "server_signature"],
     "BattlePacketHeader": ["match_id", "player_id", "tick", "seq", "ack", "payload_type", "nonce"],
     "BattleEncryptedPacket": ["header", "ciphertext", "auth_tag"],
     "BattleInput": ["match_id", "player_id", "tick", "seq", "direction_bits", "slow", "shoot", "bomb", "card_slot"],
@@ -256,9 +259,10 @@ def main() -> int:
         or "payload_type_missing" not in protocol_impl
         or "ciphertext_missing" not in protocol_impl
         or "auth_tag_invalid" not in protocol_impl
+        or "nonce_replay" not in protocol_impl
         or "encrypted_payload_type_invalid" not in protocol_impl
     ):
-        print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload shape guards", file=sys.stderr)
+        print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
         return 1
 
     handshake_impl = (ROOT / "src" / "handshake.cpp").read_text(encoding="utf-8")

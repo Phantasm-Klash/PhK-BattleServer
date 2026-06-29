@@ -21,6 +21,10 @@ bool HasExpectedAeadTagShape(const std::vector<std::uint8_t>& auth_tag) {
     return auth_tag.size() == 16;
 }
 
+std::string NonceReplayKey(const BattlePacketHeader& header) {
+    return header.match_id + ":" + header.player_id + ":" + header.key_id + ":" + header.nonce_hex;
+}
+
 }  // namespace
 
 DispatchResult BattleDispatcher::Dispatch(
@@ -110,6 +114,30 @@ DispatchResult BattleDispatcher::DispatchEncrypted(const BattleEncryptedPacket& 
             ? "client_result_forbidden"
             : "encrypted_payload_type_invalid";
         return result;
+    }
+
+    if (!packet.header.match_id.empty() &&
+        !packet.header.player_id.empty() &&
+        !packet.header.key_id.empty() &&
+        packet.header.nonce_hex.size() >= 24 &&
+        IsHex(packet.header.nonce_hex)) {
+        const std::string nonce_key = NonceReplayKey(packet.header);
+        if (seen_encrypted_nonces_.find(nonce_key) != seen_encrypted_nonces_.end()) {
+            result.reason = "nonce_replay";
+            return result;
+        }
+
+        DispatchResult dispatched = Dispatch(packet.header, packet.ciphertext);
+        if (!dispatched.ok) {
+            return dispatched;
+        }
+        seen_encrypted_nonces_.insert(nonce_key);
+        if (dispatched.response_kind == "input_empty_payload") {
+            dispatched.response_kind = "input_encrypted";
+        } else if (dispatched.response_kind == "mode_action_empty_payload") {
+            dispatched.response_kind = "mode_action_encrypted";
+        }
+        return dispatched;
     }
 
     DispatchResult dispatched = Dispatch(packet.header, packet.ciphertext);
