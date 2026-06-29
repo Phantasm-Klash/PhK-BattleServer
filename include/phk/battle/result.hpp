@@ -49,6 +49,7 @@ struct BattleResultVerificationOptions {
     std::string required_input_stream_hash;
     std::string required_event_stream_hash;
     std::string required_final_state_hash;
+    std::string required_replay_summary_hash;
     std::string required_replay_fixture_hash;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;

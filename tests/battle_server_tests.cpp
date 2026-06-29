@@ -54,6 +54,19 @@ std::string ExpectedDevReplayId(const phk::battle::ReplaySummary& summary) {
     return phk::battle::DevReplayIdFromReplaySummary(summary);
 }
 
+std::string ReplaySummaryHashForSummary(const phk::battle::ReplaySummary& summary) {
+    phk::battle::ReplayInputStreamSummaryRecord record;
+    record.replay_id = ExpectedDevReplayId(summary);
+    record.match_id = summary.match_id;
+    record.input_count = summary.input_count;
+    record.event_count = summary.event_count;
+    record.input_stream_hash = summary.input_stream_hash;
+    record.event_stream_hash = summary.event_stream_hash;
+    record.final_state_hash = summary.final_state_hash;
+    record.final_tick = summary.final_tick;
+    return phk::battle::DevReplayInputStreamSummaryHash(record);
+}
+
 std::string ModeResultJsonForSummary(const phk::battle::ReplaySummary& summary) {
     const std::string replay_fixture_hash = summary.match_id == "match-001"
         ? "sha256:dev-fnv64-4e12f244398ab1eb"
@@ -82,6 +95,8 @@ std::string ModeResultJsonForSummary(const phk::battle::ReplaySummary& summary) 
         summary.event_stream_hash +
         "\",\"final_state_hash\":\"" +
         summary.final_state_hash +
+        "\",\"replay_summary_hash\":\"" +
+        ReplaySummaryHashForSummary(summary) +
         "\",\"replay_fixture_hash\":\"" +
         replay_fixture_hash +
         "\"}";
@@ -681,6 +696,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_state_hash_result.ok);
     CHECK_EQ(wrong_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
 
+    auto wrong_replay_summary_hash = MakeBattleResultForSummary(summary);
+    wrong_replay_summary_hash.result.mode_result_json = ReplaceFirst(
+        ModeResultJsonForSummary(summary),
+        "\"replay_summary_hash\":\"" + ReplaySummaryHashForSummary(summary) + "\"",
+        "\"replay_summary_hash\":\"sha256:dev-fnv64-0000000000000000\""
+    );
+    const auto wrong_replay_summary_hash_result = server.SubmitBattleResult(wrong_replay_summary_hash);
+    CHECK_TRUE(!wrong_replay_summary_hash_result.ok);
+    CHECK_EQ(wrong_replay_summary_hash_result.reason, std::string("replay_summary_hash_mismatch"));
+
     auto wrong_replay_fixture_hash = MakeBattleResultForSummary(summary);
     wrong_replay_fixture_hash.result.mode_result_json = ReplaceFirst(
         ModeResultJsonForSummary(summary),
@@ -750,8 +775,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "e7df3a698be77c8806da017296d6c6a925d4c87ba1c610ca44cf8f84acb55aeb"
-            "63ca568db7a4a50c82c51d96c293ef2da1bfe49fcd83394ec0baaba8d872836f"
+            "cb8cff6bc2f94c08ea87c674cde8962909828d7dd8d7e04a287d5486e3c72a6b"
+            "47781b8feeb6748c6672e298f9a5bead856da9a2049508cea46870ab0f8452ef"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -767,6 +792,7 @@ bool TestBuildSignedBattleResultCallback() {
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
+            "\"replay_summary_hash\":\"sha256:dev-fnv64-f286e5b4976a50da\","
             "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e23b1e341f35e87\"}|1782489630000"
         )
     );
@@ -821,6 +847,11 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"final_state_hash\":\"" + built.replay_summary.final_state_hash + "\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"replay_summary_hash\":\"" + ReplaySummaryHashForSummary(built.replay_summary) + "\""
         ) != std::string::npos
     );
     CHECK_TRUE(
@@ -1168,11 +1199,19 @@ bool TestReplayFixtureBoundary() {
         "user-alice|match-replay-fixture|120|4|fnv64:a0b383d4a7be0bf7|"
         "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|60"
     );
+    CHECK_EQ(
+        phk::battle::DevReplayInputStreamSummaryHash(summary_record),
+        std::string("sha256:dev-fnv64-2a7544832ca5ff92")
+    );
     auto tampered_record = summary_record;
     tampered_record.final_tick = 61;
     CHECK_TRUE(
         phk::battle::CanonicalReplayInputStreamSummaryRecord(tampered_record) !=
         phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record)
+    );
+    CHECK_TRUE(
+        phk::battle::DevReplayInputStreamSummaryHash(tampered_record) !=
+        phk::battle::DevReplayInputStreamSummaryHash(summary_record)
     );
     const auto canonical_fixture_payload = phk::battle::CanonicalReplayFixturePayload(fixture);
     CHECK_TRUE(canonical_fixture_payload.find("battle-replay:match-replay-fixture:60|user-alice") == 0);

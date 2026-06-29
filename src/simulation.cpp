@@ -622,6 +622,17 @@ std::string CanonicalReplayInputStreamSummaryRecord(
     return out.str();
 }
 
+std::string DevReplayInputStreamSummaryHash(
+    const ReplayInputStreamSummaryRecord& record
+) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayInputStreamSummaryRecord(record));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
 std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
     std::ostringstream out;
     out << fixture.replay_id << '|'

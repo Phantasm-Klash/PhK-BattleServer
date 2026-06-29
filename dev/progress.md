@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - `BattleResultVerifier` binds that fixture hash to the server-owned simulation fixture before accepting a result callback, rejecting forged callbacks with `replay_fixture_hash_mismatch` even when result hash, replay id, counters, and stream hashes are otherwise present.
 - CTest pins the build-signed-result callback fixture hash `sha256:dev-fnv64-4e23b1e341f35e87` and the mode-action submission fixture hash `sha256:dev-fnv64-4e12f244398ab1eb`; `tools/check_battle_server.py` gates the verifier option, server callback JSON, mismatch reason, and focused test coverage.
 
+## 2026-06-29 Replay Summary Hash Boundary
+
+- Added `DevReplayInputStreamSummaryHash` for the manifest-compatible `ReplayInputStreamSummary` bridge record, giving the dependency-light protobuf replacement boundary its own compact digest before full generated C++ bindings land.
+- Server-built signed-result callback material now includes `replay_summary_hash` in `mode_result_json` and `SubmitBattleResult` requires it to match the current server-owned replay summary record.
+- CTest pins the owner-bearing fixture record hash `sha256:dev-fnv64-2a7544832ca5ff92` and the ownerless signed-result callback record hash `sha256:dev-fnv64-f286e5b4976a50da`, and rejects tampered callbacks with `replay_summary_hash_mismatch`.
+
 ## 2026-06-29 Protobuf Shape Gate Boundary
 
 - The repository checker now validates the exported `PhK-Protocol` descriptor beyond message/field presence: `BattlePayloadType` enum values are pinned to the C++ payload enum, and key protobuf field numbers/types are checked for packet nonce, encrypted ciphertext/auth tag, handshake X25519/random/transcript bytes, mode-action/result JSON byte fields, and signed-result signature bytes.

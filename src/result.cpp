@@ -207,6 +207,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "replay_summary_hash", options.required_replay_summary_hash)) {
+        Fail(verification, "replay_summary_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
         !ContainsJsonStringField(result.mode_result_json, "replay_fixture_hash", options.required_replay_fixture_hash)) {
         Fail(verification, "replay_fixture_hash_mismatch");
         return verification;

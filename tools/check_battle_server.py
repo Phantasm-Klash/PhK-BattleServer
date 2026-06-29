@@ -323,6 +323,7 @@ def main() -> int:
         or "BuildReplayInputStreamSummary" not in simulation_text
         or "BuildReplayFixture" not in simulation_text
         or "CanonicalReplayInputStreamSummaryRecord" not in simulation_text
+        or "DevReplayInputStreamSummaryHash" not in simulation_text
         or "CanonicalReplayFixturePayload" not in simulation_text
         or "DevReplayFixtureHash" not in simulation_text
         or "DevResultHashFromReplaySummary" not in simulation_text
@@ -349,6 +350,7 @@ def main() -> int:
         or "BuildReplayInputStreamSummary" not in simulation_impl
         or "BuildReplayFixture" not in simulation_impl
         or "CanonicalReplayInputStreamSummaryRecord" not in simulation_impl
+        or "DevReplayInputStreamSummaryHash" not in simulation_impl
         or "CanonicalReplayFixturePayload" not in simulation_impl
         or "DevReplayFixtureHash" not in simulation_impl
         or "DevResultHashFromReplaySummary" not in simulation_impl
@@ -419,10 +421,12 @@ def main() -> int:
         or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
         or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
+        or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash" not in server_impl
         or "options.required_replay_fixture_hash = DevReplayFixtureHash" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
+        or "replay_summary_hash" not in server_impl
         or "replay_fixture_hash" not in server_impl
     ):
         print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
@@ -443,6 +447,7 @@ def main() -> int:
         or "input_stream_hash_mismatch" not in result_impl
         or "event_stream_hash_mismatch" not in result_impl
         or "final_state_hash_mismatch" not in result_impl
+        or "replay_summary_hash_mismatch" not in result_impl
         or "replay_fixture_hash_mismatch" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
     ):
@@ -524,6 +529,8 @@ def main() -> int:
         or "fnv64:8049946f03724f36" not in tests_text
         or "sha256:dev-fnv64-a7519545ad65902e" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
+        or "DevReplayInputStreamSummaryHash(summary_record)" not in tests_text
+        or "sha256:dev-fnv64-2a7544832ca5ff92" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
         or "sha256:dev-fnv64-f2df27561abbe64e" not in tests_text
         or "tampered_fixture_snapshot" not in tests_text
@@ -534,7 +541,9 @@ def main() -> int:
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
         or "sha256:dev-fnv64-4e23b1e341f35e87" not in tests_text
+        or "sha256:dev-fnv64-f286e5b4976a50da" not in tests_text
         or "sha256:dev-fnv64-4e12f244398ab1eb" not in tests_text
+        or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
