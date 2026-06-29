@@ -85,6 +85,26 @@ std::string DevReplayIdFromSummary(const ReplaySummary& summary) {
     return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
 }
 
+std::string Hex64(std::uint64_t value) {
+    std::ostringstream out;
+    out << std::hex << std::setw(16) << std::setfill('0') << value;
+    return out.str();
+}
+
+std::string DevHexMaterial(std::string seed, std::size_t hex_chars) {
+    std::string out;
+    std::uint64_t counter = 0;
+    while (out.size() < hex_chars) {
+        std::uint64_t hash = 1469598103934665603ull;
+        hash = HashAppend(hash, seed);
+        hash = HashAppend(hash, counter);
+        out += Hex64(hash);
+        ++counter;
+    }
+    out.resize(hex_chars);
+    return out;
+}
+
 }  // namespace
 
 BattleServer::BattleServer(BattleServerConfig config)
@@ -362,6 +382,55 @@ ReplaySummary BattleServer::MatchReplaySummary(const std::string& match_id) cons
         return summary;
     }
     return simulation_it->second.Summary();
+}
+
+BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::string& match_id) const {
+    BuildSignedBattleResultResult result;
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
+        return result;
+    }
+
+    result.replay_summary = simulation_it->second.Summary();
+    BattleResult& battle_result = result.signed_result.result;
+    battle_result.match_id = match_id;
+    battle_result.mode_id = simulation_it->second.Config().mode_id;
+    battle_result.version.ruleset_version = simulation_it->second.Config().ruleset_version;
+    battle_result.result_hash = DevSha256RefFromSummary(result.replay_summary);
+    battle_result.replay_id = DevReplayIdFromSummary(result.replay_summary);
+    battle_result.reward_projection_json =
+        "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}";
+    battle_result.mode_result_json =
+        "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(result.replay_summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(result.replay_summary.final_tick) +
+        "}";
+    battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
+
+    for (const auto& item : sessions_by_ticket_) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id == match_id) {
+            battle_result.player_ids.push_back(session.player_id);
+        }
+    }
+    if (battle_result.player_ids.empty()) {
+        result.reason = "player_ids_missing";
+        return result;
+    }
+
+    result.signed_result.signature_alg = "ED25519";
+    result.signed_result.key_id = config_.server_id;
+    result.signed_result.public_key_hex = DevHexMaterial(config_.server_id + ":result-public", 64);
+    result.signed_result.signature_hex = DevHexMaterial(
+        CanonicalBattleResultPayload(battle_result) + ":" + config_.server_id + ":result-signature",
+        128
+    );
+    result.signed_result.server_authoritative = true;
+    result.ok = true;
+    result.reason = "ok";
+    return result;
 }
 
 SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResult& signed_result) {

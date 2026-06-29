@@ -134,6 +134,13 @@ phk::battle::SignedBattleResult MakeBattleResultForSummary(const phk::battle::Re
     return signed_result;
 }
 
+phk::battle::BattleInput MakeInput(
+    const std::string& player_id,
+    std::uint64_t tick,
+    std::uint64_t seq,
+    std::uint32_t direction_bits
+);
+
 phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq);
 
 void FillEncryptedHeaderShape(phk::battle::BattlePacketHeader& header) {
@@ -461,6 +468,57 @@ bool TestBattleResultSubmission() {
 	CHECK_TRUE(duplicate.duplicate);
 	CHECK_EQ(duplicate.reason, std::string("ok"));
 	return true;
+}
+
+bool TestBuildSignedBattleResultCallback() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489630000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    const auto missing = server.BuildSignedBattleResult("match-missing");
+    CHECK_TRUE(!missing.ok);
+    CHECK_EQ(missing.reason, std::string("match_unknown"));
+
+    const auto built = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built.ok);
+    CHECK_EQ(built.reason, std::string("ok"));
+    CHECK_EQ(built.replay_summary.final_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(built.replay_summary.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(built.signed_result.result.match_id, std::string("match-001"));
+    CHECK_EQ(built.signed_result.result.mode_id, std::string("certification"));
+    CHECK_EQ(built.signed_result.result.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
+    CHECK_EQ(built.signed_result.result.result_hash, ExpectedDevResultHash(built.replay_summary));
+    CHECK_EQ(built.signed_result.result.replay_id, ExpectedDevReplayId(built.replay_summary));
+    CHECK_EQ(built.signed_result.result.player_ids.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(built.signed_result.key_id, config.server_id);
+    CHECK_EQ(built.signed_result.public_key_hex.size(), static_cast<std::size_t>(64));
+    CHECK_EQ(built.signed_result.signature_hex.size(), static_cast<std::size_t>(128));
+    CHECK_TRUE(built.signed_result.server_authoritative);
+    CHECK_TRUE(
+        built.signed_result.result.reward_projection_json.find("projection_only") != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"event_cursor\":" + std::to_string(built.replay_summary.event_count)
+        ) != std::string::npos
+    );
+
+    const auto submitted = server.SubmitBattleResult(built.signed_result);
+    CHECK_TRUE(submitted.ok);
+    CHECK_EQ(submitted.reason, std::string("ok"));
+    CHECK_TRUE(!submitted.duplicate);
+    CHECK_TRUE(!submitted.verification.warnings.empty());
+
+    const auto duplicate = server.SubmitBattleResult(built.signed_result);
+    CHECK_TRUE(duplicate.ok);
+    CHECK_TRUE(duplicate.duplicate);
+    CHECK_EQ(duplicate.settlement_key, std::string("battle-result:match-001"));
+    return true;
 }
 
 phk::battle::BattleInput MakeInput(
@@ -1018,6 +1076,7 @@ int main() {
 		{"ServerAndHandshake", TestServerAndHandshake},
         {"RoomCapacityGuard", TestRoomCapacityGuard},
 		{"BattleResultSubmission", TestBattleResultSubmission},
+		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},

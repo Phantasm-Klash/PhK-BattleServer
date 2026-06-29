@@ -44,6 +44,13 @@ struct SubmitBattleResultResult {
 	bool duplicate = false;
 };
 
+struct BuildSignedBattleResultResult {
+	bool ok = false;
+	std::string reason;
+	SignedBattleResult signed_result;
+	ReplaySummary replay_summary;
+};
+
 class BattleServer {
 public:
 	explicit BattleServer(BattleServerConfig config);
@@ -66,6 +73,7 @@ public:
 		std::uint64_t last_seen_event_cursor
 	) const;
 	ReplaySummary MatchReplaySummary(const std::string& match_id) const;
+	BuildSignedBattleResultResult BuildSignedBattleResult(const std::string& match_id) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
 
 private:
