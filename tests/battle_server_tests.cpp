@@ -39,6 +39,13 @@ void FillHandshakeBytes(phk::battle::BattleHandshakeHello& hello) {
     hello.client_random[0] = 2;
 }
 
+void FillDistinctHandshakeBytes(phk::battle::BattleHandshakeHello& hello) {
+    for (std::size_t i = 0; i < hello.client_x25519_pub.size(); ++i) {
+        hello.client_x25519_pub[i] = static_cast<std::uint8_t>(i + 1);
+        hello.client_random[i] = static_cast<std::uint8_t>(0xf0u - i);
+    }
+}
+
 std::string ExpectedDevResultHash(const phk::battle::ReplaySummary& summary) {
     return phk::battle::DevResultHashFromReplaySummary(summary);
 }
@@ -452,6 +459,43 @@ bool TestServerAndHandshake() {
     CHECK_TRUE(!expired_accept.ok);
     CHECK_EQ(expired_accept.reason, std::string("ticket_expired"));
 	return true;
+}
+
+bool TestHandshakeTranscriptBindsFullClientMaterial() {
+    const auto ticket = MakeTicket();
+
+    phk::battle::BattleHandshakeHello hello;
+    hello.battle_ticket = ticket;
+    FillDistinctHandshakeBytes(hello);
+    hello.supported_aead = {"CHACHA20_POLY1305", "XCHACHA20_POLY1305"};
+
+    phk::battle::BattleHandshakeHello changed_late_key = hello;
+    changed_late_key.client_x25519_pub[31] ^= 0x5au;
+    CHECK_TRUE(phk::battle::DevTranscriptHash(hello, ticket.ticket) !=
+        phk::battle::DevTranscriptHash(changed_late_key, ticket.ticket));
+
+    phk::battle::BattleHandshakeHello changed_late_random = hello;
+    changed_late_random.client_random[30] ^= 0xa5u;
+    CHECK_TRUE(phk::battle::DevTranscriptHash(hello, ticket.ticket) !=
+        phk::battle::DevTranscriptHash(changed_late_random, ticket.ticket));
+
+    phk::battle::BattleHandshakeHello reordered_aead = hello;
+    reordered_aead.supported_aead = {"XCHACHA20_POLY1305", "CHACHA20_POLY1305"};
+    CHECK_TRUE(phk::battle::DevTranscriptHash(hello, ticket.ticket) !=
+        phk::battle::DevTranscriptHash(reordered_aead, ticket.ticket));
+
+    const auto transcript = phk::battle::DevTranscriptHash(hello, ticket.ticket);
+    CHECK_EQ(transcript.size(), static_cast<std::size_t>(32));
+    CHECK_TRUE(phk::battle::IsHex(transcript));
+    CHECK_TRUE(
+        phk::battle::DevHandshakeKeyRef(transcript, "client_to_server") !=
+        phk::battle::DevHandshakeKeyRef(transcript, "server_to_client")
+    );
+    CHECK_EQ(
+        phk::battle::DevHandshakeServerSignature(transcript, "dev-ed25519-local").size(),
+        static_cast<std::size_t>(128)
+    );
+    return true;
 }
 
 bool TestRoomCapacityGuard() {
@@ -1461,6 +1505,7 @@ int main() {
 		{"GoldenReplaySummaryFixture", TestGoldenReplaySummaryFixture},
 		{"TicketVerifier", TestTicketVerifier},
 		{"ServerAndHandshake", TestServerAndHandshake},
+        {"HandshakeTranscriptBindsFullClientMaterial", TestHandshakeTranscriptBindsFullClientMaterial},
         {"RoomCapacityGuard", TestRoomCapacityGuard},
 		{"BattleResultSubmission", TestBattleResultSubmission},
 		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},

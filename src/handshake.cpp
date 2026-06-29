@@ -35,6 +35,15 @@ std::string Hex64(std::uint64_t value) {
     return out.str();
 }
 
+std::string HexBytes(const std::array<std::uint8_t, 32>& values) {
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (const std::uint8_t value : values) {
+        out << std::setw(2) << static_cast<unsigned int>(value);
+    }
+    return out.str();
+}
+
 std::string DevHexMaterial(std::string seed, std::size_t hex_chars) {
     std::string out;
     std::uint64_t counter = 0;
@@ -115,9 +124,12 @@ std::string DevTranscriptHash(
 ) {
     std::ostringstream input;
     input << CanonicalTicketPayload(verified_ticket) << '|'
-          << hello.supported_aead.size() << '|'
-          << static_cast<int>(hello.client_x25519_pub[0]) << '|'
-          << static_cast<int>(hello.client_random[0]);
+          << "aead_count=" << hello.supported_aead.size();
+    for (const auto& aead : hello.supported_aead) {
+        input << "|aead=" << aead;
+    }
+    input << "|client_x25519_pub=" << HexBytes(hello.client_x25519_pub)
+          << "|client_random=" << HexBytes(hello.client_random);
     const std::uint64_t first = Fnv1a(input.str());
     const std::uint64_t second = Fnv1a(input.str() + ":2");
     return Hex64(first) + Hex64(second);
