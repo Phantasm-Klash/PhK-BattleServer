@@ -402,6 +402,11 @@ def main() -> int:
         or "options.required_event_cursor" not in server_impl
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
+        or "AcceptDecodedInput" not in server_impl
+        or "AcceptDecodedModeAction" not in server_impl
+        or "SameVersionStamp" not in server_impl
+        or "decoded_input_header_mismatch" not in server_impl
+        or "decoded_mode_action_header_mismatch" not in server_impl
         or "handshake_required" not in server_impl
         or "handshake_accepted" not in server_impl
         or "client_to_server_key_ref" not in server_impl
@@ -435,7 +440,7 @@ def main() -> int:
         or "replay_summary_hash" not in server_impl
         or "replay_fixture_hash" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
@@ -560,6 +565,11 @@ def main() -> int:
         or "final_state_hash_mismatch" not in tests_text
         or "handshake_required" not in tests_text
         or "client_to_server_key_ref" not in tests_text
+        or "DecodedPayloadHeaderBinding" not in tests_text
+        or "decoded_input_header_mismatch" not in tests_text
+        or "decoded_input_payload_type_mismatch" not in tests_text
+        or "decoded_mode_action_header_mismatch" not in tests_text
+        or "decoded_mode_action_payload_type_mismatch" not in tests_text
         or "KcpAeadPacketAdapterBoundary" not in tests_text
         or "remote_endpoint_mismatch" not in tests_text
         or "reconnect_result" not in tests_text
@@ -575,7 +585,7 @@ def main() -> int:
         or "ping_ack_ahead" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
+        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, decoded header/payload binding coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
         return 1
 
     if args.build:

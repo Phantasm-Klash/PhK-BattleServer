@@ -1748,6 +1748,112 @@ bool TestServerEncryptedPacketSessionBoundary() {
     return true;
 }
 
+bool TestDecodedPayloadHeaderBinding() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    const auto accept = AcceptDefaultHandshake(server);
+    CHECK_TRUE(accept.ok);
+
+    phk::battle::BattlePacketHeader input_header;
+    input_header.match_id = "match-001";
+    input_header.player_id = "p1";
+    input_header.tick = 1;
+    input_header.seq = 1;
+    input_header.payload_type = phk::battle::BattlePayloadType::Input;
+    input_header.key_id = accept.client_to_server_key_ref;
+    input_header.nonce_hex = RepeatHex('1', 24);
+
+    auto input = MakeInput("p1", 1, 1, 1u << 3);
+    const auto accepted_input = server.AcceptDecodedInput(input_header, input);
+    CHECK_TRUE(accepted_input.ok);
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto wrong_player_input = MakeInput("p2", 2, 2, 1u << 2);
+    auto mismatch_header = input_header;
+    mismatch_header.tick = 2;
+    mismatch_header.seq = 2;
+    const auto wrong_player_result = server.AcceptDecodedInput(mismatch_header, wrong_player_input);
+    CHECK_TRUE(!wrong_player_result.ok);
+    CHECK_EQ(wrong_player_result.reason, std::string("decoded_input_header_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto wrong_payload_header = mismatch_header;
+    wrong_payload_header.player_id = "p2";
+    wrong_payload_header.payload_type = phk::battle::BattlePayloadType::Ping;
+    const auto wrong_payload_type = server.AcceptDecodedInput(wrong_payload_header, wrong_player_input);
+    CHECK_TRUE(!wrong_payload_type.ok);
+    CHECK_EQ(wrong_payload_type.reason, std::string("decoded_input_payload_type_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto wrong_version_input = MakeInput("p2", 2, 2, 1u << 2);
+    auto wrong_version_header = input_header;
+    wrong_version_header.player_id = "p2";
+    wrong_version_header.tick = 2;
+    wrong_version_header.seq = 2;
+    wrong_version_header.version.ruleset_version = "ruleset-other";
+    const auto wrong_version_result = server.AcceptDecodedInput(wrong_version_header, wrong_version_input);
+    CHECK_TRUE(!wrong_version_result.ok);
+    CHECK_EQ(wrong_version_result.reason, std::string("decoded_input_header_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto p2_input = MakeInput("p2", 1, 1, 1u << 2);
+    auto p2_header = input_header;
+    p2_header.player_id = "p2";
+    p2_header.tick = 1;
+    p2_header.seq = 1;
+    const auto accepted_p2_input = server.AcceptDecodedInput(p2_header, p2_input);
+    CHECK_TRUE(accepted_p2_input.ok);
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    auto action = MakeModeAction(2);
+    action.tick = 2;
+    phk::battle::BattlePacketHeader action_header;
+    action_header.match_id = action.match_id;
+    action_header.player_id = action.player_id;
+    action_header.tick = action.tick;
+    action_header.seq = action.seq;
+    action_header.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    action_header.key_id = accept.client_to_server_key_ref;
+    action_header.nonce_hex = RepeatHex('2', 24);
+    const auto accepted_action = server.AcceptDecodedModeAction(action_header, action);
+    CHECK_TRUE(accepted_action.ok);
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+
+    auto mismatched_action = action;
+    mismatched_action.action_id = "action-header-mismatch";
+    mismatched_action.seq = 3;
+    auto mismatched_action_header = action_header;
+    mismatched_action_header.seq = 4;
+    const auto mismatched_action_result = server.AcceptDecodedModeAction(
+        mismatched_action_header,
+        mismatched_action
+    );
+    CHECK_TRUE(!mismatched_action_result.ok);
+    CHECK_EQ(mismatched_action_result.reason, std::string("decoded_mode_action_header_mismatch"));
+
+    auto wrong_action_type_header = action_header;
+    wrong_action_type_header.seq = 3;
+    wrong_action_type_header.payload_type = phk::battle::BattlePayloadType::Input;
+    mismatched_action.seq = 3;
+    const auto wrong_action_payload_type = server.AcceptDecodedModeAction(
+        wrong_action_type_header,
+        mismatched_action
+    );
+    CHECK_TRUE(!wrong_action_payload_type.ok);
+    CHECK_EQ(wrong_action_payload_type.reason, std::string("decoded_mode_action_payload_type_mismatch"));
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 2, 1u << 2)).ok);
+    const auto action_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(action_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, action.action_id);
+    return true;
+}
+
 bool TestKcpPlaceholder() {
     phk::battle::KcpEchoEndpoint endpoint;
     phk::battle::UdpDatagram datagram;
@@ -1912,6 +2018,7 @@ int main() {
 		{"Dispatcher", TestDispatcher},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
+		{"DecodedPayloadHeaderBinding", TestDecodedPayloadHeaderBinding},
 		{"KcpPlaceholder", TestKcpPlaceholder},
 		{"KcpAeadPacketAdapterBoundary", TestKcpAeadPacketAdapterBoundary},
 	};

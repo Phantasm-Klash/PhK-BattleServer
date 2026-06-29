@@ -66,6 +66,8 @@ public:
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello);
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
 	DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
+	InputValidationResult AcceptDecodedInput(const BattlePacketHeader& header, const BattleInput& input);
+	InputValidationResult AcceptDecodedModeAction(const BattlePacketHeader& header, const BattleModeAction& action);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
 	InputValidationResult SetPlayerConnected(const std::string& match_id, const std::string& player_id, bool connected);

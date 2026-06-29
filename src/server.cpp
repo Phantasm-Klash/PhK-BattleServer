@@ -65,6 +65,20 @@ InputValidationResult UnknownPlayerResult() {
     return result;
 }
 
+InputValidationResult InvalidDecodedPayloadResult(std::string reason) {
+    InputValidationResult result;
+    result.code = InputValidationCode::InvalidModeAction;
+    result.reason = std::move(reason);
+    return result;
+}
+
+bool SameVersionStamp(const VersionStamp& left, const VersionStamp& right) {
+    return left.protocol_version == right.protocol_version &&
+        left.business_api_version == right.business_api_version &&
+        left.battle_api_version == right.battle_api_version &&
+        left.ruleset_version == right.ruleset_version;
+}
+
 std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
     for (const char ch : value) {
         hash ^= static_cast<unsigned char>(ch);
@@ -318,6 +332,44 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         }
     }
     return dispatcher_.DispatchEncrypted(packet);
+}
+
+InputValidationResult BattleServer::AcceptDecodedInput(
+    const BattlePacketHeader& header,
+    const BattleInput& input
+) {
+    if (header.payload_type != BattlePayloadType::Input) {
+        return InvalidDecodedPayloadResult("decoded_input_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, input.version) ||
+        header.match_id != input.match_id ||
+        header.player_id != input.player_id ||
+        header.tick != input.tick ||
+        header.seq != input.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_input_header_mismatch");
+    }
+    return AcceptInput(input);
+}
+
+InputValidationResult BattleServer::AcceptDecodedModeAction(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    if (header.payload_type != BattlePayloadType::ModeAction) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, action.version) ||
+        header.match_id != action.match_id ||
+        header.player_id != action.player_id ||
+        header.tick != action.tick ||
+        header.seq != action.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_header_mismatch");
+    }
+    return AcceptModeAction(action);
 }
 
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
