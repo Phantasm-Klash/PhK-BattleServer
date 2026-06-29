@@ -218,6 +218,8 @@ def main() -> int:
         or "BuildReplayInputStreamSummary" not in simulation_text
         or "BuildReplayFixture" not in simulation_text
         or "CanonicalReplayInputStreamSummaryRecord" not in simulation_text
+        or "CanonicalReplayFixturePayload" not in simulation_text
+        or "DevReplayFixtureHash" not in simulation_text
         or "DevResultHashFromReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
         or "pending_mode_actions_by_tick_" not in simulation_text
@@ -241,6 +243,8 @@ def main() -> int:
         or "BuildReplayInputStreamSummary" not in simulation_impl
         or "BuildReplayFixture" not in simulation_impl
         or "CanonicalReplayInputStreamSummaryRecord" not in simulation_impl
+        or "CanonicalReplayFixturePayload" not in simulation_impl
+        or "DevReplayFixtureHash" not in simulation_impl
         or "DevResultHashFromReplaySummary" not in simulation_impl
         or "DevReplayIdFromReplaySummary" not in simulation_impl
         or 'Snapshot("replay_final")' not in simulation_impl
@@ -267,6 +271,7 @@ def main() -> int:
         or "fixture.replay_summary_record = BuildReplayInputStreamSummary" not in simulation_impl
         or "record.owner_user_id" not in simulation_impl
         or "HashAppend(hash, item)" not in simulation_impl
+        or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
     ):
         print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
@@ -387,6 +392,10 @@ def main() -> int:
         or "fnv64:8049946f03724f36" not in tests_text
         or "sha256:dev-fnv64-a7519545ad65902e" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
+        or "CanonicalReplayFixturePayload(fixture)" not in tests_text
+        or "sha256:dev-fnv64-54919460e75ba83d" not in tests_text
+        or "tampered_fixture_snapshot" not in tests_text
+        or "tampered_fixture_authority" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text

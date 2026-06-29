@@ -572,6 +572,45 @@ std::string CanonicalReplayInputStreamSummaryRecord(
     return out.str();
 }
 
+std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
+    std::ostringstream out;
+    out << fixture.replay_id << '|'
+        << fixture.owner_user_id << '|'
+        << fixture.match_id << '|'
+        << fixture.mode_id << '|'
+        << fixture.ruleset_version << '|'
+        << fixture.result_hash << '|'
+        << fixture.tick_rate_hz << '|'
+        << fixture.event_cursor << '|'
+        << (fixture.server_authoritative ? "1" : "0") << '|'
+        << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
+        << fixture.final_snapshot.snapshot_kind << '|'
+        << fixture.final_snapshot.snapshot_tick << '|'
+        << fixture.final_snapshot.state_hash << '|'
+        << fixture.final_snapshot.event_cursor << '|';
+    for (const auto& player_id : fixture.player_ids) {
+        out << player_id << ',';
+    }
+    out << '|';
+    for (const auto& trace : fixture.input_trace) {
+        out << trace << '\n';
+    }
+    out << '|';
+    for (const auto& trace : fixture.event_trace) {
+        out << trace << '\n';
+    }
+    return out.str();
+}
+
+std::string DevReplayFixtureHash(const ReplayFixture& fixture) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayFixturePayload(fixture));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
 std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     std::uint64_t hash = kFnvOffset;
     hash = HashAppend(hash, summary.match_id);

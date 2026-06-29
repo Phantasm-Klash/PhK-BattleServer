@@ -20,6 +20,12 @@ Status date: 2026-06-29
 - `BattleResultVerifier` binds those three digest fields to the server-owned `ReplaySummary`, rejecting result callbacks that preserve result hash/replay id while advertising stale or forged replay digest material.
 - CTest coverage now rejects mismatched input stream, event stream, and final state hashes; `tools/check_battle_server.py` gates the digest options, server callback JSON, verifier mismatch reasons, and focused test coverage while real protobuf result bindings remain pending.
 
+## 2026-06-29 Canonical Replay Fixture Payload Boundary
+
+- Added `CanonicalReplayFixturePayload` and `DevReplayFixtureHash` so the development replay fixture has one canonical protobuf-replacement payload that binds replay id, owner, match/mode/ruleset, result hash, tick rate, event cursor, server-authoritative flag, manifest-shaped replay summary record, final snapshot hash/cursor, ordered players, and input/event traces.
+- CTest now pins the fixture hash `sha256:dev-fnv64-54919460e75ba83d` for the 60Hz 1v1 replay fixture and proves tampering the summary record, final snapshot, trace material, or server-authoritative flag changes the fixture hash.
+- `tools/check_battle_server.py` gates the canonical fixture payload/hash API and focused tamper coverage while full generated protobuf replay bindings remain pending.
+
 ## 2026-06-29 KCP/AEAD Adapter Boundary
 
 - Added `KcpAeadPacketAdapter`, a development transport adapter that accepts a `BattleEncryptedPacket` plus UDP datagram, calls `BattleServer::DispatchEncrypted` first, and only forwards accepted packets to the current KCP placeholder endpoint.

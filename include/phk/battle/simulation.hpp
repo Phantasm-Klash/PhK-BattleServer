@@ -192,6 +192,8 @@ private:
 [[nodiscard]] std::string CanonicalReplayInputStreamSummaryRecord(
     const ReplayInputStreamSummaryRecord& record
 );
+[[nodiscard]] std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture);
+[[nodiscard]] std::string DevReplayFixtureHash(const ReplayFixture& fixture);
 [[nodiscard]] std::string DevResultHashFromReplaySummary(const ReplaySummary& summary);
 [[nodiscard]] std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary);
 
