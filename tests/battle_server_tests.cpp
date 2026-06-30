@@ -2215,14 +2215,81 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_TRUE(!ping_decode_result.encrypted_dispatch_accepted);
     CHECK_EQ(ping_decode_result.reason, std::string("decoded_packet_payload_type_unsupported"));
 
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", false).ok);
+    const auto reconnect_base_event_count = server.MatchReplaySummary("match-001").event_count;
+    phk::battle::DecodedBattlePacket reconnect_packet;
+    reconnect_packet.encrypted_packet.header.match_id = "match-001";
+    reconnect_packet.encrypted_packet.header.player_id = "p2";
+    reconnect_packet.encrypted_packet.header.tick = 2;
+    reconnect_packet.encrypted_packet.header.seq = 3;
+    reconnect_packet.encrypted_packet.header.ack = reconnect_base_event_count;
+    reconnect_packet.encrypted_packet.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
+    reconnect_packet.encrypted_packet.header.key_id = bob_accept.client_to_server_key_ref;
+    RefreshDevAeadNonce(reconnect_packet.encrypted_packet.header);
+    reconnect_packet.encrypted_packet.ciphertext = {'p', 'b', ':', 'r', 'e', 'c', 'o', 'n'};
+    reconnect_packet.encrypted_packet.auth_tag.assign(16, 0x36);
+    reconnect_packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::ModeAction;
+    reconnect_packet.decoded_mode_action = MakeModeAction(3);
+    reconnect_packet.decoded_mode_action.player_id = "p2";
+    reconnect_packet.decoded_mode_action.tick = 2;
+    reconnect_packet.decoded_mode_action.action_id = "action-decoded-reconnect-p2";
+    reconnect_packet.decoded_mode_action.action_type = "reconnect";
+    reconnect_packet.decoded_mode_action.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(reconnect_base_event_count) + "}";
+
+    auto missing_decoded_reconnect = reconnect_packet;
+    missing_decoded_reconnect.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(missing_decoded_reconnect.encrypted_packet.header);
+    missing_decoded_reconnect.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::None;
+    const auto missing_decoded_reconnect_result = adapter.AcceptDecodedPacket(missing_decoded_reconnect);
+    CHECK_TRUE(!missing_decoded_reconnect_result.ok);
+    CHECK_TRUE(!missing_decoded_reconnect_result.dispatch.ok);
+    CHECK_TRUE(!missing_decoded_reconnect_result.encrypted_dispatch_accepted);
+    CHECK_EQ(missing_decoded_reconnect_result.reason, std::string("decoded_packet_reconnect_missing"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
+    auto mismatched_reconnect = reconnect_packet;
+    mismatched_reconnect.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(mismatched_reconnect.encrypted_packet.header);
+    mismatched_reconnect.decoded_mode_action.seq = 5;
+    const auto mismatched_reconnect_result = adapter.AcceptDecodedPacket(mismatched_reconnect);
+    CHECK_TRUE(!mismatched_reconnect_result.ok);
+    CHECK_TRUE(!mismatched_reconnect_result.dispatch.ok);
+    CHECK_TRUE(!mismatched_reconnect_result.encrypted_dispatch_accepted);
+    CHECK_EQ(mismatched_reconnect_result.reason, std::string("decoded_reconnect_header_mismatch"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
+    auto wrong_reconnect_type = reconnect_packet;
+    wrong_reconnect_type.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(wrong_reconnect_type.encrypted_packet.header);
+    wrong_reconnect_type.decoded_mode_action.seq = 4;
+    wrong_reconnect_type.decoded_mode_action.action_type = "ready";
+    const auto wrong_reconnect_type_result = adapter.AcceptDecodedPacket(wrong_reconnect_type);
+    CHECK_TRUE(!wrong_reconnect_type_result.ok);
+    CHECK_TRUE(!wrong_reconnect_type_result.dispatch.ok);
+    CHECK_TRUE(!wrong_reconnect_type_result.encrypted_dispatch_accepted);
+    CHECK_EQ(wrong_reconnect_type_result.reason, std::string("decoded_reconnect_header_mismatch"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
+    auto accepted_reconnect = reconnect_packet;
+    accepted_reconnect.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(accepted_reconnect.encrypted_packet.header);
+    accepted_reconnect.decoded_mode_action.seq = 4;
+    const auto accepted_reconnect_result = adapter.AcceptDecodedPacket(accepted_reconnect);
+    CHECK_TRUE(accepted_reconnect_result.ok);
+    CHECK_TRUE(accepted_reconnect_result.encrypted_dispatch_accepted);
+    CHECK_EQ(accepted_reconnect_result.dispatch.response_kind, std::string("reconnect"));
+    CHECK_EQ(accepted_reconnect_result.decoded.reason, std::string("ok"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
     auto invalid_dispatch = input_packet;
     invalid_dispatch.encrypted_packet.header.player_id = "p2";
     invalid_dispatch.encrypted_packet.header.key_id = "wrong-session-key";
-    invalid_dispatch.encrypted_packet.header.seq = 4;
+    invalid_dispatch.encrypted_packet.header.seq = 5;
     invalid_dispatch.encrypted_packet.header.tick = 2;
     RefreshDevAeadNonce(invalid_dispatch.encrypted_packet.header);
     invalid_dispatch.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
-    invalid_dispatch.decoded_input = MakeInput("p2", 2, 4, 1u << 2);
+    invalid_dispatch.decoded_input = MakeInput("p2", 2, 5, 1u << 2);
     const auto invalid_dispatch_result = adapter.AcceptDecodedPacket(invalid_dispatch);
     CHECK_TRUE(!invalid_dispatch_result.ok);
     CHECK_TRUE(!invalid_dispatch_result.dispatch.ok);
@@ -2243,11 +2310,13 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_EQ(no_handshake_result.reason, std::string("handshake_required"));
     CHECK_EQ(no_handshake_server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(0));
 
-    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 5, 1u << 2)).ok);
     const auto action_snapshot = server.TickMatch("match-001");
     CHECK_EQ(action_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
-    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(2));
-    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, retried_decoded_action.decoded_mode_action.action_id);
+    CHECK_TRUE(server.IsPlayerConnected("match-001", "p2"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(3));
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, accepted_reconnect.decoded_mode_action.action_id);
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_type, std::string("reconnect"));
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace[server.MatchReplaySummary("match-001").event_trace.size() - 2].find("connection|connected|p2") != std::string::npos);
     return true;
 }
 

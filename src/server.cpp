@@ -127,6 +127,31 @@ InputValidationResult ValidateDecodedModeActionBinding(
     return result;
 }
 
+InputValidationResult ValidateDecodedReconnectModeActionBinding(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    if (header.payload_type != BattlePayloadType::Reconnect) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, action.version) ||
+        header.match_id != action.match_id ||
+        header.player_id != action.player_id ||
+        header.tick != action.tick ||
+        header.seq != action.seq ||
+        action.action_type != "reconnect"
+    ) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_header_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
 std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
     for (const char ch : value) {
         hash ^= static_cast<unsigned char>(ch);
@@ -401,6 +426,17 @@ InputValidationResult BattleServer::AcceptDecodedModeAction(
     const BattleModeAction& action
 ) {
     const auto binding = ValidateDecodedModeActionBinding(header, action);
+    if (!binding.ok) {
+        return binding;
+    }
+    return AcceptModeAction(action);
+}
+
+InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    const auto binding = ValidateDecodedReconnectModeActionBinding(header, action);
     if (!binding.ok) {
         return binding;
     }
@@ -705,6 +741,20 @@ DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
             result.reason = result.decoded.reason;
             return result;
         }
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Reconnect) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_reconnect_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedReconnectModeActionBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
     } else {
         result.decoded = InvalidDecodedPayloadResult("decoded_packet_payload_type_unsupported");
         result.reason = result.decoded.reason;
@@ -725,6 +775,11 @@ DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
         );
     } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
         result.decoded = server_.AcceptDecodedModeAction(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Reconnect) {
+        result.decoded = server_.AcceptDecodedReconnectModeAction(
             packet.encrypted_packet.header,
             packet.decoded_mode_action
         );

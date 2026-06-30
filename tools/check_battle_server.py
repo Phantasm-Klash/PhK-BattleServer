@@ -446,6 +446,11 @@ def main() -> int:
         or "DecodedBattlePacketAdapter::AcceptDecodedPacket" not in server_impl
         or "result.encrypted_dispatch_accepted = true" not in server_impl
         or "server_.DispatchEncrypted(packet.encrypted_packet)" not in server_impl
+        or "AcceptDecodedReconnectModeAction" not in server_impl
+        or "ValidateDecodedReconnectModeActionBinding" not in server_impl
+        or "decoded_packet_reconnect_missing" not in server_impl
+        or "decoded_reconnect_header_mismatch" not in server_impl
+        or "decoded_reconnect_payload_type_mismatch" not in server_impl
         or "decoded_packet_input_missing" not in server_impl
         or "decoded_packet_mode_action_missing" not in server_impl
         or "decoded_packet_payload_type_unsupported" not in server_impl
@@ -662,6 +667,9 @@ def main() -> int:
         or "handshake_required" not in tests_text
         or "decoded_packet_input_missing" not in tests_text
         or "decoded_packet_mode_action_missing" not in tests_text
+        or "decoded_packet_reconnect_missing" not in tests_text
+        or "decoded_reconnect_header_mismatch" not in tests_text
+        or "action-decoded-reconnect-p2" not in tests_text
         or "decoded_packet_payload_type_unsupported" not in tests_text
         or "decoded_input_header_mismatch" not in tests_text
         or "decoded_input_payload_type_mismatch" not in tests_text

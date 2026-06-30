@@ -99,6 +99,10 @@ public:
 	DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
 	InputValidationResult AcceptDecodedInput(const BattlePacketHeader& header, const BattleInput& input);
 	InputValidationResult AcceptDecodedModeAction(const BattlePacketHeader& header, const BattleModeAction& action);
+	InputValidationResult AcceptDecodedReconnectModeAction(
+		const BattlePacketHeader& header,
+		const BattleModeAction& action
+	);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
 	[[nodiscard]] bool IsPlayerConnected(const std::string& match_id, const std::string& player_id) const;
