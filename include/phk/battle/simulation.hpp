@@ -36,6 +36,7 @@ enum class InputValidationCode {
     SeqTooFarAhead,
     EventCursorAhead,
     DuplicateModeAction,
+    ReadyAlreadySet,
 };
 
 struct InputValidationResult {

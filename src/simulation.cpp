@@ -585,6 +585,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             result.reason = "ready_payload_not_true";
             return result;
         }
+        if (ready_player_ids_.find(action.player_id) != ready_player_ids_.end()) {
+            result.code = InputValidationCode::ReadyAlreadySet;
+            result.reason = "ready_already_set";
+            return result;
+        }
     }
     if (action.action_type == "transfer_card") {
         if (!IsBossMode(config_.mode_id)) {
@@ -1748,6 +1753,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "event_cursor_ahead";
         case InputValidationCode::DuplicateModeAction:
             return "mode_action_duplicate";
+        case InputValidationCode::ReadyAlreadySet:
+            return "ready_already_set";
     }
     return "unknown";
 }

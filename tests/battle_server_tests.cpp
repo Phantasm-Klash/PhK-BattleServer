@@ -1413,6 +1413,17 @@ bool TestReadyModeActionLifecycleState() {
     const auto p1_ready_snapshot = simulation.Tick();
     CHECK_EQ(p1_ready_snapshot.mode_state.at("ready_player_count"), std::string("1"));
     CHECK_EQ(p1_ready_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(1));
+
+    auto duplicate_p1_ready = p1_ready;
+    duplicate_p1_ready.tick = 2;
+    duplicate_p1_ready.seq = 2;
+    duplicate_p1_ready.action_id = "ready-p1-duplicate";
+    const auto duplicate_p1_ready_result = simulation.AcceptModeAction(duplicate_p1_ready);
+    CHECK_TRUE(!duplicate_p1_ready_result.ok);
+    CHECK_EQ(duplicate_p1_ready_result.reason, std::string("ready_already_set"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("1"));
 
     auto p2_ready = p1_ready;
     p2_ready.player_id = "p2";
