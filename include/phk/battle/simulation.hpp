@@ -248,6 +248,7 @@ private:
     std::map<std::string, PlayerState> players_;
     std::set<std::string> ready_player_ids_;
     std::set<std::string> pending_ready_player_ids_;
+    std::set<std::string> pending_reconnect_player_ids_;
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::map<std::string, TransferableCardState> transferable_cards_;
     std::map<std::string, TransferableCardState> pending_transfer_card_authority_by_action_id_;

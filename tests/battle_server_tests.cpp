@@ -3655,6 +3655,17 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_TRUE(!server.MatchSnapshot("match-001").players.empty());
     CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("1"));
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
+    auto duplicate_reconnect_action = MakeModeAction(4);
+    duplicate_reconnect_action.player_id = "p2";
+    duplicate_reconnect_action.tick = 4;
+    duplicate_reconnect_action.action_id = "action-reconnect-p2-duplicate";
+    duplicate_reconnect_action.action_type = "reconnect";
+    duplicate_reconnect_action.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(mode_action_summary.event_count) + "}";
+    const auto duplicate_reconnect_action_result = server.AcceptModeAction(duplicate_reconnect_action);
+    CHECK_TRUE(!duplicate_reconnect_action_result.ok);
+    CHECK_EQ(duplicate_reconnect_action_result.reason, std::string("reconnect_already_pending"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 3, 3, 1u << 3)).ok);
     const auto reconnect_action_snapshot = server.TickMatch("match-001");
     CHECK_EQ(reconnect_action_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
