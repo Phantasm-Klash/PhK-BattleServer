@@ -1285,6 +1285,39 @@ bool TestBossModeSpawnLayout() {
     return true;
 }
 
+bool TestBossModeBulletPattern() {
+    phk::battle::SimulationConfig world_config;
+    world_config.match_id = "match-world-boss-pattern";
+    world_config.mode_id = "world_boss";
+    world_config.match_seed = 99;
+    world_config.spawn_period_ticks = 1;
+    world_config.max_bullets = 16;
+    phk::battle::BattleSimulation world_simulation(world_config);
+    CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
+    const auto world_snapshot = world_simulation.Tick();
+    CHECK_EQ(world_snapshot.bullets_delta.size(), static_cast<std::size_t>(8));
+    CHECK_EQ(world_snapshot.bullets_delta[0].pattern_id, std::string("boss_center_radial"));
+    CHECK_EQ(world_snapshot.bullets_delta[0].color, std::string("ruby"));
+    CHECK_EQ(world_snapshot.bullets_delta[0].radius_milli, static_cast<std::uint32_t>(5000));
+    CHECK_EQ(world_snapshot.bullets_delta[0].x_milli, 0);
+    CHECK_EQ(world_snapshot.bullets_delta[0].y_milli, 2600);
+    CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
+
+    phk::battle::SimulationConfig instance_config = world_config;
+    instance_config.match_id = "match-instance-boss-pattern";
+    instance_config.mode_id = "instance_boss";
+    phk::battle::BattleSimulation instance_simulation(instance_config);
+    CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
+    const auto instance_snapshot = instance_simulation.Tick();
+    CHECK_EQ(instance_snapshot.bullets_delta.size(), static_cast<std::size_t>(8));
+    CHECK_EQ(instance_snapshot.bullets_delta[0].pattern_id, std::string("boss_center_radial"));
+    CHECK_EQ(instance_snapshot.bullets_delta[0].color, std::string("violet"));
+    CHECK_EQ(instance_snapshot.bullets_delta[0].radius_milli, static_cast<std::uint32_t>(5000));
+    CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    return true;
+}
+
 bool TestAuthoritativeReplay60TickFixture() {
     phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
@@ -2736,6 +2769,7 @@ int main() {
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
+		{"BossModeBulletPattern", TestBossModeBulletPattern},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},

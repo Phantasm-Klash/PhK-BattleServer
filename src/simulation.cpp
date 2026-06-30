@@ -911,33 +911,49 @@ void BattleSimulation::SpawnBulletsForTick() {
 
     const std::uint64_t mixed = MixSeed(current_tick_);
     const std::int32_t drift = static_cast<std::int32_t>(mixed % 7000u) - 3500;
-    const std::array<std::pair<std::int32_t, std::int32_t>, 4> velocities = {{
+    const bool boss_mode = IsBossMode(config_.mode_id);
+    const std::array<std::pair<std::int32_t, std::int32_t>, 8> boss_velocities = {{
+        {0, 2600},
+        {1840, 1840},
+        {2600, 0},
+        {1840, -1840},
+        {0, -2600},
+        {-1840, -1840},
+        {-2600, 0},
+        {-1840, 1840},
+    }};
+    const std::array<std::pair<std::int32_t, std::int32_t>, 4> duel_velocities = {{
         {0, 3000},
         {3000, 0},
         {0, -3000},
         {-3000, 0},
     }};
+    const std::size_t velocity_count = boss_mode ? boss_velocities.size() : duel_velocities.size();
 
-    for (std::size_t i = 0; i < velocities.size() && bullets_.size() < config_.max_bullets; ++i) {
+    for (std::size_t i = 0; i < velocity_count && bullets_.size() < config_.max_bullets; ++i) {
+        const auto velocity = boss_mode ? boss_velocities[i] : duel_velocities[i];
         BulletState bullet;
         bullet.bullet_id = "b" + std::to_string(next_bullet_id_++);
-        bullet.x_milli = i % 2 == 0 ? drift : 0;
-        bullet.y_milli = i % 2 == 0 ? 0 : drift;
-        bullet.vx_milli = velocities[i].first;
-        bullet.vy_milli = velocities[i].second;
-        bullet.radius_milli = 4000;
-        bullet.pattern_id = "basic_radial";
-        bullet.color = (i % 2 == 0) ? "red" : "blue";
+        bullet.x_milli = boss_mode ? 0 : (i % 2 == 0 ? drift : 0);
+        bullet.y_milli = boss_mode ? 0 : (i % 2 == 0 ? 0 : drift);
+        bullet.vx_milli = velocity.first;
+        bullet.vy_milli = velocity.second;
+        bullet.radius_milli = boss_mode ? 5000 : 4000;
+        bullet.pattern_id = boss_mode ? "boss_center_radial" : "basic_radial";
+        bullet.color = boss_mode ? (config_.mode_id == "world_boss" ? "ruby" : "violet") : ((i % 2 == 0) ? "red" : "blue");
         bullets_.push_back(bullet);
     }
 
     event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
     event_stream_hash_ = HashAppend(event_stream_hash_, next_bullet_id_);
-    event_trace_.push_back(
+    std::string event_trace =
         "bullet_spawn|tick=" + std::to_string(current_tick_) +
         "|next_id=" + std::to_string(next_bullet_id_) +
-        "|count=" + std::to_string(bullets_.size())
-    );
+        "|count=" + std::to_string(bullets_.size());
+    if (boss_mode) {
+        event_trace += "|pattern=boss_center_radial";
+    }
+    event_trace_.push_back(std::move(event_trace));
     ++event_count_;
 }
 
