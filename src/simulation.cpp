@@ -129,7 +129,7 @@ bool IsAllowedBossIdentityChar(char ch) {
 
 bool IsAllowedAuditTokenChar(char ch) {
     const auto byte = static_cast<unsigned char>(ch);
-    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == '.' || ch == '\\';
+    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == '.';
 }
 
 bool IsValidBossIdentityField(std::string_view value) {
