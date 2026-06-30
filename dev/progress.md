@@ -7,6 +7,7 @@ Status date: 2026-06-30
 - Boss snapshots and development result projection now carry `boss_registered_player_count`, `boss_all_registered_connected`, and `boss_all_registered_ready` alongside the existing connected/ready/start fields.
 - `boss_ready_to_start` is now derived from the documented 4-8 connected-player start window plus all registered Boss players being connected and ready, so disconnects or partial ready state cannot be hidden behind a coarse ready count.
 - `BattleServer::SubmitBattleResult` binds these fields back to the final replay snapshot, and CTest/checker coverage rejects forged registered-count, all-connected, or all-ready result material before settlement acceptance.
+- `ready` mode actions now require an explicit server-validated `{"ready":true}` intent; missing or false ready payloads are rejected before they can mutate ready counts or Boss start audit state.
 - This remains replay/result audit material only. The C++ battle server still does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
 
 ## 2026-06-30 Replay Seed Result Binding

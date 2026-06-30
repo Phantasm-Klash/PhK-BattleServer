@@ -1333,6 +1333,25 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(initial_snapshot.mode_state.at("ready_player_count"), std::string("0"));
     CHECK_EQ(initial_snapshot.mode_state.at("all_players_ready"), std::string("0"));
 
+    auto missing_ready_payload = MakeModeAction(1);
+    missing_ready_payload.match_id = config.match_id;
+    missing_ready_payload.player_id = "p1";
+    missing_ready_payload.tick = 1;
+    missing_ready_payload.seq = 1;
+    missing_ready_payload.action_id = "ready-missing-payload";
+    missing_ready_payload.action_type = "ready";
+    missing_ready_payload.payload_json = "{\"client_ready\":true}";
+    const auto missing_ready_result = simulation.AcceptModeAction(missing_ready_payload);
+    CHECK_TRUE(!missing_ready_result.ok);
+    CHECK_EQ(missing_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto false_ready_payload = missing_ready_payload;
+    false_ready_payload.payload_json = "{\"ready\":false}";
+    const auto false_ready_result = simulation.AcceptModeAction(false_ready_payload);
+    CHECK_TRUE(!false_ready_result.ok);
+    CHECK_EQ(false_ready_result.reason, std::string("ready_payload_not_true"));
+    CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";

@@ -799,6 +799,8 @@ def main() -> int:
         or "transfer_card_mode_forbidden" not in tests_text
         or "transfer_card_cost_unpaid" not in tests_text
         or "transfer_card_cooldown_blocked" not in tests_text
+        or "ready_payload_missing" not in tests_text
+        or "ready_payload_not_true" not in tests_text
         or "ConfigureTransferableCard" not in tests_text
         or "boss_result_disposition" not in tests_text
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text

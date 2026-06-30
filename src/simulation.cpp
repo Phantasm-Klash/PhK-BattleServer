@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -117,6 +119,26 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
         return "";
     }
     return std::string(payload_json.substr(string_start, string_end - string_start));
+}
+
+std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return std::nullopt;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    if (payload_json.substr(token_start, 4) == "true") {
+        return true;
+    }
+    if (payload_json.substr(token_start, 5) == "false") {
+        return false;
+    }
+    return std::nullopt;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -420,6 +442,19 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_client_result_forbidden";
         return result;
+    }
+    if (action.action_type == "ready") {
+        const auto ready = ExtractJsonBoolField(action.payload_json, "ready");
+        if (!ready.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "ready_payload_missing";
+            return result;
+        }
+        if (!ready.value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "ready_payload_not_true";
+            return result;
+        }
     }
     if (action.action_type == "transfer_card") {
         const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
