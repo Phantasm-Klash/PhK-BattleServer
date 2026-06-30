@@ -70,6 +70,7 @@ struct ReplaySummary {
     std::uint64_t event_count = 0;
     std::uint64_t last_mode_action_tick = 0;
     std::uint64_t last_mode_action_seq = 0;
+    std::vector<std::string> player_ids;
     std::vector<std::string> input_trace;
     std::vector<std::string> event_trace;
 };
