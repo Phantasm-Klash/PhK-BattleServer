@@ -260,6 +260,12 @@ bool TestTicketVerifier() {
     const auto ruleset_mismatch_result = verifier.Verify(ruleset_mismatch, options);
     CHECK_TRUE(!ruleset_mismatch_result.ok);
     CHECK_EQ(ruleset_mismatch_result.reason, std::string("ruleset_version_mismatch"));
+
+    auto missing_identity = MakeTicket();
+    missing_identity.ticket.match_id.clear();
+    const auto missing_identity_result = verifier.Verify(missing_identity, options);
+    CHECK_TRUE(!missing_identity_result.ok);
+    CHECK_EQ(missing_identity_result.reason, std::string("ticket_identity_missing"));
     return true;
 }
 
@@ -1863,6 +1869,14 @@ bool TestBossMatchPreconfiguration() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
     phk::battle::BattleServer server(config);
+
+    phk::battle::BossMatchConfig missing_match_config;
+    missing_match_config.mode_id = "world_boss";
+    const auto missing_match = server.ConfigureBossMatch(missing_match_config);
+    CHECK_TRUE(!missing_match.ok);
+    CHECK_EQ(missing_match.reason, std::string("match_id_missing"));
+    CHECK_EQ(missing_match.pending_boss_configs_before, static_cast<std::size_t>(0));
+    CHECK_EQ(missing_match.pending_boss_configs_after, static_cast<std::size_t>(0));
 
     phk::battle::BossMatchConfig pvp_config;
     pvp_config.match_id = "match-001";
