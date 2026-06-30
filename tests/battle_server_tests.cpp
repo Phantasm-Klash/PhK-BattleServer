@@ -3193,6 +3193,8 @@ bool TestDecodedPayloadHeaderBinding() {
     CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
     const auto accept = AcceptDefaultHandshake(server);
     CHECK_TRUE(accept.ok);
+    const auto bob_accept = AcceptHandshakeForTicket(server, MakeTicketForBob());
+    CHECK_TRUE(bob_accept.ok);
 
     phk::battle::BattlePacketHeader input_header;
     input_header.match_id = "match-001";
@@ -3241,10 +3243,28 @@ bool TestDecodedPayloadHeaderBinding() {
     p2_header.player_id = "p2";
     p2_header.tick = 1;
     p2_header.seq = 1;
+    p2_header.key_id = bob_accept.client_to_server_key_ref;
+
+    auto wrong_key_p2_header = p2_header;
+    wrong_key_p2_header.key_id = accept.client_to_server_key_ref;
+    const auto wrong_key_p2_result = server.AcceptDecodedInput(wrong_key_p2_header, p2_input);
+    CHECK_TRUE(!wrong_key_p2_result.ok);
+    CHECK_EQ(wrong_key_p2_result.reason, std::string("session_key_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
     const auto accepted_p2_input = server.AcceptDecodedInput(p2_header, p2_input);
     CHECK_TRUE(accepted_p2_input.ok);
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    auto ack_ahead_input = MakeInput("p2", 2, 2, 1u << 2);
+    auto ack_ahead_header = p2_header;
+    ack_ahead_header.tick = 2;
+    ack_ahead_header.seq = 2;
+    ack_ahead_header.ack = 2;
+    const auto ack_ahead_result = server.AcceptDecodedInput(ack_ahead_header, ack_ahead_input);
+    CHECK_TRUE(!ack_ahead_result.ok);
+    CHECK_EQ(ack_ahead_result.reason, std::string("snapshot_ack_ahead"));
 
     auto action = MakeModeAction(2);
     action.tick = 2;

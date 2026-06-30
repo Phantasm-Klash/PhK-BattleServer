@@ -106,6 +106,13 @@ InputValidationResult EventCursorAheadResult() {
     return result;
 }
 
+InputValidationResult SnapshotAckAheadResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::EventCursorAhead;
+    result.reason = "snapshot_ack_ahead";
+    return result;
+}
+
 InputValidationResult MatchSettledResult() {
     InputValidationResult result;
     result.code = InputValidationCode::MatchSettled;
@@ -533,6 +540,46 @@ EncryptedSessionValidation BattleServer::ValidateEncryptedSession(
     return result;
 }
 
+InputValidationResult BattleServer::ValidateDecodedSessionBoundary(
+    const BattlePacketHeader& header
+) const {
+    const auto simulation_it = simulations_by_match_.find(header.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    if (result_hash_by_match_.find(header.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
+    }
+
+    const auto session_validation = ValidateEncryptedSession(header);
+    if (!session_validation.ok) {
+        InputValidationResult result;
+        result.code = session_validation.reason == "player_unknown"
+            ? InputValidationCode::PlayerUnknown
+            : InputValidationCode::InvalidModeAction;
+        result.reason = session_validation.reason;
+        return result;
+    }
+
+    if (IsSnapshotAckBoundPayload(header.payload_type) &&
+        header.ack > simulation_it->second.CurrentTick()) {
+        return SnapshotAckAheadResult();
+    }
+    if (IsReconnectPayload(header.payload_type) &&
+        header.ack > simulation_it->second.Summary().event_count) {
+        return EventCursorAheadResult();
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
 InputValidationResult BattleServer::AcceptDecodedInput(
     const BattlePacketHeader& header,
     const BattleInput& input
@@ -540,6 +587,10 @@ InputValidationResult BattleServer::AcceptDecodedInput(
     const auto binding = ValidateDecodedInputBinding(header, input);
     if (!binding.ok) {
         return binding;
+    }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
     }
     return AcceptInput(input);
 }
@@ -552,6 +603,10 @@ InputValidationResult BattleServer::AcceptDecodedModeAction(
     if (!binding.ok) {
         return binding;
     }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
+    }
     return AcceptModeAction(action);
 }
 
@@ -562,6 +617,10 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     const auto binding = ValidateDecodedReconnectModeActionBinding(header, action);
     if (!binding.ok) {
         return binding;
+    }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
     }
     const auto simulation_it = simulations_by_match_.find(action.match_id);
     if (simulation_it == simulations_by_match_.end()) {

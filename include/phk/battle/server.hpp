@@ -146,6 +146,9 @@ private:
 	[[nodiscard]] EncryptedSessionValidation ValidateEncryptedSession(
 		const BattlePacketHeader& header
 	) const;
+	[[nodiscard]] InputValidationResult ValidateDecodedSessionBoundary(
+		const BattlePacketHeader& header
+	) const;
 	[[nodiscard]] std::uint64_t DeriveMatchSeed(const std::string& match_id) const;
 	[[nodiscard]] std::pair<std::int32_t, std::int32_t> InitialPlayerPosition(
 		const std::string& mode_id,
