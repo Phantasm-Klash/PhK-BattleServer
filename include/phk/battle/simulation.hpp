@@ -15,6 +15,8 @@ namespace phk::battle {
 inline constexpr std::uint32_t kBattleTickRateHz = 60;
 inline constexpr std::int32_t kArenaHalfWidthMilli = 120000;
 inline constexpr std::int32_t kArenaHalfHeightMilli = 90000;
+inline constexpr std::size_t kDefaultMaxModeActionIdBytes = 128;
+inline constexpr std::size_t kDefaultMaxModeActionTypeBytes = 64;
 inline constexpr std::size_t kDefaultMaxModeActionPayloadBytes = 4096;
 
 enum class InputValidationCode {
@@ -137,6 +139,8 @@ struct SimulationConfig {
     std::uint32_t max_seq_ahead = 32;
     std::uint32_t spawn_period_ticks = 30;
     std::uint32_t max_bullets = 256;
+    std::size_t max_mode_action_id_bytes = kDefaultMaxModeActionIdBytes;
+    std::size_t max_mode_action_type_bytes = kDefaultMaxModeActionTypeBytes;
     std::size_t max_mode_action_payload_bytes = kDefaultMaxModeActionPayloadBytes;
     std::uint64_t boss_max_hp = 1000;
     std::string boss_friendly_fire_policy = "disabled";

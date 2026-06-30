@@ -289,6 +289,12 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     if (config_.spawn_period_ticks == 0) {
         config_.spawn_period_ticks = 1;
     }
+    if (config_.max_mode_action_id_bytes == 0) {
+        config_.max_mode_action_id_bytes = 1;
+    }
+    if (config_.max_mode_action_type_bytes == 0) {
+        config_.max_mode_action_type_bytes = 1;
+    }
     if (config_.max_mode_action_payload_bytes == 0) {
         config_.max_mode_action_payload_bytes = 1;
     }
@@ -520,6 +526,16 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
     if (action.action_id.empty() || action.action_type.empty() || action.payload_json.empty()) {
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_missing_fields";
+        return result;
+    }
+    if (action.action_id.size() > config_.max_mode_action_id_bytes) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_id_too_large";
+        return result;
+    }
+    if (action.action_type.size() > config_.max_mode_action_type_bytes) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_type_too_large";
         return result;
     }
     if (action.payload_json.size() > config_.max_mode_action_payload_bytes) {
