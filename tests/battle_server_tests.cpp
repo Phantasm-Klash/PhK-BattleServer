@@ -3420,9 +3420,11 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_EQ(retired.event_count, settled_summary.event_count);
     CHECK_EQ(retired.active_sessions_before, static_cast<std::size_t>(2));
     CHECK_EQ(retired.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(retired.pending_boss_configs_before, static_cast<std::size_t>(0));
     CHECK_EQ(retired.removed_sessions, static_cast<std::size_t>(2));
     CHECK_EQ(retired.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(retired.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(retired.pending_boss_configs_after, static_cast<std::size_t>(0));
     CHECK_TRUE(!retired.already_retired);
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
@@ -3457,9 +3459,11 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_TRUE(retired_again.already_retired);
     CHECK_EQ(retired_again.active_sessions_before, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.pending_boss_configs_before, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.removed_sessions, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.pending_boss_configs_after, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.result_hash, built_result.signed_result.result.result_hash);
 
     const auto missing = server.RetireMatch("missing-match");
@@ -3467,8 +3471,10 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_EQ(missing.reason, std::string("match_not_settled"));
     CHECK_EQ(missing.active_sessions_before, static_cast<std::size_t>(0));
     CHECK_EQ(missing.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(missing.pending_boss_configs_before, static_cast<std::size_t>(0));
     CHECK_EQ(missing.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(missing.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(missing.pending_boss_configs_after, static_cast<std::size_t>(0));
     return true;
 }
 

@@ -1280,12 +1280,17 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
     result.match_id = match_id;
     result.active_sessions_before = sessions_by_ticket_.size();
     result.active_matches_before = simulations_by_match_.size();
+    result.pending_boss_configs_before = pending_boss_config_by_match_.size();
+    auto finish = [this, &result]() -> RetireMatchResult {
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
+        result.pending_boss_configs_after = pending_boss_config_by_match_.size();
+        return result;
+    };
     const auto result_hash_it = result_hash_by_match_.find(match_id);
     if (result_hash_it == result_hash_by_match_.end()) {
         result.reason = "match_not_settled";
-        result.active_sessions_after = result.active_sessions_before;
-        result.active_matches_after = result.active_matches_before;
-        return result;
+        return finish();
     }
     result.result_hash = result_hash_it->second;
     pending_boss_config_by_match_.erase(match_id);
@@ -1296,9 +1301,7 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
         result.ok = true;
         result.reason = "ok";
         result.already_retired = true;
-        result.active_sessions_after = sessions_by_ticket_.size();
-        result.active_matches_after = simulations_by_match_.size();
-        return result;
+        return finish();
     }
     const ReplaySummary summary = simulation_it->second.Summary();
     result.input_stream_hash = summary.input_stream_hash;
@@ -1319,9 +1322,7 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
     simulations_by_match_.erase(simulation_it);
     result.ok = true;
     result.reason = "ok";
-    result.active_sessions_after = sessions_by_ticket_.size();
-    result.active_matches_after = simulations_by_match_.size();
-    return result;
+    return finish();
 }
 
 DecodedBattlePacketAdapter::DecodedBattlePacketAdapter(BattleServer& server)

@@ -102,9 +102,11 @@ struct RetireMatchResult {
 	std::uint64_t event_count = 0;
 	std::size_t active_sessions_before = 0;
 	std::size_t active_matches_before = 0;
+	std::size_t pending_boss_configs_before = 0;
 	std::size_t removed_sessions = 0;
 	std::size_t active_sessions_after = 0;
 	std::size_t active_matches_after = 0;
+	std::size_t pending_boss_configs_after = 0;
 	bool already_retired = false;
 };
 
