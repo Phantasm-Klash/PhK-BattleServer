@@ -1176,6 +1176,31 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!far_action_result.ok);
     CHECK_EQ(far_action_result.reason, std::string("mode_action_tick_too_far_ahead"));
 
+    auto cast_card_missing_slot = MakeModeAction(3);
+    cast_card_missing_slot.tick = 2;
+    cast_card_missing_slot.action_id = "action-cast-missing-slot";
+    cast_card_missing_slot.action_type = "cast_card";
+    cast_card_missing_slot.payload_json = "{\"card_id\":\"focus_lens\"}";
+    const auto cast_card_missing_slot_result = first.AcceptModeAction(cast_card_missing_slot);
+    CHECK_TRUE(!cast_card_missing_slot_result.ok);
+    CHECK_EQ(cast_card_missing_slot_result.reason, std::string("cast_card_slot_missing"));
+
+    auto cast_card_bad_slot = cast_card_missing_slot;
+    cast_card_bad_slot.payload_json = "{\"card_slot\":8}";
+    const auto cast_card_bad_slot_result = first.AcceptModeAction(cast_card_bad_slot);
+    CHECK_TRUE(!cast_card_bad_slot_result.ok);
+    CHECK_EQ(cast_card_bad_slot_result.reason, std::string("cast_card_slot_invalid"));
+
+    auto cast_card_forged_damage = cast_card_missing_slot;
+    cast_card_forged_damage.payload_json = "{\"card_slot\":1,\"damage\":999,\"boss_hp\":0}";
+    const auto cast_card_forged_damage_result = first.AcceptModeAction(cast_card_forged_damage);
+    CHECK_TRUE(!cast_card_forged_damage_result.ok);
+    CHECK_EQ(cast_card_forged_damage_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    auto cast_card = cast_card_missing_slot;
+    cast_card.payload_json = "{\"card_slot\":1}";
+    CHECK_TRUE(first.ValidateModeAction(cast_card).ok);
+
     auto transfer_missing = MakeModeAction(3);
     transfer_missing.tick = 2;
     transfer_missing.action_id = "action-transfer-missing";

@@ -14,6 +14,12 @@ Status date: 2026-06-30
 - The aggregate binds card instance id, from/to player ids, and frozen server authority flags into the final replay snapshot, canonical state hash, signed-result `mode_result_json`, and result verifier options.
 - `BattleResultVerifier` rejects tampered aggregate transfer material with `transfer_card_edges_mismatch`, while existing last-transfer fields remain for compatibility. This is replay/result audit material only and does not persist inventory, rewards, wallet, Steam state, or business database state.
 
+## 2026-06-30 Mode Action Authority Payload Boundary
+
+- `cast_card` mode actions now require a server-validated integer `card_slot` intent in the 0-7 range before they can enter the authoritative tick queue.
+- All mode-action payloads now reject obvious client-authored authority fields such as position, damage, Boss HP, score, rank, reward, inventory, wallet, database, Steam inventory, result hash, or settlement material.
+- This keeps mode actions as player intent only; effects, Boss damage, result hashes, replay material, and settlement remain server-owned.
+
 ## 2026-06-30 Boss Layout Count Result Binding
 
 - Boss snapshots and development result projection now carry `boss_layout_player_count`, binding the server-selected Boss ring layout size alongside registered player count and per-player spawn slots.

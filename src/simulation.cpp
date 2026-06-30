@@ -79,6 +79,46 @@ bool IsAllowedBossFriendlyFirePolicy(std::string_view policy) {
         policy == "all_friendly_fire";
 }
 
+std::string LowerAscii(std::string_view value) {
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lowered;
+}
+
+bool ContainsClientAuthoredAuthorityField(std::string_view payload_json) {
+    const std::string lowered = LowerAscii(payload_json);
+    for (const std::string_view needle : {
+        "x_milli",
+        "y_milli",
+        "position",
+        "damage",
+        "boss_hp",
+        "boss_current_hp",
+        "boss_damage",
+        "score",
+        "rank",
+        "reward",
+        "inventory",
+        "wallet",
+        "currency",
+        "grant",
+        "item_id",
+        "balance",
+        "database",
+        "steam_inventory",
+        "result_hash",
+        "battle_result",
+        "settlement",
+    }) {
+        if (lowered.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
     if (x_milli == 0 && y_milli < 0) {
         return "north";
@@ -139,6 +179,36 @@ std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::str
         return false;
     }
     return std::nullopt;
+}
+
+std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return std::nullopt;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    bool negative = false;
+    if (token_start < payload_json.size() && payload_json[token_start] == '-') {
+        negative = true;
+        ++token_start;
+    }
+    if (token_start >= payload_json.size() ||
+        !std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
+        return std::nullopt;
+    }
+
+    std::int64_t value = 0;
+    while (token_start < payload_json.size() &&
+        std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
+        value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
+        ++token_start;
+    }
+    return negative ? -value : value;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -445,6 +515,24 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_client_result_forbidden";
         return result;
+    }
+    if (ContainsClientAuthoredAuthorityField(action.payload_json)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_authority_field_forbidden";
+        return result;
+    }
+    if (action.action_type == "cast_card") {
+        const auto card_slot = ExtractJsonIntField(action.payload_json, "card_slot");
+        if (!card_slot.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "cast_card_slot_missing";
+            return result;
+        }
+        if (card_slot.value() < 0 || card_slot.value() > 7) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "cast_card_slot_invalid";
+            return result;
+        }
     }
     if (action.action_type == "ready") {
         const auto ready = ExtractJsonBoolField(action.payload_json, "ready");
