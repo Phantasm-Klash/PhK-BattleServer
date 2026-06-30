@@ -55,6 +55,26 @@ struct BuildSignedBattleResultResult {
 	ReplaySummary replay_summary;
 };
 
+enum class DecodedBattlePayloadKind {
+	None,
+	Input,
+	ModeAction,
+};
+
+struct DecodedBattlePacket {
+	BattleEncryptedPacket encrypted_packet;
+	DecodedBattlePayloadKind decoded_payload_kind = DecodedBattlePayloadKind::None;
+	BattleInput decoded_input;
+	BattleModeAction decoded_mode_action;
+};
+
+struct DecodedBattlePacketResult {
+	bool ok = false;
+	std::string reason;
+	DispatchResult dispatch;
+	InputValidationResult decoded;
+};
+
 class BattleServer {
 public:
 	explicit BattleServer(BattleServerConfig config);
@@ -94,6 +114,16 @@ private:
 	std::map<std::string, BattleSessionRecord> sessions_by_ticket_;
 	std::map<std::string, BattleSimulation> simulations_by_match_;
 	std::map<std::string, std::string> result_hash_by_match_;
+};
+
+class DecodedBattlePacketAdapter final {
+public:
+	explicit DecodedBattlePacketAdapter(BattleServer& server);
+
+	DecodedBattlePacketResult AcceptDecodedPacket(const DecodedBattlePacket& packet);
+
+private:
+	BattleServer& server_;
 };
 
 }  // namespace phk::battle

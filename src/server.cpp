@@ -578,6 +578,50 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     return result;
 }
 
+DecodedBattlePacketAdapter::DecodedBattlePacketAdapter(BattleServer& server)
+    : server_(server) {}
+
+DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
+    const DecodedBattlePacket& packet
+) {
+    DecodedBattlePacketResult result;
+    result.dispatch = server_.DispatchEncrypted(packet.encrypted_packet);
+    result.reason = result.dispatch.reason;
+    if (!result.dispatch.ok) {
+        return result;
+    }
+
+    if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::Input) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_input_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = server_.AcceptDecodedInput(
+            packet.encrypted_packet.header,
+            packet.decoded_input
+        );
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_mode_action_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = server_.AcceptDecodedModeAction(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+    } else {
+        result.decoded = InvalidDecodedPayloadResult("decoded_packet_payload_type_unsupported");
+        result.reason = result.decoded.reason;
+        return result;
+    }
+
+    result.ok = result.decoded.ok;
+    result.reason = result.decoded.reason;
+    return result;
+}
+
 std::uint64_t BattleServer::DeriveMatchSeed(const std::string& match_id) const {
     std::uint64_t seed = 1469598103934665603ull;
     for (const char ch : match_id) {

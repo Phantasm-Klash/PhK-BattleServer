@@ -8,6 +8,12 @@ Status date: 2026-06-29
 - `BattleServer::SubmitBattleResult` binds result verification to the replay fixture tick rate, and `BattleResultVerifier` rejects missing or forged tick-rate material as `tick_rate_hz_mismatch`.
 - CTest and `tools/check_battle_server.py` gate the tick-rate field, verifier option, server binding, callback fingerprint, and negative tamper coverage while full protobuf result bindings remain pending.
 
+## 2026-06-30 Decoded Packet Adapter Boundary
+
+- Added `DecodedBattlePacketAdapter`, a development replacement point for the future AEAD decrypt + generated protobuf decode path.
+- The adapter requires encrypted session/nonce/tick dispatch to pass before decoded input or mode-action handoff, then requires the decoded payload kind to match the packet header before simulation state changes.
+- CTest and `tools/check_battle_server.py` now gate accepted decoded input/mode-action flow, missing decoded payload rejection, unsupported decoded payload type rejection, encrypted dispatch failure short-circuiting, and replay counter preservation.
+
 ## 2026-06-30 Development Result Signature Boundary
 
 - Development signed-result verification now requires the Ed25519-shaped signature field to match deterministic material derived from `CanonicalBattleResultPayload(result)`, the battle server key id, and the current result-signature label.

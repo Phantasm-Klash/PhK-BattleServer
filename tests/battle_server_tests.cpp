@@ -1965,6 +1965,141 @@ bool TestDecodedPayloadHeaderBinding() {
     return true;
 }
 
+bool TestDecodedBattlePacketAdapterBoundary() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    const auto accept = AcceptDefaultHandshake(server);
+    CHECK_TRUE(accept.ok);
+    const auto bob_accept = AcceptHandshakeForTicket(server, MakeTicketForBob());
+    CHECK_TRUE(bob_accept.ok);
+
+    phk::battle::DecodedBattlePacketAdapter adapter(server);
+    phk::battle::DecodedBattlePacket input_packet;
+    input_packet.encrypted_packet.header.match_id = "match-001";
+    input_packet.encrypted_packet.header.player_id = "p1";
+    input_packet.encrypted_packet.header.tick = 1;
+    input_packet.encrypted_packet.header.seq = 1;
+    input_packet.encrypted_packet.header.ack = 0;
+    input_packet.encrypted_packet.header.payload_type = phk::battle::BattlePayloadType::Input;
+    input_packet.encrypted_packet.header.key_id = accept.client_to_server_key_ref;
+    RefreshDevAeadNonce(input_packet.encrypted_packet.header);
+    input_packet.encrypted_packet.ciphertext = {'p', 'b', ':', 'i', 'n', 'p', 'u', 't'};
+    input_packet.encrypted_packet.auth_tag.assign(16, 0x34);
+    input_packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    input_packet.decoded_input = MakeInput("p1", 1, 1, 1u << 3);
+
+    const auto accepted_input = adapter.AcceptDecodedPacket(input_packet);
+    CHECK_TRUE(accepted_input.ok);
+    CHECK_EQ(accepted_input.dispatch.response_kind, std::string("input"));
+    CHECK_EQ(accepted_input.decoded.reason, std::string("ok"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto missing_decoded_input = input_packet;
+    missing_decoded_input.encrypted_packet.header.seq = 2;
+    missing_decoded_input.encrypted_packet.header.tick = 2;
+    RefreshDevAeadNonce(missing_decoded_input.encrypted_packet.header);
+    missing_decoded_input.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::None;
+    const auto missing_decoded_input_result = adapter.AcceptDecodedPacket(missing_decoded_input);
+    CHECK_TRUE(!missing_decoded_input_result.ok);
+    CHECK_TRUE(missing_decoded_input_result.dispatch.ok);
+    CHECK_EQ(missing_decoded_input_result.reason, std::string("decoded_packet_input_missing"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto wrong_payload = input_packet;
+    wrong_payload.encrypted_packet.header.player_id = "p2";
+    wrong_payload.encrypted_packet.header.key_id = bob_accept.client_to_server_key_ref;
+    wrong_payload.encrypted_packet.header.seq = 1;
+    wrong_payload.encrypted_packet.header.tick = 1;
+    RefreshDevAeadNonce(wrong_payload.encrypted_packet.header);
+    wrong_payload.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    wrong_payload.decoded_input = MakeInput("p1", 1, 1, 1u << 3);
+    const auto wrong_payload_result = adapter.AcceptDecodedPacket(wrong_payload);
+    CHECK_TRUE(!wrong_payload_result.ok);
+    CHECK_TRUE(wrong_payload_result.dispatch.ok);
+    CHECK_EQ(wrong_payload_result.reason, std::string("decoded_input_header_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto p2_input = input_packet;
+    p2_input.encrypted_packet.header.player_id = "p2";
+    p2_input.encrypted_packet.header.key_id = bob_accept.client_to_server_key_ref;
+    p2_input.encrypted_packet.header.seq = 2;
+    p2_input.encrypted_packet.header.tick = 1;
+    RefreshDevAeadNonce(p2_input.encrypted_packet.header);
+    p2_input.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    p2_input.decoded_input = MakeInput("p2", 1, 2, 1u << 2);
+    const auto accepted_p2_input = adapter.AcceptDecodedPacket(p2_input);
+    CHECK_TRUE(accepted_p2_input.ok);
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    phk::battle::DecodedBattlePacket action_packet;
+    action_packet.encrypted_packet.header.match_id = "match-001";
+    action_packet.encrypted_packet.header.player_id = "p1";
+    action_packet.encrypted_packet.header.tick = 2;
+    action_packet.encrypted_packet.header.seq = 3;
+    action_packet.encrypted_packet.header.ack = 1;
+    action_packet.encrypted_packet.header.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    action_packet.encrypted_packet.header.key_id = accept.client_to_server_key_ref;
+    RefreshDevAeadNonce(action_packet.encrypted_packet.header);
+    action_packet.encrypted_packet.ciphertext = {'p', 'b', ':', 'm', 'o', 'd', 'e'};
+    action_packet.encrypted_packet.auth_tag.assign(16, 0x35);
+    action_packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::ModeAction;
+    action_packet.decoded_mode_action = MakeModeAction(3);
+    action_packet.decoded_mode_action.tick = 2;
+    const auto accepted_action = adapter.AcceptDecodedPacket(action_packet);
+    CHECK_TRUE(accepted_action.ok);
+    CHECK_EQ(accepted_action.dispatch.response_kind, std::string("mode_action"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+
+    auto missing_decoded_action = action_packet;
+    missing_decoded_action.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(missing_decoded_action.encrypted_packet.header);
+    missing_decoded_action.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::None;
+    const auto missing_decoded_action_result = adapter.AcceptDecodedPacket(missing_decoded_action);
+    CHECK_TRUE(!missing_decoded_action_result.ok);
+    CHECK_TRUE(missing_decoded_action_result.dispatch.ok);
+    CHECK_EQ(missing_decoded_action_result.reason, std::string("decoded_packet_mode_action_missing"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+
+    auto ping_packet = input_packet;
+    ping_packet.encrypted_packet.header.player_id = "p2";
+    ping_packet.encrypted_packet.header.key_id = bob_accept.client_to_server_key_ref;
+    ping_packet.encrypted_packet.header.payload_type = phk::battle::BattlePayloadType::Ping;
+    ping_packet.encrypted_packet.header.seq = 3;
+    ping_packet.encrypted_packet.header.tick = 1;
+    ping_packet.encrypted_packet.header.ack = 1;
+    RefreshDevAeadNonce(ping_packet.encrypted_packet.header);
+    ping_packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    const auto ping_decode_result = adapter.AcceptDecodedPacket(ping_packet);
+    CHECK_TRUE(!ping_decode_result.ok);
+    CHECK_TRUE(ping_decode_result.dispatch.ok);
+    CHECK_EQ(ping_decode_result.reason, std::string("decoded_packet_payload_type_unsupported"));
+
+    auto invalid_dispatch = input_packet;
+    invalid_dispatch.encrypted_packet.header.player_id = "p2";
+    invalid_dispatch.encrypted_packet.header.key_id = "wrong-session-key";
+    invalid_dispatch.encrypted_packet.header.seq = 4;
+    invalid_dispatch.encrypted_packet.header.tick = 2;
+    RefreshDevAeadNonce(invalid_dispatch.encrypted_packet.header);
+    invalid_dispatch.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    invalid_dispatch.decoded_input = MakeInput("p2", 2, 4, 1u << 2);
+    const auto invalid_dispatch_result = adapter.AcceptDecodedPacket(invalid_dispatch);
+    CHECK_TRUE(!invalid_dispatch_result.ok);
+    CHECK_TRUE(!invalid_dispatch_result.dispatch.ok);
+    CHECK_EQ(invalid_dispatch_result.reason, std::string("session_key_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 5, 1u << 2)).ok);
+    const auto action_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(action_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, action_packet.decoded_mode_action.action_id);
+    return true;
+}
+
 bool TestKcpPlaceholder() {
     phk::battle::KcpEchoEndpoint endpoint;
     phk::battle::UdpDatagram datagram;
@@ -2130,6 +2265,7 @@ int main() {
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"DecodedPayloadHeaderBinding", TestDecodedPayloadHeaderBinding},
+		{"DecodedBattlePacketAdapterBoundary", TestDecodedBattlePacketAdapterBoundary},
 		{"KcpPlaceholder", TestKcpPlaceholder},
 		{"KcpAeadPacketAdapterBoundary", TestKcpAeadPacketAdapterBoundary},
 	};
