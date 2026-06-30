@@ -421,6 +421,8 @@ def main() -> int:
         or "transfer_card_cooldown_blocked" not in simulation_impl
         or "transferable_cards_" not in simulation_impl
         or '"boss_result_disposition"' not in simulation_impl
+        or '"boss_friendly_fire_policy"' not in simulation_impl
+        or "IsAllowedBossFriendlyFirePolicy" not in simulation_impl
         or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
@@ -520,6 +522,7 @@ def main() -> int:
         or "options.require_boss_result_fields = true" not in server_impl
         or "options.required_boss_scope = boss_scope->second" not in server_impl
         or "options.required_boss_completion_policy" not in server_impl
+        or "options.required_boss_friendly_fire_policy" not in server_impl
         or "options.required_boss_current_hp" not in server_impl
         or "options.required_boss_damage_total" not in server_impl
         or "options.required_boss_defeated" not in server_impl
@@ -569,6 +572,7 @@ def main() -> int:
         or "replay_fixture_hash_mismatch" not in result_impl
         or "boss_scope_mismatch" not in result_impl
         or "boss_completion_policy_mismatch" not in result_impl
+        or "boss_friendly_fire_policy_mismatch" not in result_impl
         or "boss_current_hp_mismatch" not in result_impl
         or "boss_damage_total_mismatch" not in result_impl
         or "boss_defeated_mismatch" not in result_impl
@@ -750,6 +754,10 @@ def main() -> int:
         or "boss_result_disposition" not in tests_text
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
+        or "boss_friendly_fire_policy_mismatch" not in tests_text
+        or "player_bullets_only" not in tests_text
+        or "all_friendly_fire" not in tests_text
+        or "client_authored_damage" not in tests_text
         or "boss_current_hp_mismatch" not in tests_text
         or "boss_damage_total_mismatch" not in tests_text
         or '\\"boss_damage_p1\\":10' not in tests_text

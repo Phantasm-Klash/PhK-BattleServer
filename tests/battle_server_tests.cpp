@@ -1566,6 +1566,7 @@ bool TestBossModeBulletPattern() {
     world_config.match_seed = 99;
     world_config.spawn_period_ticks = 1;
     world_config.max_bullets = 16;
+    world_config.boss_friendly_fire_policy = "player_bullets_only";
     phk::battle::BattleSimulation world_simulation(world_config);
     CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
     const auto world_snapshot = world_simulation.Tick();
@@ -1578,10 +1579,12 @@ bool TestBossModeBulletPattern() {
     CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("player_bullets_only"));
 
     phk::battle::SimulationConfig instance_config = world_config;
     instance_config.match_id = "match-instance-boss-pattern";
     instance_config.mode_id = "instance_boss";
+    instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation instance_simulation(instance_config);
     CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
     const auto instance_snapshot = instance_simulation.Tick();
@@ -1590,6 +1593,17 @@ bool TestBossModeBulletPattern() {
     CHECK_EQ(instance_snapshot.bullets_delta[0].color, std::string("violet"));
     CHECK_EQ(instance_snapshot.bullets_delta[0].radius_milli, static_cast<std::uint32_t>(5000));
     CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    CHECK_EQ(instance_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("all_friendly_fire"));
+
+    phk::battle::SimulationConfig invalid_policy_config = world_config;
+    invalid_policy_config.match_id = "match-world-boss-invalid-friendly-fire";
+    invalid_policy_config.boss_friendly_fire_policy = "client_authored_damage";
+    phk::battle::BattleSimulation invalid_policy_simulation(invalid_policy_config);
+    CHECK_TRUE(invalid_policy_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_EQ(
+        invalid_policy_simulation.Snapshot().mode_state.at("boss_friendly_fire_policy"),
+        std::string("disabled")
+    );
     return true;
 }
 
@@ -1686,6 +1700,7 @@ bool TestBossModeResultProjection() {
     instance_config.mode_id = "instance_boss";
     instance_config.spawn_period_ticks = 1000;
     instance_config.boss_max_hp = 20;
+    instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation simulation(instance_config);
     CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
     CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
@@ -1717,6 +1732,7 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"battle_result_owner\":\"cpp\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
@@ -1814,6 +1830,10 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.ok);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_friendly_fire_policy\":\"disabled\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
@@ -1864,6 +1884,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_scope_result = server.SubmitBattleResult(wrong_scope);
     CHECK_TRUE(!wrong_scope_result.ok);
     CHECK_EQ(wrong_scope_result.reason, std::string("boss_scope_mismatch"));
+
+    auto wrong_friendly_fire = built.signed_result;
+    wrong_friendly_fire.result.mode_result_json = ReplaceJsonStringField(
+        wrong_friendly_fire.result.mode_result_json,
+        "boss_friendly_fire_policy",
+        "all_friendly_fire"
+    );
+    const auto wrong_friendly_fire_result = server.SubmitBattleResult(wrong_friendly_fire);
+    CHECK_TRUE(!wrong_friendly_fire_result.ok);
+    CHECK_EQ(wrong_friendly_fire_result.reason, std::string("boss_friendly_fire_policy_mismatch"));
 
     auto wrong_current_hp = built.signed_result;
     wrong_current_hp.result.mode_result_json = ReplaceFirst(

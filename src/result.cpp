@@ -269,6 +269,15 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "boss_friendly_fire_policy",
+            options.required_boss_friendly_fire_policy
+        )) {
+        Fail(verification, "boss_friendly_fire_policy_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_current_hp", options.required_boss_current_hp)) {
         Fail(verification, "boss_current_hp_mismatch");
         return verification;

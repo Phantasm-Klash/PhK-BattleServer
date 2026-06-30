@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Friendly-Fire Policy Projection
+
+- Boss simulations now normalize the documented friendly-fire policies (`disabled`, `player_bullets_only`, `all_friendly_fire`) and fall back to `disabled` for unknown values.
+- Boss snapshots and development `mode_result_json` carry the server-owned `boss_friendly_fire_policy`, and result verification binds that policy back to the final replay snapshot before accepting a signed callback.
+- Tests and `tools/check_battle_server.py` now gate policy projection, invalid-policy fallback, and tampered result rejection. This only exposes configuration/audit material; full teammate damage mechanics remain pending.
+
 ## 2026-06-30 Transfer Card Result Verification Boundary
 
 - `BattleServer::SubmitBattleResult` now binds accepted Boss `transfer_card` projection fields back to the server-owned final replay snapshot before accepting a signed result callback.

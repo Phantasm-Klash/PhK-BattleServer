@@ -56,6 +56,7 @@ struct BattleResultVerificationOptions {
     std::string required_replay_fixture_hash;
     std::string required_boss_scope;
     std::string required_boss_completion_policy;
+    std::string required_boss_friendly_fire_policy;
     std::string required_boss_clear_status;
     std::string required_boss_result_disposition;
     std::string required_last_transfer_card_instance_id;

@@ -131,6 +131,7 @@ struct SimulationConfig {
     std::uint32_t spawn_period_ticks = 30;
     std::uint32_t max_bullets = 256;
     std::uint64_t boss_max_hp = 1000;
+    std::string boss_friendly_fire_policy = "disabled";
 };
 
 struct TransferableCardState {

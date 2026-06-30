@@ -71,6 +71,12 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+bool IsAllowedBossFriendlyFirePolicy(std::string_view policy) {
+    return policy == "disabled" ||
+        policy == "player_bullets_only" ||
+        policy == "all_friendly_fire";
+}
+
 std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
     if (x_milli == 0 && y_milli < 0) {
         return "north";
@@ -179,6 +185,9 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
         config_.spawn_period_ticks = 1;
     }
     if (IsBossMode(config_.mode_id)) {
+        if (!IsAllowedBossFriendlyFirePolicy(config_.boss_friendly_fire_policy)) {
+            config_.boss_friendly_fire_policy = "disabled";
+        }
         if (config_.boss_max_hp == 0) {
             config_.boss_max_hp = 1;
         }
@@ -579,6 +588,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
             "defeat_required";
+        snapshot.mode_state["boss_friendly_fire_policy"] = config_.boss_friendly_fire_policy;
         snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
         snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
         snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
@@ -786,6 +796,7 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, boss_current_hp_);
         hash = HashAppend(hash, boss_damage_total_);
         hash = HashAppend(hash, boss_defeated_tick_);
+        hash = HashAppend(hash, config_.boss_friendly_fire_policy);
         for (const auto& item : boss_damage_by_player_) {
             hash = HashAppend(hash, item.first);
             hash = HashAppend(hash, item.second);
@@ -992,6 +1003,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
     if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+    }
+    const auto boss_friendly_fire_policy = fixture.final_snapshot.mode_state.find("boss_friendly_fire_policy");
+    if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_friendly_fire_policy\":\"" + boss_friendly_fire_policy->second + "\"";
     }
     const auto boss_current_hp = fixture.final_snapshot.mode_state.find("boss_current_hp");
     if (boss_current_hp != fixture.final_snapshot.mode_state.end()) {
