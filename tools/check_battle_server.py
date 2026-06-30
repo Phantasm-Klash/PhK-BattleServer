@@ -804,6 +804,12 @@ def main() -> int:
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
         or "boss_friendly_fire_policy_mismatch" not in tests_text
+        or "boss_registered_player_count" not in tests_text
+        or "boss_registered_player_count_mismatch" not in tests_text
+        or "boss_all_registered_connected" not in tests_text
+        or "boss_all_registered_connected_mismatch" not in tests_text
+        or "boss_all_registered_ready" not in tests_text
+        or "boss_all_registered_ready_mismatch" not in tests_text
         or "connected_player_count_mismatch" not in tests_text
         or "disconnected_player_count_mismatch" not in tests_text
         or "boss_max_hp_mismatch" not in tests_text
