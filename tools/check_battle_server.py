@@ -514,6 +514,14 @@ def main() -> int:
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
         or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record)" not in server_impl
         or "options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture)" not in server_impl
+        or "options.require_boss_result_fields = true" not in server_impl
+        or "options.required_boss_scope = boss_scope->second" not in server_impl
+        or "options.required_boss_completion_policy" not in server_impl
+        or "options.required_boss_current_hp" not in server_impl
+        or "options.required_boss_damage_total" not in server_impl
+        or "options.required_boss_defeated" not in server_impl
+        or "options.required_boss_clear_status" not in server_impl
+        or "options.required_boss_result_disposition" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
@@ -546,6 +554,13 @@ def main() -> int:
         or "final_state_hash_mismatch" not in result_impl
         or "replay_summary_hash_mismatch" not in result_impl
         or "replay_fixture_hash_mismatch" not in result_impl
+        or "boss_scope_mismatch" not in result_impl
+        or "boss_completion_policy_mismatch" not in result_impl
+        or "boss_current_hp_mismatch" not in result_impl
+        or "boss_damage_total_mismatch" not in result_impl
+        or "boss_defeated_mismatch" not in result_impl
+        or "boss_clear_status_mismatch" not in result_impl
+        or "boss_result_disposition_mismatch" not in result_impl
         or "dev_result_signature_mismatch" not in result_impl
         or "DevBattleResultSignatureHex" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
@@ -711,6 +726,13 @@ def main() -> int:
         or "transfer_card_cooldown_blocked" not in tests_text
         or "ConfigureTransferableCard" not in tests_text
         or "boss_result_disposition" not in tests_text
+        or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
+        or "boss_scope_mismatch" not in tests_text
+        or "boss_current_hp_mismatch" not in tests_text
+        or "boss_damage_total_mismatch" not in tests_text
+        or "boss_defeated_mismatch" not in tests_text
+        or "boss_clear_status_mismatch" not in tests_text
+        or "boss_result_disposition_mismatch" not in tests_text
         or "world_damage_report" not in tests_text
         or "instance_cleared" not in tests_text
         or "instance_incomplete" not in tests_text
