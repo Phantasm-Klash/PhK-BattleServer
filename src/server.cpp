@@ -78,6 +78,13 @@ std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std
     return config.max_players;
 }
 
+bool BossMatchReadyForResult(const BattleSimulation& simulation) {
+    if (!IsBossMode(simulation.Config().mode_id)) {
+        return true;
+    }
+    return simulation.PlayerCount() >= 4 && simulation.PlayerCount() <= 8;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -698,6 +705,10 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         result.reason = "match_unknown";
         return result;
     }
+    if (!BossMatchReadyForResult(simulation_it->second)) {
+        result.reason = "boss_match_not_startable";
+        return result;
+    }
 
     const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
     result.replay_summary = replay_fixture.summary;
@@ -786,6 +797,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);
     if (simulation_it == simulations_by_match_.end()) {
         result.reason = "match_unknown";
+        return result;
+    }
+    if (!BossMatchReadyForResult(simulation_it->second)) {
+        result.reason = "boss_match_not_startable";
         return result;
     }
 

@@ -1743,6 +1743,20 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         "instance_boss",
         "00112233445566778899ef02"
     )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-instance-result-3",
+        "user-instance-result-3",
+        "p3",
+        "instance_boss",
+        "00112233445566778899ef03"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-instance-result-4",
+        "user-instance-result-4",
+        "p4",
+        "instance_boss",
+        "00112233445566778899ef04"
+    )).ok);
 
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
@@ -1822,6 +1836,53 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
     CHECK_TRUE(!accepted.duplicate);
+    return true;
+}
+
+bool TestBossModeResultRequiresStartableRoom() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489645000;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 3; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-underfilled-boss-" + std::to_string(index),
+            "user-underfilled-boss-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            "00112233445566778899fa0" + std::to_string(index)
+        )).ok);
+    }
+    const auto underfilled_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(underfilled_snapshot.players.size(), static_cast<std::size_t>(3));
+    CHECK_EQ(underfilled_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(underfilled_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+
+    const auto underfilled_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!underfilled_result.ok);
+    CHECK_EQ(underfilled_result.reason, std::string("boss_match_not_startable"));
+
+    const auto underfilled_replay_record = server.BuildReplayRecord("match-001", "user-underfilled", "stage-boss");
+    CHECK_TRUE(!underfilled_replay_record.ok);
+    CHECK_EQ(underfilled_replay_record.reason, std::string("boss_match_not_startable"));
+
+    phk::battle::SignedBattleResult forged_result;
+    forged_result.result.match_id = "match-001";
+    const auto forged_submit = server.SubmitBattleResult(forged_result);
+    CHECK_TRUE(!forged_submit.ok);
+    CHECK_EQ(forged_submit.reason, std::string("boss_match_not_startable"));
+
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-underfilled-boss-4",
+        "user-underfilled-boss-4",
+        "p4",
+        "world_boss",
+        "00112233445566778899fa04"
+    )).ok);
+    const auto startable_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(startable_snapshot.players.size(), static_cast<std::size_t>(4));
+    CHECK_EQ(startable_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
     return true;
 }
 
@@ -3342,6 +3403,7 @@ int main() {
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
+        {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
