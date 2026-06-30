@@ -202,6 +202,17 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
     return true;
 }
 
+bool BattleSimulation::ConfigureTransferableCard(TransferableCardState card) {
+    if (card.card_instance_id.empty() || card.owner_player_id.empty()) {
+        return false;
+    }
+    if (players_.find(card.owner_player_id) == players_.end()) {
+        return false;
+    }
+    transferable_cards_[card.card_instance_id] = std::move(card);
+    return true;
+}
+
 InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& player_id, bool connected) {
     InputValidationResult result;
     const auto player_it = players_.find(player_id);
@@ -400,6 +411,32 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         if (reserved_transfer_card_instance_ids_.find(card_instance_id) != reserved_transfer_card_instance_ids_.end()) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "transfer_card_duplicate";
+            return result;
+        }
+        const auto card_it = transferable_cards_.find(card_instance_id);
+        if (card_it == transferable_cards_.end()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_not_authorized";
+            return result;
+        }
+        if (card_it->second.owner_player_id != action.player_id) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_owner_mismatch";
+            return result;
+        }
+        if (!card_it->second.mode_allowed) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_mode_forbidden";
+            return result;
+        }
+        if (!card_it->second.cost_paid) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_cost_unpaid";
+            return result;
+        }
+        if (!card_it->second.cooldown_ready) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_cooldown_blocked";
             return result;
         }
     }

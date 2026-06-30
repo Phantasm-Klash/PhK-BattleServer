@@ -1076,6 +1076,11 @@ bool TestSimulationDeterminism() {
 
     auto transfer = transfer_missing;
     transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-001\"}";
+    phk::battle::TransferableCardState transfer_card;
+    transfer_card.card_instance_id = "boss-card-001";
+    transfer_card.owner_player_id = "p1";
+    CHECK_TRUE(first.ConfigureTransferableCard(transfer_card));
+    CHECK_TRUE(second.ConfigureTransferableCard(transfer_card));
     CHECK_TRUE(first.AcceptModeAction(transfer).ok);
     CHECK_TRUE(second.AcceptModeAction(transfer).ok);
 
@@ -1257,6 +1262,42 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(disconnected_result.reason, std::string("transfer_card_target_disconnected"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+
+    const auto unauthorized = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!unauthorized.ok);
+    CHECK_EQ(unauthorized.reason, std::string("transfer_card_not_authorized"));
+
+    phk::battle::TransferableCardState card;
+    card.card_instance_id = "boss-card-disconnected";
+    card.owner_player_id = "p2";
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
+    const auto owner_mismatch = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!owner_mismatch.ok);
+    CHECK_EQ(owner_mismatch.reason, std::string("transfer_card_owner_mismatch"));
+
+    card.owner_player_id = "p1";
+    card.mode_allowed = false;
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
+    const auto mode_forbidden = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!mode_forbidden.ok);
+    CHECK_EQ(mode_forbidden.reason, std::string("transfer_card_mode_forbidden"));
+
+    card.mode_allowed = true;
+    card.cost_paid = false;
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
+    const auto cost_unpaid = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!cost_unpaid.ok);
+    CHECK_EQ(cost_unpaid.reason, std::string("transfer_card_cost_unpaid"));
+
+    card.cost_paid = true;
+    card.cooldown_ready = false;
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
+    const auto cooldown_blocked = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!cooldown_blocked.ok);
+    CHECK_EQ(cooldown_blocked.reason, std::string("transfer_card_cooldown_blocked"));
+
+    card.cooldown_ready = true;
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
     const auto accepted = server.AcceptModeAction(transfer);
     CHECK_TRUE(accepted.ok);
     const auto duplicate = server.AcceptModeAction(transfer);
@@ -1616,6 +1657,10 @@ bool TestBossModeResultProjection() {
     transfer.action_id = "action-instance-transfer";
     transfer.action_type = "transfer_card";
     transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-card-001\"}";
+    phk::battle::TransferableCardState transfer_card;
+    transfer_card.card_instance_id = "instance-card-001";
+    transfer_card.owner_player_id = "p1";
+    CHECK_TRUE(simulation.ConfigureTransferableCard(transfer_card));
     CHECK_TRUE(simulation.AcceptInput(p1_shoot).ok);
     CHECK_TRUE(simulation.AcceptInput(p2_shoot).ok);
     CHECK_TRUE(simulation.AcceptModeAction(transfer).ok);

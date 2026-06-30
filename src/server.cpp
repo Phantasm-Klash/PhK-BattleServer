@@ -574,6 +574,17 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     return simulation_it->second.SetPlayerConnected(action.player_id, true);
 }
 
+bool BattleServer::ConfigureTransferableCard(
+    const std::string& match_id,
+    TransferableCardState card
+) {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        return false;
+    }
+    return simulation_it->second.ConfigureTransferableCard(std::move(card));
+}
+
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
     const auto simulation_it = simulations_by_match_.find(input.match_id);
     if (simulation_it == simulations_by_match_.end()) {

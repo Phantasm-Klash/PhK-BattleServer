@@ -120,6 +120,7 @@ public:
 		const BattlePacketHeader& header,
 		const BattleModeAction& action
 	);
+	bool ConfigureTransferableCard(const std::string& match_id, TransferableCardState card);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
 	[[nodiscard]] bool IsPlayerConnected(const std::string& match_id, const std::string& player_id) const;

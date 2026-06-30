@@ -2,6 +2,13 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Transfer Card Authority Boundary
+
+- Added an in-memory `TransferableCardState` authority bridge for Boss `transfer_card` mode actions before the full shared card/rules config path lands.
+- `transfer_card` now rejects unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, and blocked cooldowns before the mode action enters the authoritative tick queue or consumes replay/hash state.
+- The server facade exposes match-bound transferable-card configuration for battle allocation/bootstrap wiring only; it does not persist inventory, rewards, wallets, databases, or Steam-owned state.
+- CTest and `tools/check_battle_server.py` now gate the new transfer-card authority reasons while existing deterministic replay/hash fixtures stay unchanged.
+
 ## 2026-06-30 Negotiated Encrypted Session Boundary
 
 - `BattleServer::DispatchEncrypted` now routes inbound encrypted packets through a negotiated-session validation helper before dispatcher seq/nonce state can advance.

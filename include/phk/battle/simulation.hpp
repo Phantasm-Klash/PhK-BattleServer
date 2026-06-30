@@ -133,6 +133,14 @@ struct SimulationConfig {
     std::uint64_t boss_max_hp = 1000;
 };
 
+struct TransferableCardState {
+    std::string card_instance_id;
+    std::string owner_player_id;
+    bool mode_allowed = true;
+    bool cost_paid = true;
+    bool cooldown_ready = true;
+};
+
 class BattleSimulation {
 public:
     explicit BattleSimulation(SimulationConfig config);
@@ -145,6 +153,7 @@ public:
     [[nodiscard]] bool IsPlayerConnected(const std::string& player_id) const;
 
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
+    bool ConfigureTransferableCard(TransferableCardState card);
     [[nodiscard]] InputValidationResult SetPlayerConnected(const std::string& player_id, bool connected);
     [[nodiscard]] InputValidationResult ValidateInput(const BattleInput& input) const;
     InputValidationResult AcceptInput(const BattleInput& input);
@@ -219,6 +228,7 @@ private:
     std::map<std::string, PlayerState> players_;
     std::set<std::string> ready_player_ids_;
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
+    std::map<std::string, TransferableCardState> transferable_cards_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;
     std::string last_transfer_card_instance_id_;

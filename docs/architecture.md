@@ -45,6 +45,7 @@ Status: v0.1 skeleton.
 - Accepted mode actions are buffered by target tick and only folded into replay/event/hash state when the authoritative simulation advances that tick.
 - Disconnected players remain blocked from input and normal mode actions, but `reconnect` mode actions are accepted as the narrow recovery intent and restore connected state only when their target authoritative tick is processed.
 - Boss mode `boss_start_ready` is derived from connected player count, so a registered 4-player Boss room is not start-ready while one player is disconnected.
+- Boss `transfer_card` mode actions must reference a server-configured in-match transferable card state before they can enter the authoritative tick queue. The simulation rejects unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, and blocked cooldowns before seq/replay/hash state advances. This is an in-memory battle authority bridge for the future card/rules config path, not inventory, reward, wallet, or database ownership.
 - Client packets cannot submit battle results.
 - Disconnected players cannot submit battle input or mode actions until the server facade marks them connected again.
 - Encrypted-path input and mode-action packets from disconnected players are rejected at the server facade before dispatcher seq/nonce state advances.

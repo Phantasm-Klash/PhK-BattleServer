@@ -373,8 +373,10 @@ def main() -> int:
         or "fallback_input_count" not in simulation_text
         or "input_trace" not in simulation_text
         or "event_trace" not in simulation_text
+        or "TransferableCardState" not in simulation_text
+        or "ConfigureTransferableCard" not in simulation_text
     ):
-        print("simulation boundary missing fixed tick, simulation, replay fixture/record/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, replay trace, or mode action acceptance", file=sys.stderr)
+        print("simulation boundary missing fixed tick, simulation, replay fixture/record/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, replay trace, mode action acceptance, or transfer-card authority state", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
@@ -412,6 +414,12 @@ def main() -> int:
         or 'snapshot.mode_state["ruleset_version"]' not in simulation_impl
         or "input_trace_.push_back" not in simulation_impl
         or "event_trace_.push_back" not in simulation_impl
+        or "transfer_card_not_authorized" not in simulation_impl
+        or "transfer_card_owner_mismatch" not in simulation_impl
+        or "transfer_card_mode_forbidden" not in simulation_impl
+        or "transfer_card_cost_unpaid" not in simulation_impl
+        or "transfer_card_cooldown_blocked" not in simulation_impl
+        or "transferable_cards_" not in simulation_impl
         or "summary.input_trace = input_trace_" not in simulation_impl
         or "fixture.input_trace = fixture.summary.input_trace" not in simulation_impl
         or "fixture.replay_summary_record = BuildReplayInputStreamSummary" not in simulation_impl
@@ -429,7 +437,7 @@ def main() -> int:
         or "bullet.pattern_id" not in simulation_impl
         or "snapshot.mode_state" not in simulation_impl
     ):
-        print("simulation implementation missing canonical hash, replay fixture/record material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
+        print("simulation implementation missing canonical hash, replay fixture/record material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, authoritative input/mode-action validation, or transfer-card authority guards", file=sys.stderr)
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
@@ -481,6 +489,7 @@ def main() -> int:
         or "encrypted_payload_type_invalid" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
         or "BuildReplayRecord" not in server_impl
+        or "ConfigureTransferableCard" not in server_impl
         or "BuildReplayRecordResult" not in server_impl
         or "session.deck_snapshot_hash = signed_ticket.ticket.deck_snapshot_hash" not in server_impl
         or "ReplayLoadoutBridge loadout" not in server_impl
@@ -504,7 +513,7 @@ def main() -> int:
         or "replay_summary_hash" not in server_impl
         or "replay_fixture_hash" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, transfer-card config facade, or registered-player authority guards", file=sys.stderr)
         return 1
 
     server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
@@ -688,6 +697,12 @@ def main() -> int:
         or "remote_rebind_player_connected" not in tests_text
         or "reconnect_result" not in tests_text
         or "disconnected_card_action" not in tests_text
+        or "transfer_card_not_authorized" not in tests_text
+        or "transfer_card_owner_mismatch" not in tests_text
+        or "transfer_card_mode_forbidden" not in tests_text
+        or "transfer_card_cost_unpaid" not in tests_text
+        or "transfer_card_cooldown_blocked" not in tests_text
+        or "ConfigureTransferableCard" not in tests_text
         or "action-reconnect-p2" not in tests_text
         or "last_mode_action_type" not in tests_text
         or "adapter.Stats().accepted_datagrams" not in tests_text
@@ -702,7 +717,7 @@ def main() -> int:
         or "ping_ack_ahead" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, handshake-bound encrypted session coverage, decoded header/payload binding coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
+        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, transfer-card authority coverage, handshake-bound encrypted session coverage, decoded header/payload binding coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
         return 1
 
     if args.build:
