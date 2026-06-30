@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Decoded Session Boundary
+
+- Direct protobuf-replacement decoded handoff now reuses the negotiated session boundary before simulation state changes.
+- `AcceptDecodedInput`, `AcceptDecodedModeAction`, and decoded reconnect handoff require a registered match session that completed handshake, a matching inbound client-to-server key reference, and valid snapshot/event acknowledgement bounds.
+- CTest now rejects wrong-session-key decoded input and snapshot ACK claims ahead of the authoritative tick without advancing replay counters. This keeps future protobuf decode entrypoints aligned with the encrypted packet adapter while real protobuf/KCP/AEAD remains pending.
+
 ## 2026-06-30 Boss Start Readiness Result Binding
 
 - Boss development result projection now carries the server-owned start boundary fields: `boss_min_players`, `boss_max_players`, `boss_start_ready`, `boss_ready_player_count`, and `boss_ready_to_start`.
