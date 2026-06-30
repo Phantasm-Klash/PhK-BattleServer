@@ -513,6 +513,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     }
     if (IsReconnectPayload(packet.header.payload_type)) {
         const BattleSimulation& simulation = simulation_it->second;
+        if (simulation.IsPlayerConnected(packet.header.player_id)) {
+            result.reason = "encrypted_reconnect_player_connected";
+            return result;
+        }
         if (packet.header.ack > simulation.Summary().event_count) {
             result.reason = "encrypted_event_cursor_ahead";
             return result;
