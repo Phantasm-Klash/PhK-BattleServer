@@ -2374,18 +2374,33 @@ bool TestKcpAeadPacketAdapterBoundary() {
     reconnect.header.payload_type = phk::battle::BattlePayloadType::Reconnect;
     reconnect.header.seq = 3;
     RefreshDevAeadNonce(reconnect.header);
+    const auto connected_rebind_result = adapter.ProcessEncryptedDatagram(reconnect, other_remote);
+    CHECK_TRUE(!connected_rebind_result.ok);
+    CHECK_EQ(connected_rebind_result.reason, std::string("remote_rebind_player_connected"));
+    CHECK_TRUE(connected_rebind_result.replies.empty());
+    CHECK_EQ(adapter.Stats().accepted_datagrams, static_cast<std::uint64_t>(2));
+    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(5));
+    CHECK_EQ(adapter.Stats().malformed_datagrams, static_cast<std::uint64_t>(2));
+    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(2));
+    CHECK_EQ(adapter.Stats().remote_endpoint_rebinds, static_cast<std::uint64_t>(0));
+    CHECK_EQ(adapter.Stats().bound_sessions, static_cast<std::uint64_t>(1));
+    CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(2));
+    CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(2));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p1", false).ok);
     const auto reconnect_result = adapter.ProcessEncryptedDatagram(reconnect, other_remote);
     CHECK_TRUE(reconnect_result.ok);
     CHECK_EQ(reconnect_result.reason, std::string("reconnect"));
     CHECK_EQ(adapter.Stats().accepted_datagrams, static_cast<std::uint64_t>(3));
-    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(4));
+    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(5));
     CHECK_EQ(adapter.Stats().malformed_datagrams, static_cast<std::uint64_t>(2));
-    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(1));
+    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(2));
     CHECK_EQ(adapter.Stats().remote_endpoint_rebinds, static_cast<std::uint64_t>(1));
     CHECK_EQ(adapter.Stats().bound_sessions, static_cast<std::uint64_t>(1));
     CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(3));
     CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(3));
 
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p1", true).ok);
     auto old_remote_after_reconnect = packet;
     old_remote_after_reconnect.header.seq = 4;
     RefreshDevAeadNonce(old_remote_after_reconnect.header);
@@ -2394,9 +2409,9 @@ bool TestKcpAeadPacketAdapterBoundary() {
     CHECK_EQ(old_remote_result.reason, std::string("remote_endpoint_mismatch"));
     CHECK_TRUE(old_remote_result.replies.empty());
     CHECK_EQ(adapter.Stats().accepted_datagrams, static_cast<std::uint64_t>(3));
-    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(5));
+    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(6));
     CHECK_EQ(adapter.Stats().malformed_datagrams, static_cast<std::uint64_t>(2));
-    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(2));
+    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(3));
     CHECK_EQ(adapter.Stats().remote_endpoint_rebinds, static_cast<std::uint64_t>(1));
     CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(3));
     CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(3));
@@ -2405,7 +2420,7 @@ bool TestKcpAeadPacketAdapterBoundary() {
     CHECK_TRUE(new_remote_result.ok);
     CHECK_EQ(new_remote_result.reason, std::string("input"));
     CHECK_EQ(adapter.Stats().accepted_datagrams, static_cast<std::uint64_t>(4));
-    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(5));
+    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(6));
     CHECK_EQ(adapter.Stats().malformed_datagrams, static_cast<std::uint64_t>(2));
     CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(4));
     CHECK_EQ(endpoint.Stats().datagrams_out, static_cast<std::uint64_t>(4));
@@ -2417,9 +2432,9 @@ bool TestKcpAeadPacketAdapterBoundary() {
     CHECK_EQ(replay.reason, std::string("nonce_replay"));
     CHECK_TRUE(replay.replies.empty());
     CHECK_EQ(adapter.Stats().accepted_datagrams, static_cast<std::uint64_t>(4));
-    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(6));
+    CHECK_EQ(adapter.Stats().rejected_datagrams, static_cast<std::uint64_t>(7));
     CHECK_EQ(adapter.Stats().malformed_datagrams, static_cast<std::uint64_t>(2));
-    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(2));
+    CHECK_EQ(adapter.Stats().remote_endpoint_mismatches, static_cast<std::uint64_t>(3));
     CHECK_EQ(adapter.Stats().remote_endpoint_rebinds, static_cast<std::uint64_t>(1));
     CHECK_EQ(adapter.Stats().bound_sessions, static_cast<std::uint64_t>(1));
     CHECK_EQ(endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(4));

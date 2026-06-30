@@ -436,6 +436,7 @@ def main() -> int:
     if (
         "match_mode_ruleset_mismatch" not in server_impl
         or "SessionExistsForPlayer" not in server_impl
+        or "BattleServer::IsPlayerConnected" not in server_impl
         or "options.required_ruleset_version" not in server_impl
         or "options.required_result_hash" not in server_impl
         or "options.required_event_cursor" not in server_impl
@@ -579,6 +580,8 @@ def main() -> int:
         or "stats_.remote_endpoint_mismatches" not in kcp_impl
         or "stats_.remote_endpoint_rebinds" not in kcp_impl
         or "remote_endpoint_mismatch" not in kcp_impl
+        or "remote_rebind_player_connected" not in kcp_impl
+        or "server_.IsPlayerConnected(packet.header.match_id, packet.header.player_id)" not in kcp_impl
         or "remote_rebind_allowed = packet.header.payload_type == BattlePayloadType::Reconnect" not in kcp_impl
         or "endpoint_.ProcessDatagram(datagram)" not in kcp_impl
         or "if (!result.dispatch.ok)" not in kcp_impl
@@ -666,6 +669,7 @@ def main() -> int:
         or "decoded_mode_action_payload_type_mismatch" not in tests_text
         or "KcpAeadPacketAdapterBoundary" not in tests_text
         or "remote_endpoint_mismatch" not in tests_text
+        or "remote_rebind_player_connected" not in tests_text
         or "reconnect_result" not in tests_text
         or "disconnected_card_action" not in tests_text
         or "action-reconnect-p2" not in tests_text

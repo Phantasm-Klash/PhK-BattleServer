@@ -80,6 +80,21 @@ KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
             }
         }
     }
+    if (remote_rebind_allowed) {
+        const std::string remote_key = SessionRemoteKey(packet);
+        const auto remote_it = remote_endpoint_by_session_.find(remote_key);
+        if (!remote_key.empty() &&
+            remote_it != remote_endpoint_by_session_.end() &&
+            remote_it->second != datagram.remote_endpoint &&
+            server_.IsPlayerConnected(packet.header.match_id, packet.header.player_id)) {
+            stats_.rejected_datagrams += 1;
+            stats_.remote_endpoint_mismatches += 1;
+            result.reason = "remote_rebind_player_connected";
+            result.dispatch.payload_type = packet.header.payload_type;
+            result.dispatch.reason = result.reason;
+            return result;
+        }
+    }
 
     result.dispatch = server_.DispatchEncrypted(packet);
     result.reason = result.dispatch.reason;

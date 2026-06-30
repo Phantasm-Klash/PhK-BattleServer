@@ -101,6 +101,7 @@ public:
 	InputValidationResult AcceptDecodedModeAction(const BattlePacketHeader& header, const BattleModeAction& action);
 	InputValidationResult AcceptInput(const BattleInput& input);
 	InputValidationResult AcceptModeAction(const BattleModeAction& action);
+	[[nodiscard]] bool IsPlayerConnected(const std::string& match_id, const std::string& player_id) const;
 	InputValidationResult SetPlayerConnected(const std::string& match_id, const std::string& player_id, bool connected);
 	BattleSnapshot TickMatch(const std::string& match_id);
 	BattleSnapshot MatchSnapshot(const std::string& match_id) const;

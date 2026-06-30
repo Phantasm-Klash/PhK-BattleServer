@@ -435,6 +435,14 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
     return simulation_it->second.AcceptModeAction(action);
 }
 
+bool BattleServer::IsPlayerConnected(const std::string& match_id, const std::string& player_id) const {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        return false;
+    }
+    return simulation_it->second.IsPlayerConnected(player_id);
+}
+
 InputValidationResult BattleServer::SetPlayerConnected(
     const std::string& match_id,
     const std::string& player_id,
