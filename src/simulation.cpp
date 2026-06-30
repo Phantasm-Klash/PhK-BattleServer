@@ -696,6 +696,24 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "reconnect_already_pending";
         return result;
     }
+    if (IsReconnectModeAction(action.action_type)) {
+        const auto last_seen_event_cursor = ExtractJsonIntField(action.payload_json, "last_seen_event_cursor");
+        if (!last_seen_event_cursor.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "reconnect_cursor_missing";
+            return result;
+        }
+        if (last_seen_event_cursor.value() < 0) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "reconnect_cursor_invalid";
+            return result;
+        }
+        if (static_cast<std::uint64_t>(last_seen_event_cursor.value()) > event_count_) {
+            result.code = InputValidationCode::EventCursorAhead;
+            result.reason = "reconnect_cursor_ahead";
+            return result;
+        }
+    }
     if (action.action_type == "cast_card") {
         const auto card_slot = ExtractJsonIntField(action.payload_json, "card_slot");
         if (!card_slot.has_value()) {
