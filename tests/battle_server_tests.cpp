@@ -435,12 +435,24 @@ bool TestServerAndHandshake() {
 	auto ticket = MakeTicket();
 	const auto registered = server.RegisterTicket(ticket);
 	CHECK_TRUE(registered.ok);
+    CHECK_TRUE(registered.created_match);
+    CHECK_EQ(registered.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(registered.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(registered.match_session_count_before, static_cast<std::size_t>(0));
+    CHECK_EQ(registered.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(registered.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_EQ(registered.match_session_count_after, static_cast<std::size_t>(1));
 	CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(1));
 	CHECK_EQ(registered.session.kcp_conv, phk::battle::DeriveDevKcpConv("match-001", "p1"));
 
 	const auto replay = server.RegisterTicket(ticket);
 	CHECK_TRUE(!replay.ok);
 	CHECK_EQ(replay.reason, std::string("ticket_replay"));
+    CHECK_TRUE(!replay.created_match);
+    CHECK_EQ(replay.active_sessions_before, static_cast<std::size_t>(1));
+    CHECK_EQ(replay.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(replay.match_session_count_before, static_cast<std::size_t>(1));
+    CHECK_EQ(replay.match_session_count_after, static_cast<std::size_t>(1));
 
 	auto duplicate_player = MakeTicket();
 	duplicate_player.ticket.ticket_id = "ticket-duplicate-player";
@@ -448,6 +460,10 @@ bool TestServerAndHandshake() {
 	const auto duplicate_player_result = server.RegisterTicket(duplicate_player);
 	CHECK_TRUE(!duplicate_player_result.ok);
 	CHECK_EQ(duplicate_player_result.reason, std::string("player_session_replay"));
+    CHECK_TRUE(!duplicate_player_result.created_match);
+    CHECK_EQ(duplicate_player_result.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(duplicate_player_result.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_EQ(duplicate_player_result.match_session_count_after, static_cast<std::size_t>(1));
 
     auto wrong_mode = MakeTicket();
     wrong_mode.ticket.ticket_id = "ticket-wrong-mode";
@@ -459,10 +475,22 @@ bool TestServerAndHandshake() {
     const auto wrong_mode_result = server.RegisterTicket(wrong_mode);
     CHECK_TRUE(!wrong_mode_result.ok);
     CHECK_EQ(wrong_mode_result.reason, std::string("match_mode_ruleset_mismatch"));
+    CHECK_TRUE(!wrong_mode_result.created_match);
+    CHECK_EQ(wrong_mode_result.active_sessions_before, static_cast<std::size_t>(1));
+    CHECK_EQ(wrong_mode_result.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(wrong_mode_result.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_EQ(wrong_mode_result.match_session_count_after, static_cast<std::size_t>(1));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(1));
 
 	const auto registered_bob = server.RegisterTicket(MakeTicketForBob());
 	CHECK_TRUE(registered_bob.ok);
+    CHECK_TRUE(!registered_bob.created_match);
+    CHECK_EQ(registered_bob.active_sessions_before, static_cast<std::size_t>(1));
+    CHECK_EQ(registered_bob.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(registered_bob.match_session_count_before, static_cast<std::size_t>(1));
+    CHECK_EQ(registered_bob.active_sessions_after, static_cast<std::size_t>(2));
+    CHECK_EQ(registered_bob.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_EQ(registered_bob.match_session_count_after, static_cast<std::size_t>(2));
 	CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
 
 	phk::battle::BattleHandshakeHello hello;
@@ -584,6 +612,13 @@ bool TestRoomCapacityGuard() {
     const auto full = server.RegisterTicket(MakeTicketForBob());
     CHECK_TRUE(!full.ok);
     CHECK_EQ(full.reason, std::string("match_full"));
+    CHECK_TRUE(!full.created_match);
+    CHECK_EQ(full.active_sessions_before, static_cast<std::size_t>(1));
+    CHECK_EQ(full.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(full.match_session_count_before, static_cast<std::size_t>(1));
+    CHECK_EQ(full.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(full.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_EQ(full.match_session_count_after, static_cast<std::size_t>(1));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(1));
     return true;
 }
@@ -3174,6 +3209,13 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto replay_ticket_after_retire = server.RegisterTicket(MakeTicket());
     CHECK_TRUE(!replay_ticket_after_retire.ok);
     CHECK_EQ(replay_ticket_after_retire.reason, std::string("match_retired"));
+    CHECK_TRUE(!replay_ticket_after_retire.created_match);
+    CHECK_EQ(replay_ticket_after_retire.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(replay_ticket_after_retire.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(replay_ticket_after_retire.match_session_count_before, static_cast<std::size_t>(0));
+    CHECK_EQ(replay_ticket_after_retire.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(replay_ticket_after_retire.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(replay_ticket_after_retire.match_session_count_after, static_cast<std::size_t>(0));
 
     const auto retired_again = server.RetireMatch("match-001");
     CHECK_TRUE(retired_again.ok);

@@ -549,11 +549,14 @@ def main() -> int:
         or "DevReplayRecordBridgeHash(record)" not in server_impl
         or "result.active_sessions_before = sessions_by_ticket_.size()" not in server_impl
         or "result.active_matches_before = simulations_by_match_.size()" not in server_impl
+        or "result.match_session_count_before" not in server_impl
+        or "result.created_match = true" not in server_impl
         or "result.input_stream_hash = summary.input_stream_hash" not in server_impl
         or "result.event_stream_hash = summary.event_stream_hash" not in server_impl
         or "result.final_state_hash = summary.final_state_hash" not in server_impl
         or "result.active_sessions_after = sessions_by_ticket_.size()" not in server_impl
         or "result.active_matches_after = simulations_by_match_.size()" not in server_impl
+        or "result.match_session_count_after" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
         or "DevReplayIdFromReplaySummary" not in server_impl
         or "projection_only" not in server_impl
@@ -613,6 +616,9 @@ def main() -> int:
         or "active_matches_before" not in server_header
         or "active_sessions_after" not in server_header
         or "active_matches_after" not in server_header
+        or "match_session_count_before" not in server_header
+        or "match_session_count_after" not in server_header
+        or "created_match" not in server_header
         or "final_state_hash" not in server_header
         or "input_stream_hash" not in server_header
         or "event_stream_hash" not in server_header
@@ -915,6 +921,11 @@ def main() -> int:
         or "decoded_input_after_settle" not in tests_text
         or "decoded_action_after_settle" not in tests_text
         or "decoded_reconnect_after_settle" not in tests_text
+        or "registered.created_match" not in tests_text
+        or "registered_bob.created_match" not in tests_text
+        or "match_session_count_before" not in tests_text
+        or "match_session_count_after" not in tests_text
+        or "replay_ticket_after_retire.created_match" not in tests_text
         or "retired.active_sessions_before" not in tests_text
         or "retired.active_sessions_after" not in tests_text
         or "retired.final_state_hash" not in tests_text
