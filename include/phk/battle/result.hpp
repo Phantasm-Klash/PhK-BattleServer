@@ -53,11 +53,19 @@ struct BattleResultVerificationOptions {
     std::string required_final_state_hash;
     std::string required_replay_summary_hash;
     std::string required_replay_fixture_hash;
+    std::string required_boss_scope;
+    std::string required_boss_completion_policy;
+    std::string required_boss_clear_status;
+    std::string required_boss_result_disposition;
+    std::uint64_t required_boss_current_hp = 0;
+    std::uint64_t required_boss_damage_total = 0;
+    std::uint64_t required_boss_defeated = 0;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
     bool require_dev_signature_payload_binding = true;
     bool require_projection_only_reward = true;
     bool require_replay_counter_fields = false;
+    bool require_boss_result_fields = false;
 };
 
 struct BattleResultVerification {
