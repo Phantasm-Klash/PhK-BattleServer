@@ -3343,6 +3343,11 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     action.seq = 2;
     const auto mode_action = server.AcceptModeAction(action);
     CHECK_TRUE(mode_action.ok);
+    auto duplicate_action_id = action;
+    duplicate_action_id.seq = 3;
+    const auto duplicate_action_id_result = server.AcceptModeAction(duplicate_action_id);
+    CHECK_TRUE(!duplicate_action_id_result.ok);
+    CHECK_EQ(duplicate_action_id_result.reason, std::string("mode_action_duplicate"));
     const auto queued_mode_action_summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(queued_mode_action_summary.event_count, replay_summary.event_count);
     CHECK_EQ(queued_mode_action_summary.event_stream_hash, replay_summary.event_stream_hash);
