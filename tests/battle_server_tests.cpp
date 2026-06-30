@@ -1420,6 +1420,14 @@ bool TestReadyModeActionLifecycleState() {
     p1_ready.action_type = "ready";
     p1_ready.payload_json = "{\"ready\":true}";
     CHECK_TRUE(simulation.AcceptModeAction(p1_ready).ok);
+    auto pending_duplicate_p1_ready = p1_ready;
+    pending_duplicate_p1_ready.seq = 2;
+    pending_duplicate_p1_ready.action_id = "ready-p1-pending-duplicate";
+    const auto pending_duplicate_p1_ready_result = simulation.AcceptModeAction(pending_duplicate_p1_ready);
+    CHECK_TRUE(!pending_duplicate_p1_ready_result.ok);
+    CHECK_EQ(pending_duplicate_p1_ready_result.reason, std::string("ready_already_set"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
     const auto p1_ready_snapshot = simulation.Tick();
     CHECK_EQ(p1_ready_snapshot.mode_state.at("ready_player_count"), std::string("1"));
     CHECK_EQ(p1_ready_snapshot.mode_state.at("all_players_ready"), std::string("0"));
