@@ -102,6 +102,12 @@ std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std
     return config.max_players;
 }
 
+bool IsAllowedBossFriendlyFirePolicy(const std::string& policy) {
+    return policy == "disabled" ||
+        policy == "player_bullets_only" ||
+        policy == "all_friendly_fire";
+}
+
 bool BossMatchReadyForResult(const BattleSimulation& simulation) {
     if (!IsBossMode(simulation.Config().mode_id)) {
         return true;
@@ -316,6 +322,37 @@ std::size_t BattleServer::ActiveMatchCount() const {
     return simulations_by_match_.size();
 }
 
+ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_config) {
+    ConfigureBossMatchResult result;
+    if (boss_config.match_id.empty()) {
+        result.reason = "match_id_missing";
+        return result;
+    }
+    if (!IsBossMode(boss_config.mode_id)) {
+        result.reason = "boss_mode_required";
+        return result;
+    }
+    if (simulations_by_match_.find(boss_config.match_id) != simulations_by_match_.end()) {
+        result.reason = "match_already_created";
+        return result;
+    }
+    if (result_hash_by_match_.find(boss_config.match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_retired";
+        return result;
+    }
+    if (!IsAllowedBossFriendlyFirePolicy(boss_config.boss_friendly_fire_policy)) {
+        boss_config.boss_friendly_fire_policy = "disabled";
+    }
+    if (boss_config.boss_max_hp == 0) {
+        boss_config.boss_max_hp = 1;
+    }
+
+    pending_boss_config_by_match_[boss_config.match_id] = std::move(boss_config);
+    result.ok = true;
+    result.reason = "ok";
+    return result;
+}
+
 RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& signed_ticket) {
     RegisterTicketResult result;
     result.active_sessions_before = sessions_by_ticket_.size();
@@ -390,6 +427,13 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         result.session.match_id = signed_ticket.ticket.match_id;
         return finish();
     }
+    const auto pending_boss_config_it = pending_boss_config_by_match_.find(signed_ticket.ticket.match_id);
+    if (pending_boss_config_it != pending_boss_config_by_match_.end() &&
+        pending_boss_config_it->second.mode_id != signed_ticket.ticket.mode_id) {
+        result.reason = "boss_config_mode_mismatch";
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
+    }
 
     BattleSessionRecord session;
     session.ticket_id = signed_ticket.ticket.ticket_id;
@@ -412,6 +456,15 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         simulation_config.ruleset_version = signed_ticket.ticket.ruleset_version;
         simulation_config.match_seed = DeriveMatchSeed(session.match_id);
         simulation_config.tick_rate_hz = kBattleTickRateHz;
+        if (pending_boss_config_it != pending_boss_config_by_match_.end()) {
+            const BossMatchConfig& boss_config = pending_boss_config_it->second;
+            simulation_config.boss_instance_id = boss_config.boss_instance_id;
+            simulation_config.boss_season_id = boss_config.boss_season_id;
+            simulation_config.boss_phase_id = boss_config.boss_phase_id;
+            simulation_config.boss_max_hp = boss_config.boss_max_hp;
+            simulation_config.boss_friendly_fire_policy = boss_config.boss_friendly_fire_policy;
+            pending_boss_config_by_match_.erase(pending_boss_config_it);
+        }
         simulation_it = simulations_by_match_.emplace(session.match_id, BattleSimulation(simulation_config)).first;
         result.created_match = true;
     } else if (
@@ -1144,6 +1197,8 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
         return result;
     }
     result.result_hash = result_hash_it->second;
+    pending_boss_config_by_match_.erase(match_id);
+    boss_roster_locked_match_ids_.erase(match_id);
 
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
