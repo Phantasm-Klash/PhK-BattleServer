@@ -1298,6 +1298,54 @@ bool TestBossModeSpawnLayout() {
     return true;
 }
 
+bool TestBossModeCapacityGuard() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    config.max_players = 10;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 8; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-boss-cap-" + std::to_string(index),
+            "user-boss-cap-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "instance_boss",
+            "00112233445566778899bb0" + std::to_string(index)
+        )).ok);
+    }
+
+    const auto rejected = server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-cap-9",
+        "user-boss-cap-9",
+        "p9",
+        "instance_boss",
+        "00112233445566778899bb09"
+    ));
+    CHECK_TRUE(!rejected.ok);
+    CHECK_EQ(rejected.reason, std::string("match_full"));
+
+    const auto snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(8));
+    CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("boss_max_players"), std::string("8"));
+
+    phk::battle::BattleServer pvp_server(config);
+    for (std::size_t index = 1; index <= 10; ++index) {
+        const std::string nonce_hex = std::string("00112233445566778899cc") +
+            (index < 10 ? "0" : "") +
+            std::to_string(index);
+        CHECK_TRUE(pvp_server.RegisterTicket(MakeModeTicket(
+            "ticket-pvp-cap-" + std::to_string(index),
+            "user-pvp-cap-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "pvp_duel",
+            nonce_hex
+        )).ok);
+    }
+    CHECK_EQ(pvp_server.MatchSnapshot("match-001").players.size(), static_cast<std::size_t>(10));
+    return true;
+}
+
 bool TestBossModeBulletPattern() {
     phk::battle::SimulationConfig world_config;
     world_config.match_id = "match-world-boss-pattern";
@@ -2981,6 +3029,7 @@ int main() {
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
+        {"BossModeCapacityGuard", TestBossModeCapacityGuard},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},

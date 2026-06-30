@@ -70,6 +70,14 @@ bool IsBossMode(const std::string& mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std::string& mode_id) {
+    constexpr std::uint32_t kBossModeMaxPlayers = 8;
+    if (IsBossMode(mode_id) && config.max_players > kBossModeMaxPlayers) {
+        return kBossModeMaxPlayers;
+    }
+    return config.max_players;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -297,7 +305,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
             ++match_session_count;
         }
     }
-    if (match_session_count >= config_.max_players) {
+    if (match_session_count >= MatchMaxPlayersForMode(config_, signed_ticket.ticket.mode_id)) {
         result.reason = "match_full";
         return result;
     }
