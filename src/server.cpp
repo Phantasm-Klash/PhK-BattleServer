@@ -1,11 +1,13 @@
 #include "phk/battle/server.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace phk::battle {
 
@@ -37,6 +39,29 @@ const BattleSessionRecord* SessionForPlayer(
         }
     }
     return nullptr;
+}
+
+std::vector<const BattleSessionRecord*> SessionsForMatchInPlayerOrder(
+    const std::map<std::string, BattleSessionRecord>& sessions,
+    const std::string& match_id
+) {
+    std::vector<const BattleSessionRecord*> matched;
+    for (const auto& item : sessions) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id == match_id) {
+            matched.push_back(&session);
+        }
+    }
+    std::sort(matched.begin(), matched.end(), [](const BattleSessionRecord* left, const BattleSessionRecord* right) {
+        if (left->player_id != right->player_id) {
+            return left->player_id < right->player_id;
+        }
+        if (left->user_id != right->user_id) {
+            return left->user_id < right->user_id;
+        }
+        return left->ticket_id < right->ticket_id;
+    });
+    return matched;
 }
 
 bool IsInputWindowBoundPayload(BattlePayloadType payload_type) {
@@ -813,11 +838,8 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     battle_result.mode_result_json = DevModeResultJsonFromReplayFixture(replay_fixture);
     battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
 
-    for (const auto& item : sessions_by_ticket_) {
-        const BattleSessionRecord& session = item.second;
-        if (session.match_id == match_id) {
-            battle_result.player_ids.push_back(session.player_id);
-        }
+    for (const BattleSessionRecord* session : SessionsForMatchInPlayerOrder(sessions_by_ticket_, match_id)) {
+        battle_result.player_ids.push_back(session->player_id);
     }
     if (battle_result.player_ids.empty()) {
         result.reason = "player_ids_missing";
@@ -859,17 +881,13 @@ BuildReplayRecordResult BattleServer::BuildReplayRecord(
     record.owner_user_id = replay_fixture.owner_user_id;
     record.mode_id = replay_fixture.mode_id;
     record.stage_id = std::move(stage_id);
-    for (const auto& item : sessions_by_ticket_) {
-        const BattleSessionRecord& session = item.second;
-        if (session.match_id != match_id) {
-            continue;
-        }
+    for (const BattleSessionRecord* session : SessionsForMatchInPlayerOrder(sessions_by_ticket_, match_id)) {
         ReplayLoadoutBridge loadout;
-        loadout.user_id = session.user_id;
-        loadout.player_id = session.player_id;
+        loadout.user_id = session->user_id;
+        loadout.player_id = session->player_id;
         loadout.stage_id = record.stage_id;
-        loadout.deck_snapshot_hash = session.deck_snapshot_hash;
-        loadout.deck_ruleset_version = session.ruleset_version;
+        loadout.deck_snapshot_hash = session->deck_snapshot_hash;
+        loadout.deck_ruleset_version = session->ruleset_version;
         record.loadout.push_back(std::move(loadout));
     }
     record.stream = replay_fixture.replay_summary_record;
@@ -1002,11 +1020,11 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_last_transfer_authority_cooldown_ready =
             std::stoull(mode_state.at("last_transfer_authority_cooldown_ready"));
     }
-    for (const auto& item : sessions_by_ticket_) {
-        const BattleSessionRecord& session = item.second;
-        if (session.match_id == signed_result.result.match_id) {
-            options.required_player_ids.push_back(session.player_id);
-        }
+    for (const BattleSessionRecord* session : SessionsForMatchInPlayerOrder(
+        sessions_by_ticket_,
+        signed_result.result.match_id
+    )) {
+        options.required_player_ids.push_back(session->player_id);
     }
     result.verification = result_verifier_.Verify(signed_result, options);
     if (!result.verification.ok) {

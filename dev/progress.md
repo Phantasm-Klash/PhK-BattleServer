@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Stable Player-Ordered Result Export
+
+- Signed battle result callbacks and development `ReplayRecord` bridge loadouts now collect match sessions in stable `player_id` order instead of ticket-id map order.
+- This keeps canonical result payloads, development signatures, and replay export material independent of ticket issuance id ordering while preserving ticket-derived user/deck refs.
+- CTest covers a match whose Bob ticket sorts before Alice by ticket id, proving exported `player_ids`, loadout rows, record hash material, and result submission still use stable player order. This remains replay/result export material only and does not persist rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Battle Royale Select-Round Payload Boundary
 
 - `select_round_card` mode actions are now battle-royale-only and require an integer `candidate_index` in the server-generated three-choice range 0-2 before they can enter the authoritative tick queue.
