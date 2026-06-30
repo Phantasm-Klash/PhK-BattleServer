@@ -1346,6 +1346,36 @@ bool TestBossModeCapacityGuard() {
     return true;
 }
 
+bool TestBossStartReadinessTracksConnectedPlayers() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-boss-ready-" + std::to_string(index),
+            "user-boss-ready-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            "00112233445566778899dd0" + std::to_string(index)
+        )).ok);
+    }
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("boss_start_ready"), std::string("1"));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
+    const auto disconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("3"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", true).ok);
+    const auto reconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("4"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    return true;
+}
+
 bool TestBossModeBulletPattern() {
     phk::battle::SimulationConfig world_config;
     world_config.match_id = "match-world-boss-pattern";
@@ -3030,6 +3060,7 @@ int main() {
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
+        {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
