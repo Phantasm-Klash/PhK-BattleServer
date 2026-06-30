@@ -537,6 +537,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "player_unknown";
         return result;
     }
+    if (IsReconnectModeAction(action.action_type) && player_it->second.connected) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "reconnect_player_connected";
+        return result;
+    }
     if (!player_it->second.connected && !IsReconnectModeAction(action.action_type)) {
         result.code = InputValidationCode::PlayerDisconnected;
         result.reason = "player_disconnected";
