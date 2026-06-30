@@ -1893,6 +1893,43 @@ bool TestBossModeCapacityGuard() {
     return true;
 }
 
+bool TestBossSimulationRejectsNinthPlayer() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-boss-simulation-cap";
+    config.mode_id = "world_boss";
+    phk::battle::BattleSimulation simulation(config);
+
+    for (std::size_t index = 1; index <= phk::battle::kBossModeMaxPlayers; ++index) {
+        CHECK_TRUE(simulation.AddPlayer(
+            "p" + std::to_string(index),
+            static_cast<std::int32_t>(index * 1000),
+            0
+        ));
+    }
+
+    CHECK_TRUE(!simulation.AddPlayer("p9", 9000, 0));
+    CHECK_EQ(simulation.PlayerCount(), phk::battle::kBossModeMaxPlayers);
+    const auto snapshot = simulation.Snapshot();
+    CHECK_EQ(snapshot.players.size(), phk::battle::kBossModeMaxPlayers);
+    CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("8"));
+    CHECK_EQ(snapshot.mode_state.at("boss_layout_player_count"), std::string("8"));
+    CHECK_TRUE(snapshot.mode_state.find("boss_player_p9_spawn_slot") == snapshot.mode_state.end());
+
+    phk::battle::SimulationConfig pvp_config;
+    pvp_config.match_id = "match-pvp-simulation-cap";
+    pvp_config.mode_id = "pvp_duel";
+    phk::battle::BattleSimulation pvp_simulation(pvp_config);
+    for (std::size_t index = 1; index <= phk::battle::kBossModeMaxPlayers + 1; ++index) {
+        CHECK_TRUE(pvp_simulation.AddPlayer(
+            "p" + std::to_string(index),
+            static_cast<std::int32_t>(index * 1000),
+            0
+        ));
+    }
+    CHECK_EQ(pvp_simulation.PlayerCount(), phk::battle::kBossModeMaxPlayers + 1);
+    return true;
+}
+
 bool TestBossStartReadinessTracksConnectedPlayers() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -4631,6 +4668,7 @@ int main() {
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
+        {"BossSimulationRejectsNinthPlayer", TestBossSimulationRejectsNinthPlayer},
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
         {"BossReadyToStartRequiresAllReadyPlayers", TestBossReadyToStartRequiresAllReadyPlayers},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},

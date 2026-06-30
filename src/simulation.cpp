@@ -374,6 +374,9 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
     if (player_id.empty() || players_.find(player_id) != players_.end()) {
         return false;
     }
+    if (IsBossMode(config_.mode_id) && players_.size() >= kBossModeMaxPlayers) {
+        return false;
+    }
 
     PlayerState player;
     player.player_id = player_id;

@@ -361,6 +361,7 @@ def main() -> int:
         "kBattleTickRateHz = 60" not in simulation_text
         or "BattleSimulation" not in simulation_text
         or "kDefaultMaxBossIdentityBytes" not in simulation_text
+        or "kBossModeMaxPlayers = 8" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
         or "ReplayRecordBridge" not in simulation_text
@@ -448,6 +449,7 @@ def main() -> int:
         or '"boss_friendly_fire_policy"' not in simulation_impl
         or "IsAllowedBossFriendlyFirePolicy" not in simulation_impl
         or "NormalizedBossIdentityField" not in simulation_impl
+        or "players_.size() >= kBossModeMaxPlayers" not in simulation_impl
         or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
@@ -882,6 +884,8 @@ def main() -> int:
         or "instance_cleared" not in tests_text
         or "instance_incomplete" not in tests_text
         or "boss_player_p8_spawn_slot" not in tests_text
+        or "BossSimulationRejectsNinthPlayer" not in tests_text
+        or "!simulation.AddPlayer(\"p9\"" not in tests_text
         or "northwest" not in tests_text
         or "last_transfer_authority_owner_player_id" not in tests_text
         or "authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1" not in tests_text
