@@ -79,6 +79,54 @@ bool SameVersionStamp(const VersionStamp& left, const VersionStamp& right) {
         left.ruleset_version == right.ruleset_version;
 }
 
+InputValidationResult ValidateDecodedInputBinding(
+    const BattlePacketHeader& header,
+    const BattleInput& input
+) {
+    if (header.payload_type != BattlePayloadType::Input) {
+        return InvalidDecodedPayloadResult("decoded_input_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, input.version) ||
+        header.match_id != input.match_id ||
+        header.player_id != input.player_id ||
+        header.tick != input.tick ||
+        header.seq != input.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_input_header_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
+InputValidationResult ValidateDecodedModeActionBinding(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    if (header.payload_type != BattlePayloadType::ModeAction) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, action.version) ||
+        header.match_id != action.match_id ||
+        header.player_id != action.player_id ||
+        header.tick != action.tick ||
+        header.seq != action.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_header_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
 std::uint64_t HashAppend(std::uint64_t hash, const std::string& value) {
     for (const char ch : value) {
         hash ^= static_cast<unsigned char>(ch);
@@ -341,17 +389,9 @@ InputValidationResult BattleServer::AcceptDecodedInput(
     const BattlePacketHeader& header,
     const BattleInput& input
 ) {
-    if (header.payload_type != BattlePayloadType::Input) {
-        return InvalidDecodedPayloadResult("decoded_input_payload_type_mismatch");
-    }
-    if (
-        !SameVersionStamp(header.version, input.version) ||
-        header.match_id != input.match_id ||
-        header.player_id != input.player_id ||
-        header.tick != input.tick ||
-        header.seq != input.seq
-    ) {
-        return InvalidDecodedPayloadResult("decoded_input_header_mismatch");
+    const auto binding = ValidateDecodedInputBinding(header, input);
+    if (!binding.ok) {
+        return binding;
     }
     return AcceptInput(input);
 }
@@ -360,17 +400,9 @@ InputValidationResult BattleServer::AcceptDecodedModeAction(
     const BattlePacketHeader& header,
     const BattleModeAction& action
 ) {
-    if (header.payload_type != BattlePayloadType::ModeAction) {
-        return InvalidDecodedPayloadResult("decoded_mode_action_payload_type_mismatch");
-    }
-    if (
-        !SameVersionStamp(header.version, action.version) ||
-        header.match_id != action.match_id ||
-        header.player_id != action.player_id ||
-        header.tick != action.tick ||
-        header.seq != action.seq
-    ) {
-        return InvalidDecodedPayloadResult("decoded_mode_action_header_mismatch");
+    const auto binding = ValidateDecodedModeActionBinding(header, action);
+    if (!binding.ok) {
+        return binding;
     }
     return AcceptModeAction(action);
 }
@@ -636,6 +668,41 @@ DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
     const DecodedBattlePacket& packet
 ) {
     DecodedBattlePacketResult result;
+
+    if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::Input) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_input_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedInputBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_input
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_mode_action_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedModeActionBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
+    } else {
+        result.decoded = InvalidDecodedPayloadResult("decoded_packet_payload_type_unsupported");
+        result.reason = result.decoded.reason;
+        return result;
+    }
+
     result.dispatch = server_.DispatchEncrypted(packet.encrypted_packet);
     result.reason = result.dispatch.reason;
     if (!result.dispatch.ok) {
@@ -644,29 +711,15 @@ DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
     result.encrypted_dispatch_accepted = true;
 
     if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
-        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::Input) {
-            result.decoded = InvalidDecodedPayloadResult("decoded_packet_input_missing");
-            result.reason = result.decoded.reason;
-            return result;
-        }
         result.decoded = server_.AcceptDecodedInput(
             packet.encrypted_packet.header,
             packet.decoded_input
         );
     } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
-        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
-            result.decoded = InvalidDecodedPayloadResult("decoded_packet_mode_action_missing");
-            result.reason = result.decoded.reason;
-            return result;
-        }
         result.decoded = server_.AcceptDecodedModeAction(
             packet.encrypted_packet.header,
             packet.decoded_mode_action
         );
-    } else {
-        result.decoded = InvalidDecodedPayloadResult("decoded_packet_payload_type_unsupported");
-        result.reason = result.decoded.reason;
-        return result;
     }
 
     result.ok = result.decoded.ok;

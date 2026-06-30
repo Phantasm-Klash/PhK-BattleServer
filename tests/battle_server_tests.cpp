@@ -2115,10 +2115,19 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     missing_decoded_input.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::None;
     const auto missing_decoded_input_result = adapter.AcceptDecodedPacket(missing_decoded_input);
     CHECK_TRUE(!missing_decoded_input_result.ok);
-    CHECK_TRUE(missing_decoded_input_result.dispatch.ok);
-    CHECK_TRUE(missing_decoded_input_result.encrypted_dispatch_accepted);
+    CHECK_TRUE(!missing_decoded_input_result.dispatch.ok);
+    CHECK_TRUE(!missing_decoded_input_result.encrypted_dispatch_accepted);
     CHECK_EQ(missing_decoded_input_result.reason, std::string("decoded_packet_input_missing"));
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
+    auto retried_decoded_input = missing_decoded_input;
+    retried_decoded_input.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    retried_decoded_input.decoded_input = MakeInput("p1", 2, 2, 1u << 0);
+    const auto retried_decoded_input_result = adapter.AcceptDecodedPacket(retried_decoded_input);
+    CHECK_TRUE(retried_decoded_input_result.ok);
+    CHECK_TRUE(retried_decoded_input_result.encrypted_dispatch_accepted);
+    CHECK_EQ(retried_decoded_input_result.dispatch.response_kind, std::string("input"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
 
     auto wrong_payload = input_packet;
     wrong_payload.encrypted_packet.header.player_id = "p2";
@@ -2130,23 +2139,23 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     wrong_payload.decoded_input = MakeInput("p1", 1, 1, 1u << 3);
     const auto wrong_payload_result = adapter.AcceptDecodedPacket(wrong_payload);
     CHECK_TRUE(!wrong_payload_result.ok);
-    CHECK_TRUE(wrong_payload_result.dispatch.ok);
-    CHECK_TRUE(wrong_payload_result.encrypted_dispatch_accepted);
+    CHECK_TRUE(!wrong_payload_result.dispatch.ok);
+    CHECK_TRUE(!wrong_payload_result.encrypted_dispatch_accepted);
     CHECK_EQ(wrong_payload_result.reason, std::string("decoded_input_header_mismatch"));
-    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
 
     auto p2_input = input_packet;
     p2_input.encrypted_packet.header.player_id = "p2";
     p2_input.encrypted_packet.header.key_id = bob_accept.client_to_server_key_ref;
-    p2_input.encrypted_packet.header.seq = 2;
+    p2_input.encrypted_packet.header.seq = 1;
     p2_input.encrypted_packet.header.tick = 1;
     RefreshDevAeadNonce(p2_input.encrypted_packet.header);
     p2_input.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
-    p2_input.decoded_input = MakeInput("p2", 1, 2, 1u << 2);
+    p2_input.decoded_input = MakeInput("p2", 1, 1, 1u << 2);
     const auto accepted_p2_input = adapter.AcceptDecodedPacket(p2_input);
     CHECK_TRUE(accepted_p2_input.ok);
     CHECK_TRUE(accepted_p2_input.encrypted_dispatch_accepted);
-    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(3));
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
 
     phk::battle::DecodedBattlePacket action_packet;
@@ -2175,9 +2184,20 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     missing_decoded_action.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::None;
     const auto missing_decoded_action_result = adapter.AcceptDecodedPacket(missing_decoded_action);
     CHECK_TRUE(!missing_decoded_action_result.ok);
-    CHECK_TRUE(missing_decoded_action_result.dispatch.ok);
-    CHECK_TRUE(missing_decoded_action_result.encrypted_dispatch_accepted);
+    CHECK_TRUE(!missing_decoded_action_result.dispatch.ok);
+    CHECK_TRUE(!missing_decoded_action_result.encrypted_dispatch_accepted);
     CHECK_EQ(missing_decoded_action_result.reason, std::string("decoded_packet_mode_action_missing"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+
+    auto retried_decoded_action = missing_decoded_action;
+    retried_decoded_action.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::ModeAction;
+    retried_decoded_action.decoded_mode_action = MakeModeAction(4);
+    retried_decoded_action.decoded_mode_action.tick = 2;
+    retried_decoded_action.decoded_mode_action.action_id = "action-retried-decoded";
+    const auto retried_decoded_action_result = adapter.AcceptDecodedPacket(retried_decoded_action);
+    CHECK_TRUE(retried_decoded_action_result.ok);
+    CHECK_TRUE(retried_decoded_action_result.encrypted_dispatch_accepted);
+    CHECK_EQ(retried_decoded_action_result.dispatch.response_kind, std::string("mode_action"));
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
 
     auto ping_packet = input_packet;
@@ -2191,8 +2211,8 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     ping_packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
     const auto ping_decode_result = adapter.AcceptDecodedPacket(ping_packet);
     CHECK_TRUE(!ping_decode_result.ok);
-    CHECK_TRUE(ping_decode_result.dispatch.ok);
-    CHECK_TRUE(ping_decode_result.encrypted_dispatch_accepted);
+    CHECK_TRUE(!ping_decode_result.dispatch.ok);
+    CHECK_TRUE(!ping_decode_result.encrypted_dispatch_accepted);
     CHECK_EQ(ping_decode_result.reason, std::string("decoded_packet_payload_type_unsupported"));
 
     auto invalid_dispatch = input_packet;
@@ -2208,7 +2228,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_TRUE(!invalid_dispatch_result.dispatch.ok);
     CHECK_TRUE(!invalid_dispatch_result.encrypted_dispatch_accepted);
     CHECK_EQ(invalid_dispatch_result.reason, std::string("session_key_mismatch"));
-    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(3));
 
     phk::battle::BattleServer no_handshake_server(config);
     CHECK_TRUE(no_handshake_server.RegisterTicket(MakeTicket()).ok);
@@ -2226,8 +2246,8 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 5, 1u << 2)).ok);
     const auto action_snapshot = server.TickMatch("match-001");
     CHECK_EQ(action_snapshot.snapshot_tick, static_cast<std::uint64_t>(2));
-    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
-    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, action_packet.decoded_mode_action.action_id);
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, retried_decoded_action.decoded_mode_action.action_id);
     return true;
 }
 
