@@ -86,6 +86,27 @@ bool ContainsForbiddenRewardMutation(std::string_view json) {
     return false;
 }
 
+bool ContainsForbiddenModeResultMutation(std::string_view json) {
+    const std::string lowered = LowerAscii(json);
+    for (const std::string_view needle : {
+        "inventory",
+        "wallet",
+        "currency",
+        "grant",
+        "reward_grant",
+        "item_id",
+        "balance",
+        "database",
+        "steam_inventory",
+        "client_result_authoritative",
+    }) {
+        if (lowered.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
     for (const char ch : value) {
         hash ^= static_cast<unsigned char>(ch);
@@ -510,6 +531,10 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_projection_only_reward &&
         ContainsForbiddenRewardMutation(result.reward_projection_json)) {
         Fail(verification, "reward_projection_mutation_forbidden");
+        return verification;
+    }
+    if (ContainsForbiddenModeResultMutation(result.mode_result_json)) {
+        Fail(verification, "mode_result_mutation_forbidden");
         return verification;
     }
     if (result.settled_at_ms <= 0) {

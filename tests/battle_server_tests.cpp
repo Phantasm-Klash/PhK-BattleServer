@@ -797,6 +797,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!mutating_projection_result.ok);
     CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
 
+    auto mutating_mode_result = valid_result;
+    mutating_mode_result.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "}",
+        ",\"inventory_grant\":100}"
+    );
+    const auto mutating_mode_result_result = server.SubmitBattleResult(mutating_mode_result);
+    CHECK_TRUE(!mutating_mode_result_result.ok);
+    CHECK_EQ(mutating_mode_result_result.reason, std::string("mode_result_mutation_forbidden"));
+
     auto wrong_signature = valid_result;
     wrong_signature.signature_hex = RepeatHex('c', 128);
     const auto wrong_signature_result = server.SubmitBattleResult(wrong_signature);
