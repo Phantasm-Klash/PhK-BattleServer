@@ -1510,7 +1510,28 @@ bool TestModeActionPayloadSizeLimit() {
     config.spawn_period_ticks = 1000;
     phk::battle::BattleSimulation simulation(config);
     CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
+    CHECK_EQ(simulation.Config().max_mode_action_id_bytes, phk::battle::kDefaultMaxModeActionIdBytes);
+    CHECK_EQ(simulation.Config().max_mode_action_type_bytes, phk::battle::kDefaultMaxModeActionTypeBytes);
     CHECK_EQ(simulation.Config().max_mode_action_payload_bytes, phk::battle::kDefaultMaxModeActionPayloadBytes);
+
+    auto oversized_action_id = MakeModeAction(1);
+    oversized_action_id.match_id = config.match_id;
+    oversized_action_id.player_id = "p1";
+    oversized_action_id.tick = 1;
+    oversized_action_id.seq = 1;
+    oversized_action_id.action_id = std::string(phk::battle::kDefaultMaxModeActionIdBytes + 1, 'a');
+    oversized_action_id.action_type = "cast_card";
+    oversized_action_id.payload_json = "{\"card_slot\":1}";
+    const auto oversized_action_id_result = simulation.AcceptModeAction(oversized_action_id);
+    CHECK_TRUE(!oversized_action_id_result.ok);
+    CHECK_EQ(oversized_action_id_result.reason, std::string("mode_action_id_too_large"));
+
+    auto oversized_action_type = oversized_action_id;
+    oversized_action_type.action_id = "mode-action-type-oversized";
+    oversized_action_type.action_type = std::string(phk::battle::kDefaultMaxModeActionTypeBytes + 1, 't');
+    const auto oversized_action_type_result = simulation.AcceptModeAction(oversized_action_type);
+    CHECK_TRUE(!oversized_action_type_result.ok);
+    CHECK_EQ(oversized_action_type_result.reason, std::string("mode_action_type_too_large"));
 
     auto oversized = MakeModeAction(1);
     oversized.match_id = config.match_id;
@@ -1536,9 +1557,13 @@ bool TestModeActionPayloadSizeLimit() {
     phk::battle::SimulationConfig tiny_config;
     tiny_config.match_id = "match-mode-action-size-tiny";
     tiny_config.mode_id = "pvp_duel";
+    tiny_config.max_mode_action_id_bytes = 2;
+    tiny_config.max_mode_action_type_bytes = 2;
     tiny_config.max_mode_action_payload_bytes = 2;
     phk::battle::BattleSimulation tiny_simulation(tiny_config);
     CHECK_TRUE(tiny_simulation.AddPlayer("p1", 0, 0));
+    CHECK_EQ(tiny_simulation.Config().max_mode_action_id_bytes, static_cast<std::size_t>(2));
+    CHECK_EQ(tiny_simulation.Config().max_mode_action_type_bytes, static_cast<std::size_t>(2));
     CHECK_EQ(tiny_simulation.Config().max_mode_action_payload_bytes, static_cast<std::size_t>(2));
     auto tiny_payload = MakeModeAction(1);
     tiny_payload.match_id = tiny_config.match_id;
@@ -1548,12 +1573,32 @@ bool TestModeActionPayloadSizeLimit() {
     tiny_payload.action_id = "mode-action-tiny";
     tiny_payload.action_type = "cast_card";
     tiny_payload.payload_json = "{}";
-    const auto tiny_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    const auto tiny_id_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    CHECK_TRUE(!tiny_id_result.ok);
+    CHECK_EQ(tiny_id_result.reason, std::string("mode_action_id_too_large"));
+
+    tiny_payload.action_id = "a";
+    const auto tiny_type_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    CHECK_TRUE(!tiny_type_result.ok);
+    CHECK_EQ(tiny_type_result.reason, std::string("mode_action_type_too_large"));
+
+    phk::battle::SimulationConfig tiny_payload_config;
+    tiny_payload_config.match_id = "match-mode-action-payload-tiny";
+    tiny_payload_config.mode_id = "pvp_duel";
+    tiny_payload_config.max_mode_action_payload_bytes = 2;
+    phk::battle::BattleSimulation tiny_payload_simulation(tiny_payload_config);
+    CHECK_TRUE(tiny_payload_simulation.AddPlayer("p1", 0, 0));
+    CHECK_EQ(tiny_payload_simulation.Config().max_mode_action_payload_bytes, static_cast<std::size_t>(2));
+    tiny_payload.match_id = tiny_payload_config.match_id;
+    tiny_payload.action_id = "mode-action-tiny-payload";
+    tiny_payload.action_type = "cast_card";
+    tiny_payload.payload_json = "{}";
+    const auto tiny_result = tiny_payload_simulation.AcceptModeAction(tiny_payload);
     CHECK_TRUE(!tiny_result.ok);
     CHECK_EQ(tiny_result.reason, std::string("cast_card_slot_missing"));
 
     tiny_payload.payload_json = "{\"card_slot\":1}";
-    const auto tiny_oversized_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    const auto tiny_oversized_result = tiny_payload_simulation.AcceptModeAction(tiny_payload);
     CHECK_TRUE(!tiny_oversized_result.ok);
     CHECK_EQ(tiny_oversized_result.reason, std::string("mode_action_payload_too_large"));
     return true;
