@@ -1769,6 +1769,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
@@ -1802,6 +1804,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_damage_total_result = server.SubmitBattleResult(wrong_damage_total);
     CHECK_TRUE(!wrong_damage_total_result.ok);
     CHECK_EQ(wrong_damage_total_result.reason, std::string("boss_damage_total_mismatch"));
+
+    auto wrong_player_damage = built.signed_result;
+    wrong_player_damage.result.mode_result_json = ReplaceFirst(
+        wrong_player_damage.result.mode_result_json,
+        "\"boss_damage_p1\":10",
+        "\"boss_damage_p1\":0"
+    );
+    const auto wrong_player_damage_result = server.SubmitBattleResult(wrong_player_damage);
+    CHECK_TRUE(!wrong_player_damage_result.ok);
+    CHECK_EQ(wrong_player_damage_result.reason, std::string("boss_player_damage_mismatch"));
 
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(

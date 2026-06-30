@@ -278,6 +278,14 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "boss_damage_total_mismatch");
         return verification;
     }
+    if (options.require_boss_result_fields) {
+        for (const auto& item : options.required_boss_damage_by_player) {
+            if (!ContainsJsonUintField(result.mode_result_json, "boss_damage_" + item.first, item.second)) {
+                Fail(verification, "boss_player_damage_mismatch");
+                return verification;
+            }
+        }
+    }
     if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_defeated", options.required_boss_defeated)) {
         Fail(verification, "boss_defeated_mismatch");
