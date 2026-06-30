@@ -65,6 +65,7 @@ struct BattleResultVerificationOptions {
     std::string required_boss_friendly_fire_policy;
     std::string required_boss_clear_status;
     std::string required_boss_result_disposition;
+    std::string required_boss_instance_result_state;
     std::string required_last_transfer_card_instance_id;
     std::string required_last_transfer_from_player_id;
     std::string required_last_transfer_to_player_id;
@@ -84,6 +85,8 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_boss_all_registered_connected = 0;
     std::uint64_t required_boss_all_registered_ready = 0;
     std::uint64_t required_boss_ready_to_start = 0;
+    std::uint64_t required_boss_instance_surviving_player_count = 0;
+    std::uint64_t required_boss_instance_clear_credit = 0;
     std::uint64_t required_connected_player_count = 0;
     std::uint64_t required_disconnected_player_count = 0;
     std::uint64_t required_transfer_card_count = 0;

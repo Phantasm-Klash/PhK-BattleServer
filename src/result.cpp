@@ -492,6 +492,32 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "boss_result_disposition_mismatch");
         return verification;
     }
+    if (options.require_boss_result_fields && !options.required_boss_instance_result_state.empty()) {
+        if (!ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_instance_surviving_player_count",
+            options.required_boss_instance_surviving_player_count
+        )) {
+            Fail(verification, "boss_instance_surviving_player_count_mismatch");
+            return verification;
+        }
+        if (!ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_instance_clear_credit",
+            options.required_boss_instance_clear_credit
+        )) {
+            Fail(verification, "boss_instance_clear_credit_mismatch");
+            return verification;
+        }
+        if (!ContainsJsonStringField(
+            result.mode_result_json,
+            "boss_instance_result_state",
+            options.required_boss_instance_result_state
+        )) {
+            Fail(verification, "boss_instance_result_state_mismatch");
+            return verification;
+        }
+    }
     if (options.require_transfer_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "transfer_card_count", options.required_transfer_card_count)) {
         Fail(verification, "transfer_card_count_mismatch");

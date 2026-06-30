@@ -735,6 +735,10 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             connected_player_count == players_.size() &&
             ready_connected_player_count == players_.size() ? "1" : "0";
     if (IsBossMode(config_.mode_id)) {
+        const bool instance_boss = config_.mode_id == "instance_boss";
+        const bool replay_final_snapshot = snapshot.snapshot_kind == "replay_final";
+        const bool boss_defeated = boss_current_hp_ == 0;
+        const bool instance_clear_credit = instance_boss && boss_defeated && connected_player_count > 0;
         const bool boss_start_ready = connected_player_count >= 4 && connected_player_count <= 8;
         const bool boss_all_registered_connected =
             !players_.empty() && connected_player_count == players_.size();
@@ -762,15 +766,23 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
         snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
         snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
-        snapshot.mode_state["boss_defeated"] = BoolToken(boss_current_hp_ == 0);
+        snapshot.mode_state["boss_defeated"] = BoolToken(boss_defeated);
         snapshot.mode_state["boss_defeated_tick"] = std::to_string(boss_defeated_tick_);
-        snapshot.mode_state["boss_clear_status"] = boss_current_hp_ == 0 ? "cleared" : "running";
+        snapshot.mode_state["boss_clear_status"] =
+            boss_defeated && (!instance_boss || instance_clear_credit) ? "cleared" :
+            (instance_boss && replay_final_snapshot ? "failed" : "running");
         if (config_.mode_id == "world_boss") {
             snapshot.mode_state["boss_result_disposition"] = "world_damage_report";
         } else {
-            snapshot.mode_state["boss_result_disposition"] = boss_current_hp_ == 0 ?
+            snapshot.mode_state["boss_result_disposition"] = instance_clear_credit ?
                 "instance_cleared" :
-                "instance_incomplete";
+                (replay_final_snapshot ? "instance_failed" : "instance_incomplete");
+            snapshot.mode_state["boss_instance_surviving_player_count"] =
+                std::to_string(connected_player_count);
+            snapshot.mode_state["boss_instance_clear_credit"] = BoolToken(instance_clear_credit);
+            snapshot.mode_state["boss_instance_result_state"] = instance_clear_credit ?
+                "cleared" :
+                (replay_final_snapshot ? "failed" : "running");
         }
         for (const auto& item : boss_damage_by_player_) {
             snapshot.mode_state["boss_damage_" + item.first] = std::to_string(item.second);
@@ -1291,6 +1303,19 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_result_disposition = fixture.final_snapshot.mode_state.find("boss_result_disposition");
     if (boss_result_disposition != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_result_disposition\":\"" + boss_result_disposition->second + "\"";
+    }
+    const auto boss_instance_surviving_player_count =
+        fixture.final_snapshot.mode_state.find("boss_instance_surviving_player_count");
+    if (boss_instance_surviving_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_instance_surviving_player_count\":" + boss_instance_surviving_player_count->second;
+    }
+    const auto boss_instance_clear_credit = fixture.final_snapshot.mode_state.find("boss_instance_clear_credit");
+    if (boss_instance_clear_credit != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_instance_clear_credit\":" + boss_instance_clear_credit->second;
+    }
+    const auto boss_instance_result_state = fixture.final_snapshot.mode_state.find("boss_instance_result_state");
+    if (boss_instance_result_state != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_instance_result_state\":\"" + boss_instance_result_state->second + "\"";
     }
     const auto transfer_card_count = fixture.final_snapshot.mode_state.find("transfer_card_count");
     if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {
