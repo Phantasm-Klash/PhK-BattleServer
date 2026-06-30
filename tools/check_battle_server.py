@@ -304,6 +304,7 @@ def main() -> int:
         or "required_event_stream_hash" not in result_text
         or "required_final_state_hash" not in result_text
         or "required_replay_fixture_hash" not in result_text
+        or "required_tick_rate_hz" not in result_text
     ):
         print("result boundary missing replay stream/state hash requirements", file=sys.stderr)
         return 1
@@ -384,6 +385,7 @@ def main() -> int:
         or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
         or "CanonicalSnapshotPayload" not in simulation_impl
         or "DevModeResultJsonFromReplayFixture" not in simulation_impl
+        or '"tick_rate_hz"' not in simulation_impl
         or "DevReplayInputStreamSummaryHash(fixture.replay_summary_record)" not in simulation_impl
         or "DevReplayFixtureHash(fixture)" not in simulation_impl
         or "player.x_milli" not in simulation_impl
@@ -400,6 +402,7 @@ def main() -> int:
         or "options.required_ruleset_version" not in server_impl
         or "options.required_result_hash" not in server_impl
         or "options.required_event_cursor" not in server_impl
+        or "options.required_tick_rate_hz = replay_fixture.tick_rate_hz" not in server_impl
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
         or "AcceptDecodedInput" not in server_impl
@@ -451,6 +454,7 @@ def main() -> int:
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
         or "final_tick_mismatch" not in result_impl
+        or "tick_rate_hz_mismatch" not in result_impl
         or "input_count_mismatch" not in result_impl
         or "mode_action_count_mismatch" not in result_impl
         or "input_trace_count_mismatch" not in result_impl

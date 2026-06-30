@@ -535,6 +535,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
     options.required_final_tick = summary.final_tick;
+    options.required_tick_rate_hz = replay_fixture.tick_rate_hz;
     options.required_input_count = summary.input_count;
     options.required_fallback_input_count = summary.fallback_input_count;
     options.required_neutral_fallback_count = summary.neutral_fallback_count;

@@ -626,6 +626,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_tick_result.ok);
     CHECK_EQ(wrong_final_tick_result.reason, std::string("final_tick_mismatch"));
 
+    auto wrong_tick_rate = valid_result;
+    wrong_tick_rate.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"tick_rate_hz\":60",
+        "\"tick_rate_hz\":30"
+    );
+    const auto wrong_tick_rate_result = server.SubmitBattleResult(wrong_tick_rate);
+    CHECK_TRUE(!wrong_tick_rate_result.ok);
+    CHECK_EQ(wrong_tick_rate_result.reason, std::string("tick_rate_hz_mismatch"));
+
     auto wrong_mode_action_count = valid_result;
     wrong_mode_action_count.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
@@ -755,8 +765,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "cb8cff6bc2f94c08ea87c674cde8962909828d7dd8d7e04a287d5486e3c72a6b"
-            "47781b8feeb6748c6672e298f9a5bead856da9a2049508cea46870ab0f8452ef"
+            "42766442ae642a9d237b9d39a374e07c806bf254c442bedf61712b4bb95374be"
+            "c68b481e82a70219a790811577b7b7f80480d6309885965be5860f278d964c3a"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -766,7 +776,7 @@ bool TestBuildSignedBattleResultCallback() {
             "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|match-001|certification|"
             "sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|p1,p2,|"
             "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}|"
-            "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"input_count\":2,"
+            "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"tick_rate_hz\":60,\"input_count\":2,"
             "\"fallback_input_count\":0,\"neutral_fallback_count\":0,\"held_input_fallback_count\":0,"
             "\"mode_action_count\":0,\"input_trace_count\":2,\"event_trace_count\":0,"
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
@@ -809,6 +819,29 @@ bool TestBuildSignedBattleResultCallback() {
             "\"final_tick\":" + std::to_string(built.replay_summary.final_tick)
         ) != std::string::npos
     );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"tick_rate_hz\":60") != std::string::npos
+    );
+    auto missing_tick_rate = built.signed_result;
+    missing_tick_rate.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"tick_rate_hz\":60,",
+        ""
+    );
+    const auto missing_tick_rate_result = server.SubmitBattleResult(missing_tick_rate);
+    CHECK_TRUE(!missing_tick_rate_result.ok);
+    CHECK_EQ(missing_tick_rate_result.reason, std::string("tick_rate_hz_mismatch"));
+
+    auto wrong_tick_rate = built.signed_result;
+    wrong_tick_rate.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"tick_rate_hz\":60",
+        "\"tick_rate_hz\":30"
+    );
+    const auto wrong_tick_rate_result = server.SubmitBattleResult(wrong_tick_rate);
+    CHECK_TRUE(!wrong_tick_rate_result.ok);
+    CHECK_EQ(wrong_tick_rate_result.reason, std::string("tick_rate_hz_mismatch"));
+
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
             "\"input_count\":" + std::to_string(built.replay_summary.input_count)

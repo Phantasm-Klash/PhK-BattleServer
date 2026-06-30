@@ -149,6 +149,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "tick_rate_hz", options.required_tick_rate_hz)) {
+        Fail(verification, "tick_rate_hz_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
         !ContainsJsonUintField(result.mode_result_json, "input_count", options.required_input_count)) {
         Fail(verification, "input_count_mismatch");
         return verification;

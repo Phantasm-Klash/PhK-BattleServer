@@ -675,6 +675,8 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         std::to_string(summary.event_count) +
         ",\"final_tick\":" +
         std::to_string(summary.final_tick) +
+        ",\"tick_rate_hz\":" +
+        std::to_string(fixture.tick_rate_hz) +
         ",\"input_count\":" +
         std::to_string(summary.input_count) +
         ",\"fallback_input_count\":" +

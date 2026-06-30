@@ -2,6 +2,12 @@
 
 Status date: 2026-06-29
 
+## 2026-06-30 Signed Result Tick-Rate Boundary
+
+- Development signed-result `mode_result_json` now carries explicit `tick_rate_hz` from the canonical replay fixture, currently pinned to the 60Hz authoritative simulation contract.
+- `BattleServer::SubmitBattleResult` binds result verification to the replay fixture tick rate, and `BattleResultVerifier` rejects missing or forged tick-rate material as `tick_rate_hz_mismatch`.
+- CTest and `tools/check_battle_server.py` gate the tick-rate field, verifier option, server binding, callback fingerprint, and negative tamper coverage while full protobuf result bindings remain pending.
+
 | Area | Status | Notes |
 | --- | --- | --- |
 | Repository skeleton | Started | CMake C++17 project, README, architecture note, source/include layout, CLI entrypoint, tests, and checker are present. `python tools\check_battle_server.py --build` passes locally with CMake/MSVC and CTest. |
