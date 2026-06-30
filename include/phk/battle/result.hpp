@@ -40,6 +40,7 @@ struct BattleResultVerificationOptions {
     std::string required_replay_id;
     std::vector<std::string> required_player_ids;
     std::uint64_t required_event_cursor = 0;
+    std::uint64_t required_match_seed = 0;
     std::uint64_t required_final_tick = 0;
     std::uint64_t required_tick_rate_hz = 0;
     std::uint64_t required_input_count = 0;

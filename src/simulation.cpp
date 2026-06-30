@@ -545,6 +545,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["mode_id"] = config_.mode_id;
     snapshot.mode_state["ruleset_version"] = config_.ruleset_version;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
+    snapshot.mode_state["match_seed"] = std::to_string(config_.match_seed);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
     snapshot.mode_state["accepted_input_count"] = std::to_string(accepted_input_count_);
     snapshot.mode_state["fallback_input_count"] = std::to_string(fallback_input_count_);
@@ -695,6 +696,7 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.input_stream_hash = HexHash(input_stream_hash_);
     summary.event_stream_hash = HexHash(event_stream_hash_);
     summary.final_state_hash = CanonicalStateHash();
+    summary.match_seed = config_.match_seed;
     summary.final_tick = current_tick_;
     summary.input_count = accepted_input_count_;
     summary.fallback_input_count = fallback_input_count_;
@@ -727,6 +729,7 @@ ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
     record.input_stream_hash = summary.input_stream_hash;
     record.event_stream_hash = summary.event_stream_hash;
     record.final_state_hash = summary.final_state_hash;
+    record.match_seed = summary.match_seed;
     record.final_tick = summary.final_tick;
     return record;
 }
@@ -743,6 +746,7 @@ ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) co
     fixture.result_hash = DevResultHashFromReplaySummary(fixture.summary);
     fixture.final_snapshot = Snapshot("replay_final");
     fixture.tick_rate_hz = config_.tick_rate_hz;
+    fixture.match_seed = config_.match_seed;
     fixture.event_cursor = fixture.summary.event_count;
     fixture.server_authoritative = true;
     fixture.input_trace = fixture.summary.input_trace;
@@ -850,6 +854,7 @@ std::string CanonicalReplayInputStreamSummaryRecord(
         << record.input_stream_hash << '|'
         << record.event_stream_hash << '|'
         << record.final_state_hash << '|'
+        << record.match_seed << '|'
         << record.final_tick;
     return out.str();
 }
@@ -874,6 +879,7 @@ std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
         << fixture.ruleset_version << '|'
         << fixture.result_hash << '|'
         << fixture.tick_rate_hz << '|'
+        << fixture.match_seed << '|'
         << fixture.event_cursor << '|'
         << (fixture.server_authoritative ? "1" : "0") << '|'
         << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
@@ -971,6 +977,8 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         std::to_string(summary.final_tick) +
         ",\"tick_rate_hz\":" +
         std::to_string(fixture.tick_rate_hz) +
+        ",\"match_seed\":" +
+        std::to_string(fixture.match_seed) +
         ",\"input_count\":" +
         std::to_string(summary.input_count) +
         ",\"fallback_input_count\":" +
@@ -1128,6 +1136,7 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.input_stream_hash);
     hash = HashAppend(hash, summary.event_stream_hash);
     hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.match_seed);
     hash = HashAppend(hash, summary.final_tick);
     hash = HashAppend(hash, summary.input_count);
     hash = HashAppend(hash, summary.fallback_input_count);

@@ -191,6 +191,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "match_seed", options.required_match_seed)) {
+        Fail(verification, "match_seed_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
         !ContainsJsonUintField(result.mode_result_json, "input_count", options.required_input_count)) {
         Fail(verification, "input_count_mismatch");
         return verification;

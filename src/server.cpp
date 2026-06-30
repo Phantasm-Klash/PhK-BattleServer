@@ -904,6 +904,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_result_hash = DevResultHashFromReplaySummary(summary);
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
+    options.required_match_seed = summary.match_seed;
     options.required_final_tick = summary.final_tick;
     options.required_tick_rate_hz = replay_fixture.tick_rate_hz;
     options.required_input_count = summary.input_count;

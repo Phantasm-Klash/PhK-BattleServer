@@ -52,6 +52,7 @@ struct ReplaySummary {
     std::string last_mode_action_id;
     std::string last_mode_action_type;
     std::string last_mode_action_player_id;
+    std::uint64_t match_seed = 0;
     std::uint64_t final_tick = 0;
     std::uint64_t input_count = 0;
     std::uint64_t fallback_input_count = 0;
@@ -75,6 +76,7 @@ struct ReplayInputStreamSummaryRecord {
     std::string input_stream_hash;
     std::string event_stream_hash;
     std::string final_state_hash;
+    std::uint64_t match_seed = 0;
     std::uint64_t final_tick = 0;
 };
 
@@ -92,6 +94,7 @@ struct ReplayFixture {
     ReplayInputStreamSummaryRecord replay_summary_record;
     BattleSnapshot final_snapshot;
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
+    std::uint64_t match_seed = 0;
     std::uint64_t event_cursor = 0;
     bool server_authoritative = true;
 };
