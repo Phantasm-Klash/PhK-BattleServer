@@ -2,6 +2,13 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Replay Seed Result Binding
+
+- Replay summaries, manifest-compatible replay input-stream summary records, canonical replay fixtures, replay records, development mode-result JSON, and signed result hash material now carry the server-owned `match_seed`.
+- `BattleServer::SubmitBattleResult` binds the expected seed from the local replay summary, and `BattleResultVerifier` rejects missing or forged seed material with `match_seed_mismatch` before accepting a development signed battle result.
+- CTest pins the updated replay/result hashes and covers seed tampering across stream records, fixtures, and submitted result JSON. `tools/check_battle_server.py` now also gates the architecture doc's seed binding notes so replay/result audit docs cannot drift from the implementation.
+- This remains deterministic replay/result audit material only. The C++ battle server still does not write inventory, rewards, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Decoded Session Boundary
 
 - Direct protobuf-replacement decoded handoff now reuses the negotiated session boundary before simulation state changes.
