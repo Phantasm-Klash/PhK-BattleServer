@@ -1442,6 +1442,30 @@ bool TestBossModeCapacityGuard() {
     CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(snapshot.mode_state.at("boss_max_players"), std::string("8"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p1_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p2_spawn_slot"), std::string("east"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p2_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p3_spawn_slot"), std::string("south"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p3_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p4_spawn_slot"), std::string("west"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p4_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p5_spawn_slot"), std::string("northeast"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p5_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p6_spawn_slot"), std::string("southeast"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p6_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p7_spawn_slot"), std::string("southwest"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p7_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p8_spawn_slot"), std::string("northwest"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p8_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.players[4].x_milli, 42426);
+    CHECK_EQ(snapshot.players[4].y_milli, -42426);
+    CHECK_EQ(snapshot.players[5].x_milli, 42426);
+    CHECK_EQ(snapshot.players[5].y_milli, 42426);
+    CHECK_EQ(snapshot.players[6].x_milli, -42426);
+    CHECK_EQ(snapshot.players[6].y_milli, 42426);
+    CHECK_EQ(snapshot.players[7].x_milli, -42426);
+    CHECK_EQ(snapshot.players[7].y_milli, -42426);
 
     phk::battle::BattleServer pvp_server(config);
     for (std::size_t index = 1; index <= 10; ++index) {
