@@ -63,6 +63,7 @@ struct BattleResultVerificationOptions {
     std::string required_last_transfer_from_player_id;
     std::string required_last_transfer_to_player_id;
     std::string required_last_transfer_authority_owner_player_id;
+    std::uint64_t required_boss_max_hp = 0;
     std::uint64_t required_boss_current_hp = 0;
     std::uint64_t required_boss_damage_total = 0;
     std::uint64_t required_boss_defeated = 0;

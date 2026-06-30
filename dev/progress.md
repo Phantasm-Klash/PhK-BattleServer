@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Max HP Result Binding
+
+- Development Boss result projection now includes server-owned `boss_max_hp` alongside current HP and damage totals.
+- `BattleServer::SubmitBattleResult` binds `boss_max_hp` to the final replay snapshot, and `BattleResultVerifier` rejects forged max-HP result material as `boss_max_hp_mismatch`.
+- CTest and `tools/check_battle_server.py` cover the projection and tamper path. This is still settlement audit context only; persistent Boss HP and rewards remain in Nakama/Go.
+
 ## 2026-06-30 Boss Friendly-Fire Policy Projection
 
 - Boss simulations now normalize the documented friendly-fire policies (`disabled`, `player_bullets_only`, `all_friendly_fire`) and fall back to `disabled` for unknown values.

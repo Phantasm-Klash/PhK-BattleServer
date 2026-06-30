@@ -1008,6 +1008,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_friendly_fire_policy\":\"" + boss_friendly_fire_policy->second + "\"";
     }
+    const auto boss_max_hp = fixture.final_snapshot.mode_state.find("boss_max_hp");
+    if (boss_max_hp != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_max_hp\":" + boss_max_hp->second;
+    }
     const auto boss_current_hp = fixture.final_snapshot.mode_state.find("boss_current_hp");
     if (boss_current_hp != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_current_hp\":" + boss_current_hp->second;

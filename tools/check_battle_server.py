@@ -523,6 +523,7 @@ def main() -> int:
         or "options.required_boss_scope = boss_scope->second" not in server_impl
         or "options.required_boss_completion_policy" not in server_impl
         or "options.required_boss_friendly_fire_policy" not in server_impl
+        or "options.required_boss_max_hp" not in server_impl
         or "options.required_boss_current_hp" not in server_impl
         or "options.required_boss_damage_total" not in server_impl
         or "options.required_boss_defeated" not in server_impl
@@ -573,6 +574,7 @@ def main() -> int:
         or "boss_scope_mismatch" not in result_impl
         or "boss_completion_policy_mismatch" not in result_impl
         or "boss_friendly_fire_policy_mismatch" not in result_impl
+        or "boss_max_hp_mismatch" not in result_impl
         or "boss_current_hp_mismatch" not in result_impl
         or "boss_damage_total_mismatch" not in result_impl
         or "boss_defeated_mismatch" not in result_impl
@@ -755,6 +757,7 @@ def main() -> int:
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
         or "boss_friendly_fire_policy_mismatch" not in tests_text
+        or "boss_max_hp_mismatch" not in tests_text
         or "player_bullets_only" not in tests_text
         or "all_friendly_fire" not in tests_text
         or "client_authored_damage" not in tests_text

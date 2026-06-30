@@ -1733,6 +1733,7 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
@@ -1834,6 +1835,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         built.signed_result.result.mode_result_json.find("\"boss_friendly_fire_policy\":\"disabled\"") !=
         std::string::npos
     );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
@@ -1894,6 +1896,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_friendly_fire_result = server.SubmitBattleResult(wrong_friendly_fire);
     CHECK_TRUE(!wrong_friendly_fire_result.ok);
     CHECK_EQ(wrong_friendly_fire_result.reason, std::string("boss_friendly_fire_policy_mismatch"));
+
+    auto wrong_max_hp = built.signed_result;
+    wrong_max_hp.result.mode_result_json = ReplaceFirst(
+        wrong_max_hp.result.mode_result_json,
+        "\"boss_max_hp\":1000",
+        "\"boss_max_hp\":1"
+    );
+    const auto wrong_max_hp_result = server.SubmitBattleResult(wrong_max_hp);
+    CHECK_TRUE(!wrong_max_hp_result.ok);
+    CHECK_EQ(wrong_max_hp_result.reason, std::string("boss_max_hp_mismatch"));
 
     auto wrong_current_hp = built.signed_result;
     wrong_current_hp.result.mode_result_json = ReplaceFirst(
