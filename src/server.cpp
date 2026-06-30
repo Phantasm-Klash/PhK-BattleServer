@@ -1,6 +1,9 @@
 #include "phk/battle/server.hpp"
 
+#include <array>
+#include <cctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -36,10 +39,180 @@ const BattleSessionRecord* SessionForPlayer(
     return nullptr;
 }
 
+bool IsInputWindowBoundPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction;
+}
+
+bool IsSnapshotAckBoundPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction ||
+        payload_type == BattlePayloadType::Ping;
+}
+
+bool IsReconnectPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Reconnect;
+}
+
+bool IsClientToServerEncryptedPayload(BattlePayloadType payload_type) {
+    return payload_type == BattlePayloadType::Input ||
+        payload_type == BattlePayloadType::ModeAction ||
+        payload_type == BattlePayloadType::Ping ||
+        payload_type == BattlePayloadType::Reconnect;
+}
+
+bool IsSupportedNegotiatedAead(const std::string& selected_aead) {
+    return selected_aead == "CHACHA20_POLY1305" ||
+        selected_aead == "XCHACHA20_POLY1305";
+}
+
+bool IsBossMode(const std::string& mode_id) {
+    return mode_id == "world_boss" || mode_id == "instance_boss";
+}
+
+std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std::string& mode_id) {
+    constexpr std::uint32_t kBossModeMaxPlayers = 8;
+    if (IsBossMode(mode_id) && config.max_players > kBossModeMaxPlayers) {
+        return kBossModeMaxPlayers;
+    }
+    return config.max_players;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
     result.reason = "player_unknown";
+    return result;
+}
+
+InputValidationResult InvalidDecodedPayloadResult(std::string reason) {
+    InputValidationResult result;
+    result.code = InputValidationCode::InvalidModeAction;
+    result.reason = std::move(reason);
+    return result;
+}
+
+InputValidationResult EventCursorAheadResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::EventCursorAhead;
+    result.reason = "event_cursor_ahead";
+    return result;
+}
+
+std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& payload_json) {
+    constexpr const char* kCursorField = "\"last_seen_event_cursor\"";
+    const std::string field(kCursorField);
+    const auto field_offset = payload_json.find(field);
+    if (field_offset == std::string::npos) {
+        return std::nullopt;
+    }
+    const auto colon_offset = payload_json.find(':', field_offset + field.size());
+    if (colon_offset == std::string::npos) {
+        return std::nullopt;
+    }
+    std::size_t digit_offset = colon_offset + 1;
+    while (digit_offset < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        ++digit_offset;
+    }
+    if (digit_offset >= payload_json.size() ||
+        !std::isdigit(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        return std::nullopt;
+    }
+
+    std::uint64_t cursor = 0;
+    while (digit_offset < payload_json.size() &&
+        std::isdigit(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        cursor = cursor * 10u + static_cast<std::uint64_t>(payload_json[digit_offset] - '0');
+        ++digit_offset;
+    }
+    return cursor;
+}
+
+bool SameVersionStamp(const VersionStamp& left, const VersionStamp& right) {
+    return left.protocol_version == right.protocol_version &&
+        left.business_api_version == right.business_api_version &&
+        left.battle_api_version == right.battle_api_version &&
+        left.ruleset_version == right.ruleset_version;
+}
+
+InputValidationResult ValidateDecodedInputBinding(
+    const BattlePacketHeader& header,
+    const BattleInput& input
+) {
+    if (header.payload_type != BattlePayloadType::Input) {
+        return InvalidDecodedPayloadResult("decoded_input_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, input.version) ||
+        header.match_id != input.match_id ||
+        header.player_id != input.player_id ||
+        header.tick != input.tick ||
+        header.seq != input.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_input_header_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
+InputValidationResult ValidateDecodedModeActionBinding(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    if (header.payload_type != BattlePayloadType::ModeAction) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, action.version) ||
+        header.match_id != action.match_id ||
+        header.player_id != action.player_id ||
+        header.tick != action.tick ||
+        header.seq != action.seq
+    ) {
+        return InvalidDecodedPayloadResult("decoded_mode_action_header_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
+InputValidationResult ValidateDecodedReconnectModeActionBinding(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    if (header.payload_type != BattlePayloadType::Reconnect) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_payload_type_mismatch");
+    }
+    if (
+        !SameVersionStamp(header.version, action.version) ||
+        header.match_id != action.match_id ||
+        header.player_id != action.player_id ||
+        header.tick != action.tick ||
+        header.seq != action.seq ||
+        action.action_type != "reconnect"
+    ) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_header_mismatch");
+    }
+    const auto last_seen_event_cursor = ExtractLastSeenEventCursor(action.payload_json);
+    if (!last_seen_event_cursor.has_value()) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_missing");
+    }
+    if (last_seen_event_cursor.value() != header.ack) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_mismatch");
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
     return result;
 }
 
@@ -59,25 +232,24 @@ std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
     return hash;
 }
 
-std::string DevSha256RefFromSummary(const ReplaySummary& summary) {
-    std::uint64_t hash = 1469598103934665603ull;
-    hash = HashAppend(hash, summary.match_id);
-    hash = HashAppend(hash, summary.mode_id);
-    hash = HashAppend(hash, summary.ruleset_version);
-    hash = HashAppend(hash, summary.input_stream_hash);
-    hash = HashAppend(hash, summary.event_stream_hash);
-    hash = HashAppend(hash, summary.final_state_hash);
-    hash = HashAppend(hash, summary.final_tick);
-    hash = HashAppend(hash, summary.input_count);
-    hash = HashAppend(hash, summary.event_count);
-
+std::string Hex64(std::uint64_t value) {
     std::ostringstream out;
-    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    out << std::hex << std::setw(16) << std::setfill('0') << value;
     return out.str();
 }
 
-std::string DevReplayIdFromSummary(const ReplaySummary& summary) {
-    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
+std::string DevHexMaterial(std::string seed, std::size_t hex_chars) {
+    std::string out;
+    std::uint64_t counter = 0;
+    while (out.size() < hex_chars) {
+        std::uint64_t hash = 1469598103934665603ull;
+        hash = HashAppend(hash, seed);
+        hash = HashAppend(hash, counter);
+        out += Hex64(hash);
+        ++counter;
+    }
+    out.resize(hex_chars);
+    return out;
 }
 
 }  // namespace
@@ -93,8 +265,16 @@ std::size_t BattleServer::ActiveSessionCount() const {
     return sessions_by_ticket_.size();
 }
 
+std::size_t BattleServer::ActiveMatchCount() const {
+    return simulations_by_match_.size();
+}
+
 RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& signed_ticket) {
     RegisterTicketResult result;
+    if (result_hash_by_match_.find(signed_ticket.ticket.match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_retired";
+        return result;
+    }
     if (sessions_by_ticket_.find(signed_ticket.ticket.ticket_id) != sessions_by_ticket_.end()) {
         result.reason = "ticket_replay";
         return result;
@@ -125,7 +305,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
             ++match_session_count;
         }
     }
-    if (match_session_count >= config_.max_players) {
+    if (match_session_count >= MatchMaxPlayersForMode(config_, signed_ticket.ticket.mode_id)) {
         result.reason = "match_full";
         return result;
     }
@@ -133,8 +313,11 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     BattleSessionRecord session;
     session.ticket_id = signed_ticket.ticket.ticket_id;
     session.match_id = signed_ticket.ticket.match_id;
+    session.user_id = signed_ticket.ticket.user_id;
     session.player_id = signed_ticket.ticket.player_id;
     session.mode_id = signed_ticket.ticket.mode_id;
+    session.deck_snapshot_hash = signed_ticket.ticket.deck_snapshot_hash;
+    session.ruleset_version = signed_ticket.ticket.ruleset_version;
     session.kcp_conv = DeriveDevKcpConv(session.match_id, session.player_id);
     session.key_id = config_.signing_key_id;
     session.session_id = session.match_id + ":" + session.player_id + ":" + session.ticket_id;
@@ -157,11 +340,11 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         result.reason = "match_mode_ruleset_mismatch";
         return result;
     }
-    simulation_it->second.AddPlayer(
-        session.player_id,
-        InitialPlayerX(simulation_it->second.PlayerCount()),
-        0
+    const auto initial_position = InitialPlayerPosition(
+        session.mode_id,
+        simulation_it->second.PlayerCount()
     );
+    simulation_it->second.AddPlayer(session.player_id, initial_position.first, initial_position.second);
 
     result.ok = true;
     result.reason = "ok";
@@ -169,7 +352,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     return result;
 }
 
-BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) const {
+BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) {
     BattleHandshakeAccept rejected;
     TicketVerificationOptions options;
     options.now_ms = config_.now_ms;
@@ -195,7 +378,23 @@ BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& 
         rejected.reason = "session_ticket_mismatch";
         return rejected;
     }
-    return handshake_manager_.Accept(hello, hello.battle_ticket.ticket, config_.signing_key_id);
+    BattleHandshakeAccept accept = handshake_manager_.Accept(
+        hello,
+        hello.battle_ticket.ticket,
+        config_.signing_key_id
+    );
+    if (!accept.ok) {
+        return accept;
+    }
+
+    BattleSessionRecord& mutable_session = sessions_by_ticket_[hello.battle_ticket.ticket.ticket_id];
+    mutable_session.kcp_conv = accept.kcp_conv;
+    mutable_session.key_id = accept.client_to_server_key_ref;
+    mutable_session.server_to_client_key_id = accept.server_to_client_key_ref;
+    mutable_session.handshake_transcript_hash = accept.transcript_hash_hex;
+    mutable_session.selected_aead = accept.selected_aead;
+    mutable_session.handshake_accepted = true;
+    return accept;
 }
 
 DispatchResult BattleServer::Dispatch(
@@ -221,6 +420,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "client_result_forbidden";
         return result;
     }
+    if (!IsClientToServerEncryptedPayload(packet.header.payload_type)) {
+        result.reason = "encrypted_payload_type_invalid";
+        return result;
+    }
     if (packet.header.match_id.empty() || packet.header.player_id.empty()) {
         result.reason = "identity_missing";
         return result;
@@ -230,20 +433,156 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "match_unknown";
         return result;
     }
+    const auto session_validation = ValidateEncryptedSession(packet.header);
+    if (!session_validation.ok) {
+        result.reason = session_validation.reason;
+        return result;
+    }
+    if (IsSnapshotAckBoundPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.ack > simulation.CurrentTick()) {
+            result.reason = "encrypted_ack_ahead";
+            return result;
+        }
+    }
+    if (IsInputWindowBoundPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (!simulation.IsPlayerConnected(packet.header.player_id)) {
+            result.reason = "encrypted_player_disconnected";
+            return result;
+        }
+        if (packet.header.tick <= simulation.CurrentTick()) {
+            result.reason = "encrypted_tick_too_old";
+            return result;
+        }
+        if (packet.header.tick > simulation.CurrentTick() + simulation.Config().max_input_ahead_ticks) {
+            result.reason = "encrypted_tick_too_far_ahead";
+            return result;
+        }
+    }
+    if (IsReconnectPayload(packet.header.payload_type)) {
+        const BattleSimulation& simulation = simulation_it->second;
+        if (packet.header.ack > simulation.Summary().event_count) {
+            result.reason = "encrypted_event_cursor_ahead";
+            return result;
+        }
+    }
+    return dispatcher_.DispatchEncrypted(packet);
+}
+
+EncryptedSessionValidation BattleServer::ValidateEncryptedSession(
+    const BattlePacketHeader& header
+) const {
+    EncryptedSessionValidation result;
     const BattleSessionRecord* session = SessionForPlayer(
         sessions_by_ticket_,
-        packet.header.match_id,
-        packet.header.player_id
+        header.match_id,
+        header.player_id
     );
     if (session == nullptr) {
         result.reason = "player_unknown";
         return result;
     }
-    if (packet.header.key_id != session->key_id) {
+    if (!session->handshake_accepted) {
+        result.reason = "handshake_required";
+        return result;
+    }
+    if (session->handshake_transcript_hash.size() != 32 ||
+        !IsHex(session->handshake_transcript_hash)) {
+        result.reason = "handshake_transcript_missing";
+        return result;
+    }
+    if (!IsSupportedNegotiatedAead(session->selected_aead)) {
+        result.reason = "session_aead_missing";
+        return result;
+    }
+    if (session->key_id.empty() || session->server_to_client_key_id.empty()) {
+        result.reason = "session_key_missing";
+        return result;
+    }
+    if (session->key_id == session->server_to_client_key_id) {
+        result.reason = "session_direction_key_reuse";
+        return result;
+    }
+    if (header.key_id != session->key_id) {
         result.reason = "session_key_mismatch";
         return result;
     }
-    return dispatcher_.DispatchEncrypted(packet);
+
+    result.ok = true;
+    result.reason = "ok";
+    result.session = session;
+    return result;
+}
+
+InputValidationResult BattleServer::AcceptDecodedInput(
+    const BattlePacketHeader& header,
+    const BattleInput& input
+) {
+    const auto binding = ValidateDecodedInputBinding(header, input);
+    if (!binding.ok) {
+        return binding;
+    }
+    return AcceptInput(input);
+}
+
+InputValidationResult BattleServer::AcceptDecodedModeAction(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    const auto binding = ValidateDecodedModeActionBinding(header, action);
+    if (!binding.ok) {
+        return binding;
+    }
+    return AcceptModeAction(action);
+}
+
+InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
+    const BattlePacketHeader& header,
+    const BattleModeAction& action
+) {
+    const auto binding = ValidateDecodedReconnectModeActionBinding(header, action);
+    if (!binding.ok) {
+        return binding;
+    }
+    const auto simulation_it = simulations_by_match_.find(action.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
+        return UnknownPlayerResult();
+    }
+
+    const auto last_seen_event_cursor = ExtractLastSeenEventCursor(action.payload_json);
+    if (!last_seen_event_cursor.has_value()) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_missing");
+    }
+    if (last_seen_event_cursor.value() != header.ack) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_mismatch");
+    }
+    if (header.ack > simulation_it->second.Summary().event_count) {
+        return EventCursorAheadResult();
+    }
+
+    auto accepted = simulation_it->second.AcceptModeAction(action);
+    if (!accepted.ok) {
+        return accepted;
+    }
+    return simulation_it->second.SetPlayerConnected(action.player_id, true);
+}
+
+bool BattleServer::ConfigureTransferableCard(
+    const std::string& match_id,
+    TransferableCardState card
+) {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        return false;
+    }
+    return simulation_it->second.ConfigureTransferableCard(std::move(card));
 }
 
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
@@ -272,6 +611,14 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
         return UnknownPlayerResult();
     }
     return simulation_it->second.AcceptModeAction(action);
+}
+
+bool BattleServer::IsPlayerConnected(const std::string& match_id, const std::string& player_id) const {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        return false;
+    }
+    return simulation_it->second.IsPlayerConnected(player_id);
 }
 
 InputValidationResult BattleServer::SetPlayerConnected(
@@ -344,6 +691,96 @@ ReplaySummary BattleServer::MatchReplaySummary(const std::string& match_id) cons
     return simulation_it->second.Summary();
 }
 
+BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::string& match_id) const {
+    BuildSignedBattleResultResult result;
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
+        return result;
+    }
+
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
+    result.replay_summary = replay_fixture.summary;
+    BattleResult& battle_result = result.signed_result.result;
+    battle_result.match_id = match_id;
+    battle_result.mode_id = simulation_it->second.Config().mode_id;
+    battle_result.version.ruleset_version = simulation_it->second.Config().ruleset_version;
+    battle_result.result_hash = DevResultHashFromReplaySummary(result.replay_summary);
+    battle_result.replay_id = DevReplayIdFromReplaySummary(result.replay_summary);
+    battle_result.reward_projection_json =
+        "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}";
+    battle_result.mode_result_json = DevModeResultJsonFromReplayFixture(replay_fixture);
+    battle_result.settled_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
+
+    for (const auto& item : sessions_by_ticket_) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id == match_id) {
+            battle_result.player_ids.push_back(session.player_id);
+        }
+    }
+    if (battle_result.player_ids.empty()) {
+        result.reason = "player_ids_missing";
+        return result;
+    }
+
+    result.signed_result.signature_alg = "ED25519";
+    result.signed_result.key_id = config_.server_id;
+    result.signed_result.public_key_hex = DevHexMaterial(config_.server_id + ":result-public", 64);
+    result.signed_result.signature_hex = DevBattleResultSignatureHex(battle_result, config_.server_id);
+    result.signed_result.server_authoritative = true;
+    result.ok = true;
+    result.reason = "ok";
+    return result;
+}
+
+BuildReplayRecordResult BattleServer::BuildReplayRecord(
+    const std::string& match_id,
+    std::string owner_user_id,
+    std::string stage_id
+) const {
+    BuildReplayRecordResult result;
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
+        return result;
+    }
+
+    auto signed_result = BuildSignedBattleResult(match_id);
+    if (!signed_result.ok) {
+        result.reason = signed_result.reason;
+        return result;
+    }
+
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture(owner_user_id);
+    ReplayRecordBridge& record = result.replay_record;
+    record.replay_id = replay_fixture.replay_id;
+    record.match_id = replay_fixture.match_id;
+    record.owner_user_id = replay_fixture.owner_user_id;
+    record.mode_id = replay_fixture.mode_id;
+    record.stage_id = std::move(stage_id);
+    for (const auto& item : sessions_by_ticket_) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id != match_id) {
+            continue;
+        }
+        ReplayLoadoutBridge loadout;
+        loadout.user_id = session.user_id;
+        loadout.player_id = session.player_id;
+        loadout.stage_id = record.stage_id;
+        loadout.deck_snapshot_hash = session.deck_snapshot_hash;
+        loadout.deck_ruleset_version = session.ruleset_version;
+        record.loadout.push_back(std::move(loadout));
+    }
+    record.stream = replay_fixture.replay_summary_record;
+    record.settlement = std::move(signed_result.signed_result);
+    record.server_authoritative = replay_fixture.server_authoritative;
+    record.created_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
+    result.replay_record_hash = DevReplayRecordBridgeHash(record);
+    result.ok = true;
+    result.reason = "ok";
+    return result;
+}
+
 SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResult& signed_result) {
     SubmitBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);
@@ -358,10 +795,26 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_ruleset_version = simulation_it->second.Config().ruleset_version;
     options.required_key_id = config_.server_id;
     options.now_ms = config_.now_ms;
-    const ReplaySummary summary = simulation_it->second.Summary();
-    options.required_result_hash = DevSha256RefFromSummary(summary);
-    options.required_replay_id = DevReplayIdFromSummary(summary);
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
+    const ReplaySummary& summary = replay_fixture.summary;
+    options.required_result_hash = DevResultHashFromReplaySummary(summary);
+    options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
+    options.required_final_tick = summary.final_tick;
+    options.required_tick_rate_hz = replay_fixture.tick_rate_hz;
+    options.required_input_count = summary.input_count;
+    options.required_fallback_input_count = summary.fallback_input_count;
+    options.required_neutral_fallback_count = summary.neutral_fallback_count;
+    options.required_held_input_fallback_count = summary.held_input_fallback_count;
+    options.required_mode_action_count = summary.mode_action_count;
+    options.required_input_trace_count = summary.input_trace.size();
+    options.required_event_trace_count = summary.event_trace.size();
+    options.required_input_stream_hash = summary.input_stream_hash;
+    options.required_event_stream_hash = summary.event_stream_hash;
+    options.required_final_state_hash = summary.final_state_hash;
+    options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record);
+    options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture);
+    options.require_replay_counter_fields = true;
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
         if (session.match_id == signed_result.result.match_id) {
@@ -394,6 +847,123 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     return result;
 }
 
+RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
+    RetireMatchResult result;
+    result.match_id = match_id;
+    const auto result_hash_it = result_hash_by_match_.find(match_id);
+    if (result_hash_it == result_hash_by_match_.end()) {
+        result.reason = "match_not_settled";
+        return result;
+    }
+    result.result_hash = result_hash_it->second;
+
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.ok = true;
+        result.reason = "ok";
+        result.already_retired = true;
+        return result;
+    }
+
+    for (auto session_it = sessions_by_ticket_.begin(); session_it != sessions_by_ticket_.end();) {
+        if (session_it->second.match_id == match_id) {
+            session_it = sessions_by_ticket_.erase(session_it);
+            ++result.removed_sessions;
+        } else {
+            ++session_it;
+        }
+    }
+    simulations_by_match_.erase(simulation_it);
+    result.ok = true;
+    result.reason = "ok";
+    return result;
+}
+
+DecodedBattlePacketAdapter::DecodedBattlePacketAdapter(BattleServer& server)
+    : server_(server) {}
+
+DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
+    const DecodedBattlePacket& packet
+) {
+    DecodedBattlePacketResult result;
+
+    if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::Input) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_input_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedInputBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_input
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_mode_action_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedModeActionBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Reconnect) {
+        if (packet.decoded_payload_kind != DecodedBattlePayloadKind::ModeAction) {
+            result.decoded = InvalidDecodedPayloadResult("decoded_packet_reconnect_missing");
+            result.reason = result.decoded.reason;
+            return result;
+        }
+        result.decoded = ValidateDecodedReconnectModeActionBinding(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+        if (!result.decoded.ok) {
+            result.reason = result.decoded.reason;
+            return result;
+        }
+    } else {
+        result.decoded = InvalidDecodedPayloadResult("decoded_packet_payload_type_unsupported");
+        result.reason = result.decoded.reason;
+        return result;
+    }
+
+    result.dispatch = server_.DispatchEncrypted(packet.encrypted_packet);
+    result.reason = result.dispatch.reason;
+    if (!result.dispatch.ok) {
+        return result;
+    }
+    result.encrypted_dispatch_accepted = true;
+
+    if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
+        result.decoded = server_.AcceptDecodedInput(
+            packet.encrypted_packet.header,
+            packet.decoded_input
+        );
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::ModeAction) {
+        result.decoded = server_.AcceptDecodedModeAction(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+    } else if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Reconnect) {
+        result.decoded = server_.AcceptDecodedReconnectModeAction(
+            packet.encrypted_packet.header,
+            packet.decoded_mode_action
+        );
+    }
+
+    result.ok = result.decoded.ok;
+    result.reason = result.decoded.reason;
+    return result;
+}
+
 std::uint64_t BattleServer::DeriveMatchSeed(const std::string& match_id) const {
     std::uint64_t seed = 1469598103934665603ull;
     for (const char ch : match_id) {
@@ -407,14 +977,32 @@ std::uint64_t BattleServer::DeriveMatchSeed(const std::string& match_id) const {
     return seed;
 }
 
-std::int32_t BattleServer::InitialPlayerX(std::size_t player_index) const {
+std::pair<std::int32_t, std::int32_t> BattleServer::InitialPlayerPosition(
+    const std::string& mode_id,
+    std::size_t player_index
+) const {
+    if (IsBossMode(mode_id)) {
+        constexpr std::int32_t kBossSpawnRadiusMilli = 60000;
+        constexpr std::array<std::pair<std::int32_t, std::int32_t>, 8> kBossSpawnPoints = {{
+            {0, -kBossSpawnRadiusMilli},
+            {kBossSpawnRadiusMilli, 0},
+            {0, kBossSpawnRadiusMilli},
+            {-kBossSpawnRadiusMilli, 0},
+            {42426, -42426},
+            {42426, 42426},
+            {-42426, 42426},
+            {-42426, -42426},
+        }};
+        return kBossSpawnPoints[player_index % kBossSpawnPoints.size()];
+    }
+
     if (player_index == 0) {
-        return -20000;
+        return {-20000, 0};
     }
     if (player_index == 1) {
-        return 20000;
+        return {20000, 0};
     }
-    return static_cast<std::int32_t>(player_index) * 10000 - 30000;
+    return {static_cast<std::int32_t>(player_index) * 10000 - 30000, 0};
 }
 
 }  // namespace phk::battle

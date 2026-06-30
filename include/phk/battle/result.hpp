@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "phk/battle/version.hpp"
@@ -38,9 +39,25 @@ struct BattleResultVerificationOptions {
     std::string required_replay_id;
     std::vector<std::string> required_player_ids;
     std::uint64_t required_event_cursor = 0;
+    std::uint64_t required_final_tick = 0;
+    std::uint64_t required_tick_rate_hz = 0;
+    std::uint64_t required_input_count = 0;
+    std::uint64_t required_fallback_input_count = 0;
+    std::uint64_t required_neutral_fallback_count = 0;
+    std::uint64_t required_held_input_fallback_count = 0;
+    std::uint64_t required_mode_action_count = 0;
+    std::uint64_t required_input_trace_count = 0;
+    std::uint64_t required_event_trace_count = 0;
+    std::string required_input_stream_hash;
+    std::string required_event_stream_hash;
+    std::string required_final_state_hash;
+    std::string required_replay_summary_hash;
+    std::string required_replay_fixture_hash;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
+    bool require_dev_signature_payload_binding = true;
     bool require_projection_only_reward = true;
+    bool require_replay_counter_fields = false;
 };
 
 struct BattleResultVerification {
@@ -58,5 +75,9 @@ public:
 };
 
 [[nodiscard]] std::string CanonicalBattleResultPayload(const BattleResult& result);
+[[nodiscard]] std::string DevBattleResultSignatureHex(
+    const BattleResult& result,
+    std::string_view key_id
+);
 
 }  // namespace phk::battle

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <iomanip>
 #include <sstream>
 
 #include "phk/battle/ticket.hpp"
@@ -40,6 +41,23 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
     return next == ',' || next == '}';
 }
 
+bool ContainsJsonStringField(const std::string& json, std::string_view field_name, const std::string& expected) {
+    if (expected.empty()) {
+        return true;
+    }
+    const std::string needle = "\"" + std::string(field_name) + "\":\"" + expected + "\"";
+    const std::size_t offset = json.find(needle);
+    if (offset == std::string::npos) {
+        return false;
+    }
+    const std::size_t after_value = offset + needle.size();
+    if (after_value == json.size()) {
+        return true;
+    }
+    const char next = json[after_value];
+    return next == ',' || next == '}';
+}
+
 std::string LowerAscii(std::string_view value) {
     std::string lowered(value);
     std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
@@ -66,6 +84,42 @@ bool ContainsForbiddenRewardMutation(std::string_view json) {
         }
     }
     return false;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string Hex64(std::uint64_t value) {
+    std::ostringstream out;
+    out << std::hex << std::setw(16) << std::setfill('0') << value;
+    return out.str();
+}
+
+std::string DevHexMaterial(std::string_view seed, std::size_t hex_chars) {
+    std::string out;
+    std::uint64_t counter = 0;
+    while (out.size() < hex_chars) {
+        std::uint64_t hash = 1469598103934665603ull;
+        hash = HashAppend(hash, seed);
+        hash = HashAppend(hash, counter);
+        out += Hex64(hash);
+        ++counter;
+    }
+    out.resize(hex_chars);
+    return out;
 }
 
 }  // namespace
@@ -121,9 +175,87 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "player_ids_mismatch");
         return verification;
     }
-    if (options.required_event_cursor > 0 &&
+    if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
         !ContainsJsonUintField(result.mode_result_json, "event_cursor", options.required_event_cursor)) {
         Fail(verification, "event_cursor_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "final_tick", options.required_final_tick)) {
+        Fail(verification, "final_tick_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "tick_rate_hz", options.required_tick_rate_hz)) {
+        Fail(verification, "tick_rate_hz_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "input_count", options.required_input_count)) {
+        Fail(verification, "input_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "fallback_input_count", options.required_fallback_input_count)) {
+        Fail(verification, "fallback_input_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "neutral_fallback_count",
+            options.required_neutral_fallback_count
+        )) {
+        Fail(verification, "neutral_fallback_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "held_input_fallback_count",
+            options.required_held_input_fallback_count
+        )) {
+        Fail(verification, "held_input_fallback_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "mode_action_count", options.required_mode_action_count)) {
+        Fail(verification, "mode_action_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "input_trace_count", options.required_input_trace_count)) {
+        Fail(verification, "input_trace_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "event_trace_count", options.required_event_trace_count)) {
+        Fail(verification, "event_trace_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "input_stream_hash", options.required_input_stream_hash)) {
+        Fail(verification, "input_stream_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "event_stream_hash", options.required_event_stream_hash)) {
+        Fail(verification, "event_stream_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "final_state_hash", options.required_final_state_hash)) {
+        Fail(verification, "final_state_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "replay_summary_hash", options.required_replay_summary_hash)) {
+        Fail(verification, "replay_summary_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "replay_fixture_hash", options.required_replay_fixture_hash)) {
+        Fail(verification, "replay_fixture_hash_mismatch");
         return verification;
     }
     if (result.reward_projection_json.empty()) {
@@ -164,6 +296,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "ed25519_public_key_shape_invalid");
         return verification;
     }
+    if (options.require_dev_signature_payload_binding &&
+        signed_result.signature_hex != DevBattleResultSignatureHex(result, signed_result.key_id)) {
+        Fail(verification, "dev_result_signature_mismatch");
+        return verification;
+    }
     if (!signed_result.server_authoritative) {
         Fail(verification, "result_not_server_authoritative");
         return verification;
@@ -172,7 +309,7 @@ BattleResultVerification BattleResultVerifier::Verify(
     verification.ok = true;
     verification.reason = "ok";
     if (options.allow_dev_signature_shape_only) {
-        verification.warnings.push_back("dev_result_signature_shape_only");
+        verification.warnings.push_back("dev_result_signature_payload_bound_not_real_ed25519");
     }
     return verification;
 }
@@ -194,6 +331,16 @@ std::string CanonicalBattleResultPayload(const BattleResult& result) {
         << result.mode_result_json << '|'
         << result.settled_at_ms;
     return out.str();
+}
+
+std::string DevBattleResultSignatureHex(
+    const BattleResult& result,
+    std::string_view key_id
+) {
+    return DevHexMaterial(
+        CanonicalBattleResultPayload(result) + ":" + std::string(key_id) + ":result-signature",
+        128
+    );
 }
 
 }  // namespace phk::battle

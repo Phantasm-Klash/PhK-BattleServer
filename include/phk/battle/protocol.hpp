@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "phk/battle/version.hpp"
@@ -121,5 +122,9 @@ private:
 };
 
 [[nodiscard]] std::string PayloadTypeName(BattlePayloadType type);
+[[nodiscard]] std::string DevAeadNonceHex(
+    const BattlePacketHeader& header,
+    std::string_view direction_label = "client_to_server"
+);
 
 }  // namespace phk::battle

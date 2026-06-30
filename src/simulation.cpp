@@ -40,6 +40,10 @@ std::string HexHash(std::uint64_t hash) {
     return out.str();
 }
 
+std::string BoolToken(bool value) {
+    return value ? "1" : "0";
+}
+
 std::int32_t ClampMilli(std::int32_t value, std::int32_t min_value, std::int32_t max_value) {
     return std::max(min_value, std::min(value, max_value));
 }
@@ -49,6 +53,82 @@ std::int32_t DirectionAxis(bool negative, bool positive) {
         return 0;
     }
     return positive ? 1 : -1;
+}
+
+bool IsAllowedModeActionType(std::string_view action_type) {
+    return action_type == "cast_card" ||
+        action_type == "select_round_card" ||
+        action_type == "transfer_card" ||
+        action_type == "ready" ||
+        action_type == "reconnect";
+}
+
+bool IsReconnectModeAction(std::string_view action_type) {
+    return action_type == "reconnect";
+}
+
+bool IsBossMode(std::string_view mode_id) {
+    return mode_id == "world_boss" || mode_id == "instance_boss";
+}
+
+std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return "";
+    }
+    const auto string_start = value_start + prefix.size();
+    const auto string_end = payload_json.find('"', string_start);
+    if (string_end == std::string_view::npos) {
+        return "";
+    }
+    return std::string(payload_json.substr(string_start, string_end - string_start));
+}
+
+std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
+    std::ostringstream out;
+    out << snapshot.match_id << '|'
+        << snapshot.snapshot_tick << '|'
+        << snapshot.snapshot_kind << '|'
+        << snapshot.state_hash << '|'
+        << snapshot.event_cursor << '|';
+
+    std::vector<BattlePlayerSnapshot> players = snapshot.players;
+    std::sort(players.begin(), players.end(), [](const BattlePlayerSnapshot& left, const BattlePlayerSnapshot& right) {
+        return left.player_id < right.player_id;
+    });
+    for (const auto& player : players) {
+        out << "player="
+            << player.player_id << ','
+            << player.x_milli << ','
+            << player.y_milli << ','
+            << BoolToken(player.connected) << ','
+            << player.hand_size << ';';
+    }
+    out << '|';
+
+    std::vector<BattleBulletDelta> bullets = snapshot.bullets_delta;
+    std::sort(bullets.begin(), bullets.end(), [](const BattleBulletDelta& left, const BattleBulletDelta& right) {
+        return left.bullet_id < right.bullet_id;
+    });
+    for (const auto& bullet : bullets) {
+        out << "bullet="
+            << bullet.bullet_id << ','
+            << bullet.op << ','
+            << bullet.x_milli << ','
+            << bullet.y_milli << ','
+            << bullet.vx_milli << ','
+            << bullet.vy_milli << ','
+            << bullet.radius_milli << ','
+            << bullet.pattern_id << ','
+            << bullet.color << ';';
+    }
+    out << '|';
+
+    for (const auto& item : snapshot.mode_state) {
+        out << "mode=" << item.first << '=' << item.second << ';';
+    }
+    return out.str();
 }
 
 }  // namespace
@@ -69,6 +149,13 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     }
     if (config_.spawn_period_ticks == 0) {
         config_.spawn_period_ticks = 1;
+    }
+    if (IsBossMode(config_.mode_id)) {
+        if (config_.boss_max_hp == 0) {
+            config_.boss_max_hp = 1;
+        }
+        boss_max_hp_ = config_.boss_max_hp;
+        boss_current_hp_ = config_.boss_max_hp;
     }
 }
 
@@ -92,6 +179,11 @@ std::uint64_t BattleSimulation::AcceptedInputCount() const {
     return accepted_input_count_;
 }
 
+bool BattleSimulation::IsPlayerConnected(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    return player_it != players_.end() && player_it->second.connected;
+}
+
 bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
     if (player_id.empty() || players_.find(player_id) != players_.end()) {
         return false;
@@ -104,6 +196,20 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
     player.last_input.match_id = config_.match_id;
     player.last_input.player_id = player_id;
     players_[player_id] = player;
+    if (IsBossMode(config_.mode_id)) {
+        boss_damage_by_player_[player_id] = 0;
+    }
+    return true;
+}
+
+bool BattleSimulation::ConfigureTransferableCard(TransferableCardState card) {
+    if (card.card_instance_id.empty() || card.owner_player_id.empty()) {
+        return false;
+    }
+    if (players_.find(card.owner_player_id) == players_.end()) {
+        return false;
+    }
+    transferable_cards_[card.card_instance_id] = std::move(card);
     return true;
 }
 
@@ -119,6 +225,9 @@ InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& pl
     PlayerState& player = player_it->second;
     if (player.connected != connected) {
         player.connected = connected;
+        if (!connected) {
+            ready_player_ids_.erase(player.player_id);
+        }
         AccumulateConnectionEvent(player);
     }
 
@@ -176,6 +285,13 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_tick_too_far_ahead";
         return result;
     }
+    const auto pending_tick_it = pending_inputs_by_tick_.find(input.tick);
+    if (pending_tick_it != pending_inputs_by_tick_.end() &&
+        pending_tick_it->second.find(input.player_id) != pending_tick_it->second.end()) {
+        result.code = InputValidationCode::DuplicateInputForTick;
+        result.reason = "input_tick_duplicate";
+        return result;
+    }
     if ((input.direction_bits & ~0x0fu) != 0) {
         result.code = InputValidationCode::InvalidDirectionBits;
         result.reason = "invalid_direction_bits";
@@ -223,7 +339,7 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "player_unknown";
         return result;
     }
-    if (!player_it->second.connected) {
+    if (!player_it->second.connected && !IsReconnectModeAction(action.action_type)) {
         result.code = InputValidationCode::PlayerDisconnected;
         result.reason = "player_disconnected";
         return result;
@@ -258,10 +374,71 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_missing_fields";
         return result;
     }
+    if (!IsAllowedModeActionType(action.action_type)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_type_unsupported";
+        return result;
+    }
     if (action.client_result_authoritative) {
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_client_result_forbidden";
         return result;
+    }
+    if (action.action_type == "transfer_card") {
+        const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
+        const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
+        if (target_player_id.empty() || card_instance_id.empty()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_payload_missing_fields";
+            return result;
+        }
+        if (target_player_id == action.player_id) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_self_forbidden";
+            return result;
+        }
+        const auto target_it = players_.find(target_player_id);
+        if (target_it == players_.end()) {
+            result.code = InputValidationCode::PlayerUnknown;
+            result.reason = "transfer_card_target_unknown";
+            return result;
+        }
+        if (!target_it->second.connected) {
+            result.code = InputValidationCode::PlayerDisconnected;
+            result.reason = "transfer_card_target_disconnected";
+            return result;
+        }
+        if (reserved_transfer_card_instance_ids_.find(card_instance_id) != reserved_transfer_card_instance_ids_.end()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_duplicate";
+            return result;
+        }
+        const auto card_it = transferable_cards_.find(card_instance_id);
+        if (card_it == transferable_cards_.end()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_not_authorized";
+            return result;
+        }
+        if (card_it->second.owner_player_id != action.player_id) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_owner_mismatch";
+            return result;
+        }
+        if (!card_it->second.mode_allowed) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_mode_forbidden";
+            return result;
+        }
+        if (!card_it->second.cost_paid) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_cost_unpaid";
+            return result;
+        }
+        if (!card_it->second.cooldown_ready) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_cooldown_blocked";
+            return result;
+        }
     }
 
     result.ok = true;
@@ -277,7 +454,12 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     }
 
     players_[action.player_id].last_seq = action.seq;
-    AccumulateAcceptedModeAction(action);
+    if (action.action_type == "transfer_card") {
+        const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
+        reserved_transfer_card_instance_ids_.insert(card_instance_id);
+        pending_transfer_card_authority_by_action_id_[action.action_id] = transferable_cards_.at(card_instance_id);
+    }
+    pending_mode_actions_by_tick_[action.tick].push_back(action);
     return result;
 }
 
@@ -296,9 +478,13 @@ BattleSnapshot BattleSimulation::Tick() {
             if (input_it != pending_it->second.end()) {
                 input = input_it->second;
                 player.last_input = input;
+            } else {
+                AccumulateFallbackInput(player, input);
             }
+        } else {
+            AccumulateFallbackInput(player, input);
         }
-        ApplyInput(player, input);
+        ApplyInput(player, input, tick_to_apply);
     }
 
     if (pending_it != pending_inputs_by_tick_.end()) {
@@ -306,6 +492,7 @@ BattleSnapshot BattleSimulation::Tick() {
     }
 
     current_tick_ = tick_to_apply;
+    ApplyModeActionsForTick(tick_to_apply);
     SpawnBulletsForTick();
     AdvanceBullets();
     return Snapshot("full");
@@ -322,6 +509,11 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["ruleset_version"] = config_.ruleset_version;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
+    snapshot.mode_state["accepted_input_count"] = std::to_string(accepted_input_count_);
+    snapshot.mode_state["fallback_input_count"] = std::to_string(fallback_input_count_);
+    snapshot.mode_state["neutral_fallback_count"] = std::to_string(neutral_fallback_count_);
+    snapshot.mode_state["held_input_fallback_count"] = std::to_string(held_input_fallback_count_);
+    snapshot.mode_state["mode_action_count"] = std::to_string(mode_action_count_);
     std::size_t connected_player_count = 0;
     for (const auto& item : players_) {
         if (item.second.connected) {
@@ -330,6 +522,62 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     }
     snapshot.mode_state["connected_player_count"] = std::to_string(connected_player_count);
     snapshot.mode_state["disconnected_player_count"] = std::to_string(players_.size() - connected_player_count);
+    std::size_t ready_connected_player_count = 0;
+    for (const auto& player_id : ready_player_ids_) {
+        const auto player_it = players_.find(player_id);
+        if (player_it != players_.end() && player_it->second.connected) {
+            ++ready_connected_player_count;
+        }
+    }
+    snapshot.mode_state["ready_player_count"] = std::to_string(ready_connected_player_count);
+    snapshot.mode_state["all_players_ready"] =
+        !players_.empty() &&
+            connected_player_count == players_.size() &&
+            ready_connected_player_count == players_.size() ? "1" : "0";
+    if (IsBossMode(config_.mode_id)) {
+        snapshot.mode_state["battle_layout"] = "boss_center_ring";
+        snapshot.mode_state["boss_center_x_milli"] = "0";
+        snapshot.mode_state["boss_center_y_milli"] = "0";
+        snapshot.mode_state["player_fire_target"] = "boss_center";
+        snapshot.mode_state["boss_min_players"] = "4";
+        snapshot.mode_state["boss_max_players"] = "8";
+        snapshot.mode_state["boss_ready_player_count"] = std::to_string(ready_connected_player_count);
+        snapshot.mode_state["boss_start_ready"] =
+            connected_player_count >= 4 && connected_player_count <= 8 ? "1" : "0";
+        snapshot.mode_state["boss_ready_to_start"] =
+            snapshot.mode_state["boss_start_ready"] == "1" &&
+                snapshot.mode_state["all_players_ready"] == "1" ? "1" : "0";
+        snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
+        snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
+            "damage_report_to_business" :
+            "defeat_required";
+        snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
+        snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
+        snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
+        snapshot.mode_state["boss_defeated"] = BoolToken(boss_current_hp_ == 0);
+        snapshot.mode_state["boss_defeated_tick"] = std::to_string(boss_defeated_tick_);
+        snapshot.mode_state["boss_clear_status"] = boss_current_hp_ == 0 ? "cleared" : "running";
+        if (config_.mode_id == "world_boss") {
+            snapshot.mode_state["boss_result_disposition"] = "world_damage_report";
+        } else {
+            snapshot.mode_state["boss_result_disposition"] = boss_current_hp_ == 0 ?
+                "instance_cleared" :
+                "instance_incomplete";
+        }
+        for (const auto& item : boss_damage_by_player_) {
+            snapshot.mode_state["boss_damage_" + item.first] = std::to_string(item.second);
+        }
+    }
+    if (transfer_card_count_ > 0) {
+        snapshot.mode_state["transfer_card_count"] = std::to_string(transfer_card_count_);
+        snapshot.mode_state["last_transfer_card_instance_id"] = last_transfer_card_instance_id_;
+        snapshot.mode_state["last_transfer_from_player_id"] = last_transfer_from_player_id_;
+        snapshot.mode_state["last_transfer_to_player_id"] = last_transfer_to_player_id_;
+        snapshot.mode_state["last_transfer_authority_owner_player_id"] = last_transfer_card_authority_.owner_player_id;
+        snapshot.mode_state["last_transfer_authority_mode_allowed"] = BoolToken(last_transfer_card_authority_.mode_allowed);
+        snapshot.mode_state["last_transfer_authority_cost_paid"] = BoolToken(last_transfer_card_authority_.cost_paid);
+        snapshot.mode_state["last_transfer_authority_cooldown_ready"] = BoolToken(last_transfer_card_authority_.cooldown_ready);
+    }
     if (has_last_mode_action_) {
         snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
         snapshot.mode_state["last_mode_action_type"] = last_mode_action_.action_type;
@@ -405,7 +653,13 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.final_state_hash = CanonicalStateHash();
     summary.final_tick = current_tick_;
     summary.input_count = accepted_input_count_;
+    summary.fallback_input_count = fallback_input_count_;
+    summary.neutral_fallback_count = neutral_fallback_count_;
+    summary.held_input_fallback_count = held_input_fallback_count_;
+    summary.mode_action_count = mode_action_count_;
     summary.event_count = event_count_;
+    summary.input_trace = input_trace_;
+    summary.event_trace = event_trace_;
     if (has_last_mode_action_) {
         summary.last_mode_action_id = last_mode_action_.action_id;
         summary.last_mode_action_type = last_mode_action_.action_type;
@@ -414,6 +668,45 @@ ReplaySummary BattleSimulation::Summary() const {
         summary.last_mode_action_seq = last_mode_action_.seq;
     }
     return summary;
+}
+
+ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
+    std::string owner_user_id
+) const {
+    const ReplaySummary summary = Summary();
+    ReplayInputStreamSummaryRecord record;
+    record.replay_id = DevReplayIdFromReplaySummary(summary);
+    record.owner_user_id = std::move(owner_user_id);
+    record.match_id = summary.match_id;
+    record.input_count = summary.input_count;
+    record.event_count = summary.event_count;
+    record.input_stream_hash = summary.input_stream_hash;
+    record.event_stream_hash = summary.event_stream_hash;
+    record.final_state_hash = summary.final_state_hash;
+    record.final_tick = summary.final_tick;
+    return record;
+}
+
+ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) const {
+    ReplayFixture fixture;
+    fixture.summary = Summary();
+    fixture.replay_summary_record = BuildReplayInputStreamSummary(owner_user_id);
+    fixture.replay_id = fixture.replay_summary_record.replay_id;
+    fixture.owner_user_id = fixture.replay_summary_record.owner_user_id;
+    fixture.match_id = fixture.summary.match_id;
+    fixture.mode_id = fixture.summary.mode_id;
+    fixture.ruleset_version = fixture.summary.ruleset_version;
+    fixture.result_hash = DevResultHashFromReplaySummary(fixture.summary);
+    fixture.final_snapshot = Snapshot("replay_final");
+    fixture.tick_rate_hz = config_.tick_rate_hz;
+    fixture.event_cursor = fixture.summary.event_count;
+    fixture.server_authoritative = true;
+    fixture.input_trace = fixture.summary.input_trace;
+    fixture.event_trace = fixture.summary.event_trace;
+    for (const auto& item : players_) {
+        fixture.player_ids.push_back(item.first);
+    }
+    return fixture;
 }
 
 std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
@@ -431,6 +724,39 @@ std::string BattleSimulation::CanonicalStateHash() const {
     hash = HashAppend(hash, current_tick_);
     hash = HashAppend(hash, config_.match_seed);
     hash = HashAppend(hash, config_.tick_rate_hz);
+    hash = HashAppend(hash, accepted_input_count_);
+    hash = HashAppend(hash, fallback_input_count_);
+    hash = HashAppend(hash, neutral_fallback_count_);
+    hash = HashAppend(hash, held_input_fallback_count_);
+    hash = HashAppend(hash, mode_action_count_);
+    for (const auto& player_id : ready_player_ids_) {
+        hash = HashAppend(hash, player_id);
+    }
+    if (transfer_card_count_ > 0) {
+        hash = HashAppend(hash, transfer_card_count_);
+        hash = HashAppend(hash, last_transfer_card_instance_id_);
+        hash = HashAppend(hash, last_transfer_from_player_id_);
+        hash = HashAppend(hash, last_transfer_to_player_id_);
+        hash = HashAppend(hash, last_transfer_card_authority_.owner_player_id);
+        hash = HashAppend(hash, last_transfer_card_authority_.mode_allowed ? 1u : 0u);
+        hash = HashAppend(hash, last_transfer_card_authority_.cost_paid ? 1u : 0u);
+        hash = HashAppend(hash, last_transfer_card_authority_.cooldown_ready ? 1u : 0u);
+        for (const auto& item : transferred_card_edges_) {
+            hash = HashAppend(hash, item.first);
+            hash = HashAppend(hash, item.second.first);
+            hash = HashAppend(hash, item.second.second);
+        }
+    }
+    if (IsBossMode(config_.mode_id)) {
+        hash = HashAppend(hash, boss_max_hp_);
+        hash = HashAppend(hash, boss_current_hp_);
+        hash = HashAppend(hash, boss_damage_total_);
+        hash = HashAppend(hash, boss_defeated_tick_);
+        for (const auto& item : boss_damage_by_player_) {
+            hash = HashAppend(hash, item.first);
+            hash = HashAppend(hash, item.second);
+        }
+    }
 
     for (const auto& item : players_) {
         const PlayerState& player = item.second;
@@ -463,13 +789,270 @@ std::string BattleSimulation::CanonicalStateHash() const {
     return HexHash(hash);
 }
 
+std::string CanonicalReplayInputStreamSummaryRecord(
+    const ReplayInputStreamSummaryRecord& record
+) {
+    std::ostringstream out;
+    out << record.version.protocol_version << '|'
+        << record.version.business_api_version << '|'
+        << record.version.battle_api_version << '|'
+        << record.version.ruleset_version << '|'
+        << record.replay_id << '|'
+        << record.owner_user_id << '|'
+        << record.match_id << '|'
+        << record.input_count << '|'
+        << record.event_count << '|'
+        << record.input_stream_hash << '|'
+        << record.event_stream_hash << '|'
+        << record.final_state_hash << '|'
+        << record.final_tick;
+    return out.str();
+}
+
+std::string DevReplayInputStreamSummaryHash(
+    const ReplayInputStreamSummaryRecord& record
+) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayInputStreamSummaryRecord(record));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
+    std::ostringstream out;
+    out << fixture.replay_id << '|'
+        << fixture.owner_user_id << '|'
+        << fixture.match_id << '|'
+        << fixture.mode_id << '|'
+        << fixture.ruleset_version << '|'
+        << fixture.result_hash << '|'
+        << fixture.tick_rate_hz << '|'
+        << fixture.event_cursor << '|'
+        << (fixture.server_authoritative ? "1" : "0") << '|'
+        << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
+        << CanonicalSnapshotPayload(fixture.final_snapshot) << '|';
+    for (const auto& player_id : fixture.player_ids) {
+        out << player_id << ',';
+    }
+    out << '|';
+    for (const auto& trace : fixture.input_trace) {
+        out << trace << '\n';
+    }
+    out << '|';
+    for (const auto& trace : fixture.event_trace) {
+        out << trace << '\n';
+    }
+    return out.str();
+}
+
+std::string DevReplayFixtureHash(const ReplayFixture& fixture) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayFixturePayload(fixture));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string CanonicalReplayLoadoutBridgePayload(
+    const std::vector<ReplayLoadoutBridge>& loadout
+) {
+    std::ostringstream out;
+    std::vector<ReplayLoadoutBridge> sorted = loadout;
+    std::sort(sorted.begin(), sorted.end(), [](const ReplayLoadoutBridge& left, const ReplayLoadoutBridge& right) {
+        if (left.player_id != right.player_id) {
+            return left.player_id < right.player_id;
+        }
+        return left.user_id < right.user_id;
+    });
+
+    for (const auto& item : sorted) {
+        out << "loadout="
+            << item.user_id << ','
+            << item.player_id << ','
+            << item.character_id << ','
+            << item.stage_id << ','
+            << item.rating_code << ','
+            << item.deck_snapshot_hash << ','
+            << item.deck_ruleset_version << ',';
+        for (const auto& card_id : item.deck_card_ids) {
+            out << card_id << '/';
+        }
+        out << ';';
+    }
+    return out.str();
+}
+
+std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record) {
+    std::ostringstream out;
+    out << record.version.protocol_version << '|'
+        << record.version.business_api_version << '|'
+        << record.version.battle_api_version << '|'
+        << record.version.ruleset_version << '|'
+        << record.replay_id << '|'
+        << record.match_id << '|'
+        << record.owner_user_id << '|'
+        << record.mode_id << '|'
+        << record.stage_id << '|'
+        << CanonicalReplayLoadoutBridgePayload(record.loadout) << '|'
+        << CanonicalReplayInputStreamSummaryRecord(record.stream) << '|'
+        << CanonicalBattleResultPayload(record.settlement.result) << '|'
+        << record.settlement.signature_alg << '|'
+        << record.settlement.key_id << '|'
+        << record.settlement.public_key_hex << '|'
+        << record.settlement.signature_hex << '|'
+        << (record.settlement.server_authoritative ? "1" : "0") << '|'
+        << (record.server_authoritative ? "1" : "0") << '|'
+        << record.created_at_ms;
+    return out.str();
+}
+
+std::string DevReplayRecordBridgeHash(const ReplayRecordBridge& record) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayRecordBridgePayload(record));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
+    const ReplaySummary& summary = fixture.summary;
+    std::string json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+        std::to_string(summary.event_count) +
+        ",\"final_tick\":" +
+        std::to_string(summary.final_tick) +
+        ",\"tick_rate_hz\":" +
+        std::to_string(fixture.tick_rate_hz) +
+        ",\"input_count\":" +
+        std::to_string(summary.input_count) +
+        ",\"fallback_input_count\":" +
+        std::to_string(summary.fallback_input_count) +
+        ",\"neutral_fallback_count\":" +
+        std::to_string(summary.neutral_fallback_count) +
+        ",\"held_input_fallback_count\":" +
+        std::to_string(summary.held_input_fallback_count) +
+        ",\"mode_action_count\":" +
+        std::to_string(summary.mode_action_count) +
+        ",\"input_trace_count\":" +
+        std::to_string(summary.input_trace.size()) +
+        ",\"event_trace_count\":" +
+        std::to_string(summary.event_trace.size()) +
+        ",\"input_stream_hash\":\"" +
+        summary.input_stream_hash +
+        "\",\"event_stream_hash\":\"" +
+        summary.event_stream_hash +
+        "\",\"final_state_hash\":\"" +
+        summary.final_state_hash +
+        "\",\"replay_summary_hash\":\"" +
+        DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
+        "\",\"replay_fixture_hash\":\"" +
+        DevReplayFixtureHash(fixture) +
+        "\"";
+    const auto boss_scope = fixture.final_snapshot.mode_state.find("boss_scope");
+    if (boss_scope != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_scope\":\"" + boss_scope->second + "\"";
+    }
+    const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
+    if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+    }
+    const auto boss_current_hp = fixture.final_snapshot.mode_state.find("boss_current_hp");
+    if (boss_current_hp != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_current_hp\":" + boss_current_hp->second;
+    }
+    const auto boss_damage_total = fixture.final_snapshot.mode_state.find("boss_damage_total");
+    if (boss_damage_total != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_damage_total\":" + boss_damage_total->second;
+    }
+    const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
+    if (boss_defeated != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_defeated\":" + boss_defeated->second;
+    }
+    const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
+    if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_clear_status\":\"" + boss_clear_status->second + "\"";
+    }
+    const auto boss_result_disposition = fixture.final_snapshot.mode_state.find("boss_result_disposition");
+    if (boss_result_disposition != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_result_disposition\":\"" + boss_result_disposition->second + "\"";
+    }
+    const auto transfer_card_count = fixture.final_snapshot.mode_state.find("transfer_card_count");
+    if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"transfer_card_count\":" + transfer_card_count->second;
+    }
+    const auto last_transfer_card_instance_id = fixture.final_snapshot.mode_state.find("last_transfer_card_instance_id");
+    if (last_transfer_card_instance_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_card_instance_id\":\"" + last_transfer_card_instance_id->second + "\"";
+    }
+    const auto last_transfer_authority_owner = fixture.final_snapshot.mode_state.find("last_transfer_authority_owner_player_id");
+    if (last_transfer_authority_owner != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_owner_player_id\":\"" + last_transfer_authority_owner->second + "\"";
+    }
+    const auto last_transfer_authority_mode_allowed = fixture.final_snapshot.mode_state.find("last_transfer_authority_mode_allowed");
+    if (last_transfer_authority_mode_allowed != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_mode_allowed\":" + last_transfer_authority_mode_allowed->second;
+    }
+    const auto last_transfer_authority_cost_paid = fixture.final_snapshot.mode_state.find("last_transfer_authority_cost_paid");
+    if (last_transfer_authority_cost_paid != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_cost_paid\":" + last_transfer_authority_cost_paid->second;
+    }
+    const auto last_transfer_authority_cooldown_ready = fixture.final_snapshot.mode_state.find("last_transfer_authority_cooldown_ready");
+    if (last_transfer_authority_cooldown_ready != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_cooldown_ready\":" + last_transfer_authority_cooldown_ready->second;
+    }
+    const auto last_transfer_from_player_id = fixture.final_snapshot.mode_state.find("last_transfer_from_player_id");
+    if (last_transfer_from_player_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_from_player_id\":\"" + last_transfer_from_player_id->second + "\"";
+    }
+    const auto last_transfer_to_player_id = fixture.final_snapshot.mode_state.find("last_transfer_to_player_id");
+    if (last_transfer_to_player_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_to_player_id\":\"" + last_transfer_to_player_id->second + "\"";
+    }
+    json += "}";
+    return json;
+}
+
+std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, summary.match_id);
+    hash = HashAppend(hash, summary.mode_id);
+    hash = HashAppend(hash, summary.ruleset_version);
+    hash = HashAppend(hash, summary.input_stream_hash);
+    hash = HashAppend(hash, summary.event_stream_hash);
+    hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.final_tick);
+    hash = HashAppend(hash, summary.input_count);
+    hash = HashAppend(hash, summary.fallback_input_count);
+    hash = HashAppend(hash, summary.neutral_fallback_count);
+    hash = HashAppend(hash, summary.held_input_fallback_count);
+    hash = HashAppend(hash, summary.mode_action_count);
+    hash = HashAppend(hash, summary.event_count);
+    for (const auto& item : summary.input_trace) {
+        hash = HashAppend(hash, item);
+    }
+    for (const auto& item : summary.event_trace) {
+        hash = HashAppend(hash, item);
+    }
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
+std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary) {
+    return "battle-replay:" + summary.match_id + ":" + std::to_string(summary.final_tick);
+}
+
 BattleInput BattleSimulation::InputForTick(const PlayerState& player) const {
     BattleInput input = player.last_input;
     input.tick = current_tick_ + 1;
     return input;
 }
 
-void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input) {
+void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick) {
     constexpr std::uint32_t kUp = 1u << 0;
     constexpr std::uint32_t kDown = 1u << 1;
     constexpr std::uint32_t kLeft = 1u << 2;
@@ -480,6 +1063,96 @@ void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input)
 
     player.x_milli = ClampMilli(player.x_milli + axis_x * speed, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
     player.y_milli = ClampMilli(player.y_milli + axis_y * speed, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+    ApplyBossDamageForInput(player, input, applied_tick);
+}
+
+void BattleSimulation::ApplyBossDamageForInput(
+    const PlayerState& player,
+    const BattleInput& input,
+    std::uint64_t applied_tick
+) {
+    if (!IsBossMode(config_.mode_id) || !input.shoot || boss_current_hp_ == 0) {
+        return;
+    }
+
+    constexpr std::uint64_t kPlayerShotDamagePerTick = 10;
+    const std::uint64_t damage = std::min(kPlayerShotDamagePerTick, boss_current_hp_);
+    boss_current_hp_ -= damage;
+    boss_damage_total_ += damage;
+    boss_damage_by_player_[player.player_id] += damage;
+
+    if (boss_current_hp_ == 0 && boss_defeated_tick_ == 0) {
+        boss_defeated_tick_ = applied_tick;
+        event_stream_hash_ = HashAppend(event_stream_hash_, config_.match_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, config_.mode_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, applied_tick);
+        event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, boss_damage_total_);
+        event_trace_.push_back(
+            "boss_defeated|tick=" + std::to_string(applied_tick) +
+            "|player=" + player.player_id +
+            "|total_damage=" + std::to_string(boss_damage_total_)
+        );
+        ++event_count_;
+    }
+}
+
+void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
+    const auto actions_it = pending_mode_actions_by_tick_.find(tick);
+    if (actions_it == pending_mode_actions_by_tick_.end()) {
+        return;
+    }
+
+    auto actions = actions_it->second;
+    std::sort(actions.begin(), actions.end(), [](const BattleModeAction& left, const BattleModeAction& right) {
+        if (left.seq != right.seq) {
+            return left.seq < right.seq;
+        }
+        if (left.player_id != right.player_id) {
+            return left.player_id < right.player_id;
+        }
+        return left.action_id < right.action_id;
+    });
+    for (const auto& action : actions) {
+        if (IsReconnectModeAction(action.action_type)) {
+            auto player_it = players_.find(action.player_id);
+            if (player_it != players_.end() && !player_it->second.connected) {
+                player_it->second.connected = true;
+                AccumulateConnectionEvent(player_it->second);
+            }
+        }
+        if (action.action_type == "ready") {
+            ApplyReadyModeAction(action);
+        }
+        if (action.action_type == "transfer_card") {
+            ApplyTransferCardModeAction(action);
+        }
+        AccumulateAcceptedModeAction(action);
+    }
+    pending_mode_actions_by_tick_.erase(actions_it);
+}
+
+void BattleSimulation::ApplyReadyModeAction(const BattleModeAction& action) {
+    ready_player_ids_.insert(action.player_id);
+}
+
+void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& action) {
+    const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
+    const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
+    if (target_player_id.empty() || card_instance_id.empty()) {
+        return;
+    }
+
+    transferred_card_edges_[card_instance_id] = {action.player_id, target_player_id};
+    last_transfer_card_instance_id_ = card_instance_id;
+    last_transfer_from_player_id_ = action.player_id;
+    last_transfer_to_player_id_ = target_player_id;
+    const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
+    if (authority_it != pending_transfer_card_authority_by_action_id_.end()) {
+        last_transfer_card_authority_ = authority_it->second;
+        pending_transfer_card_authority_by_action_id_.erase(authority_it);
+    }
+    ++transfer_card_count_;
 }
 
 void BattleSimulation::SpawnBulletsForTick() {
@@ -489,28 +1162,49 @@ void BattleSimulation::SpawnBulletsForTick() {
 
     const std::uint64_t mixed = MixSeed(current_tick_);
     const std::int32_t drift = static_cast<std::int32_t>(mixed % 7000u) - 3500;
-    const std::array<std::pair<std::int32_t, std::int32_t>, 4> velocities = {{
+    const bool boss_mode = IsBossMode(config_.mode_id);
+    const std::array<std::pair<std::int32_t, std::int32_t>, 8> boss_velocities = {{
+        {0, 2600},
+        {1840, 1840},
+        {2600, 0},
+        {1840, -1840},
+        {0, -2600},
+        {-1840, -1840},
+        {-2600, 0},
+        {-1840, 1840},
+    }};
+    const std::array<std::pair<std::int32_t, std::int32_t>, 4> duel_velocities = {{
         {0, 3000},
         {3000, 0},
         {0, -3000},
         {-3000, 0},
     }};
+    const std::size_t velocity_count = boss_mode ? boss_velocities.size() : duel_velocities.size();
 
-    for (std::size_t i = 0; i < velocities.size() && bullets_.size() < config_.max_bullets; ++i) {
+    for (std::size_t i = 0; i < velocity_count && bullets_.size() < config_.max_bullets; ++i) {
+        const auto velocity = boss_mode ? boss_velocities[i] : duel_velocities[i];
         BulletState bullet;
         bullet.bullet_id = "b" + std::to_string(next_bullet_id_++);
-        bullet.x_milli = i % 2 == 0 ? drift : 0;
-        bullet.y_milli = i % 2 == 0 ? 0 : drift;
-        bullet.vx_milli = velocities[i].first;
-        bullet.vy_milli = velocities[i].second;
-        bullet.radius_milli = 4000;
-        bullet.pattern_id = "basic_radial";
-        bullet.color = (i % 2 == 0) ? "red" : "blue";
+        bullet.x_milli = boss_mode ? 0 : (i % 2 == 0 ? drift : 0);
+        bullet.y_milli = boss_mode ? 0 : (i % 2 == 0 ? 0 : drift);
+        bullet.vx_milli = velocity.first;
+        bullet.vy_milli = velocity.second;
+        bullet.radius_milli = boss_mode ? 5000 : 4000;
+        bullet.pattern_id = boss_mode ? "boss_center_radial" : "basic_radial";
+        bullet.color = boss_mode ? (config_.mode_id == "world_boss" ? "ruby" : "violet") : ((i % 2 == 0) ? "red" : "blue");
         bullets_.push_back(bullet);
     }
 
     event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
     event_stream_hash_ = HashAppend(event_stream_hash_, next_bullet_id_);
+    std::string event_trace =
+        "bullet_spawn|tick=" + std::to_string(current_tick_) +
+        "|next_id=" + std::to_string(next_bullet_id_) +
+        "|count=" + std::to_string(bullets_.size());
+    if (boss_mode) {
+        event_trace += "|pattern=boss_center_radial";
+    }
+    event_trace_.push_back(std::move(event_trace));
     ++event_count_;
 }
 
@@ -540,7 +1234,49 @@ void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {
     input_stream_hash_ = HashAppend(input_stream_hash_, input.bomb ? 1u : 0u);
     input_stream_hash_ = HashAppendSigned(input_stream_hash_, input.card_slot);
     input_stream_hash_ = HashAppend(input_stream_hash_, input.mode_action_id);
+    input_trace_.push_back(
+        "input|" + input.player_id +
+        "|tick=" + std::to_string(input.tick) +
+        "|seq=" + std::to_string(input.seq) +
+        "|dir=" + std::to_string(input.direction_bits) +
+        "|slow=" + BoolToken(input.slow) +
+        "|shoot=" + BoolToken(input.shoot) +
+        "|bomb=" + BoolToken(input.bomb) +
+        "|card=" + std::to_string(input.card_slot)
+    );
     ++accepted_input_count_;
+}
+
+void BattleSimulation::AccumulateFallbackInput(const PlayerState& player, const BattleInput& input) {
+    input_stream_hash_ = HashAppend(input_stream_hash_, config_.match_id);
+    input_stream_hash_ = HashAppend(input_stream_hash_, player.player_id);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.tick);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.seq);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.direction_bits);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.slow ? 1u : 0u);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.shoot ? 1u : 0u);
+    input_stream_hash_ = HashAppend(input_stream_hash_, input.bomb ? 1u : 0u);
+    input_stream_hash_ = HashAppendSigned(input_stream_hash_, input.card_slot);
+    input_stream_hash_ = HashAppend(input_stream_hash_, "fallback");
+    const bool neutral = input.seq == 0 && input.direction_bits == 0 && !input.slow && !input.shoot && !input.bomb &&
+        input.card_slot == -1;
+    input_trace_.push_back(
+        std::string("fallback|") + (neutral ? "neutral" : "held") +
+        "|" + player.player_id +
+        "|tick=" + std::to_string(input.tick) +
+        "|seq=" + std::to_string(input.seq) +
+        "|dir=" + std::to_string(input.direction_bits) +
+        "|slow=" + BoolToken(input.slow) +
+        "|shoot=" + BoolToken(input.shoot) +
+        "|bomb=" + BoolToken(input.bomb) +
+        "|card=" + std::to_string(input.card_slot)
+    );
+    ++fallback_input_count_;
+    if (neutral) {
+        ++neutral_fallback_count_;
+    } else {
+        ++held_input_fallback_count_;
+    }
 }
 
 void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& action) {
@@ -553,6 +1289,33 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.action_type);
     event_stream_hash_ = HashAppend(event_stream_hash_, action.payload_json);
+    if (action.action_type == "transfer_card") {
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_instance_id_);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_from_player_id_);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_to_player_id_);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.owner_player_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.mode_allowed ? 1u : 0u);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.cost_paid ? 1u : 0u);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.cooldown_ready ? 1u : 0u);
+        event_stream_hash_ = HashAppend(event_stream_hash_, transfer_card_count_);
+    }
+    std::string trace =
+        "mode_action|" + action.player_id +
+        "|tick=" + std::to_string(action.tick) +
+        "|seq=" + std::to_string(action.seq) +
+        "|id=" + action.action_id +
+        "|type=" + action.action_type;
+    if (action.action_type == "transfer_card") {
+        trace += "|card=" + last_transfer_card_instance_id_ +
+            "|from=" + last_transfer_from_player_id_ +
+            "|to=" + last_transfer_to_player_id_ +
+            "|authority_owner=" + last_transfer_card_authority_.owner_player_id +
+            "|mode_allowed=" + BoolToken(last_transfer_card_authority_.mode_allowed) +
+            "|cost_paid=" + BoolToken(last_transfer_card_authority_.cost_paid) +
+            "|cooldown_ready=" + BoolToken(last_transfer_card_authority_.cooldown_ready);
+    }
+    event_trace_.push_back(std::move(trace));
+    ++mode_action_count_;
     ++event_count_;
 }
 
@@ -561,6 +1324,11 @@ void BattleSimulation::AccumulateConnectionEvent(const PlayerState& player) {
     event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
     event_stream_hash_ = HashAppend(event_stream_hash_, current_tick_);
     event_stream_hash_ = HashAppend(event_stream_hash_, player.connected ? "connected" : "disconnected");
+    event_trace_.push_back(
+        std::string("connection|") + (player.connected ? "connected" : "disconnected") +
+        "|" + player.player_id +
+        "|tick=" + std::to_string(current_tick_)
+    );
     ++event_count_;
 }
 
@@ -580,6 +1348,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "seq_missing";
         case InputValidationCode::SeqReplay:
             return "seq_replay";
+        case InputValidationCode::DuplicateInputForTick:
+            return "input_tick_duplicate";
         case InputValidationCode::TickTooOld:
             return "input_tick_too_old";
         case InputValidationCode::TickTooFarAhead:

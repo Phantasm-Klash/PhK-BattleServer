@@ -29,6 +29,10 @@ struct BattleHandshakeAccept {
     std::uint32_t kcp_conv = 0;
     std::string key_id;
     std::string transcript_hash_hex;
+    std::string client_to_server_key_ref;
+    std::string server_to_client_key_ref;
+    std::string server_signature_alg = "ED25519";
+    std::string server_signature_hex;
     std::string dev_session_id;
 };
 
@@ -45,6 +49,14 @@ public:
 [[nodiscard]] std::string DevTranscriptHash(
     const BattleHandshakeHello& hello,
     const BattleTicket& verified_ticket
+);
+[[nodiscard]] std::string DevHandshakeKeyRef(
+    std::string_view transcript_hash_hex,
+    std::string_view direction_label
+);
+[[nodiscard]] std::string DevHandshakeServerSignature(
+    std::string_view transcript_hash_hex,
+    std::string_view server_key_id
 );
 
 }  // namespace phk::battle
