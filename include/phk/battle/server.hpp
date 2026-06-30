@@ -58,6 +58,15 @@ struct SubmitBattleResultResult {
 	bool duplicate = false;
 };
 
+struct RetireMatchResult {
+	bool ok = false;
+	std::string reason;
+	std::string match_id;
+	std::string result_hash;
+	std::size_t removed_sessions = 0;
+	bool already_retired = false;
+};
+
 struct BuildSignedBattleResultResult {
 	bool ok = false;
 	std::string reason;
@@ -99,6 +108,7 @@ public:
 
     [[nodiscard]] const BattleServerConfig& Config() const;
     [[nodiscard]] std::size_t ActiveSessionCount() const;
+    [[nodiscard]] std::size_t ActiveMatchCount() const;
 
 	RegisterTicketResult RegisterTicket(const SignedBattleTicket& signed_ticket);
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello);
@@ -129,6 +139,7 @@ public:
 		std::string stage_id = ""
 	) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
+	RetireMatchResult RetireMatch(const std::string& match_id);
 
 private:
 	[[nodiscard]] EncryptedSessionValidation ValidateEncryptedSession(

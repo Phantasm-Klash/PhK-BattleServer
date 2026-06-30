@@ -257,8 +257,16 @@ std::size_t BattleServer::ActiveSessionCount() const {
     return sessions_by_ticket_.size();
 }
 
+std::size_t BattleServer::ActiveMatchCount() const {
+    return simulations_by_match_.size();
+}
+
 RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& signed_ticket) {
     RegisterTicketResult result;
+    if (result_hash_by_match_.find(signed_ticket.ticket.match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_retired";
+        return result;
+    }
     if (sessions_by_ticket_.find(signed_ticket.ticket.ticket_id) != sessions_by_ticket_.end()) {
         result.reason = "ticket_replay";
         return result;
@@ -817,6 +825,38 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     result.ok = true;
     result.reason = "ok";
     result.settlement_key = "battle-result:" + signed_result.result.match_id;
+    return result;
+}
+
+RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
+    RetireMatchResult result;
+    result.match_id = match_id;
+    const auto result_hash_it = result_hash_by_match_.find(match_id);
+    if (result_hash_it == result_hash_by_match_.end()) {
+        result.reason = "match_not_settled";
+        return result;
+    }
+    result.result_hash = result_hash_it->second;
+
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.ok = true;
+        result.reason = "ok";
+        result.already_retired = true;
+        return result;
+    }
+
+    for (auto session_it = sessions_by_ticket_.begin(); session_it != sessions_by_ticket_.end();) {
+        if (session_it->second.match_id == match_id) {
+            session_it = sessions_by_ticket_.erase(session_it);
+            ++result.removed_sessions;
+        } else {
+            ++session_it;
+        }
+    }
+    simulations_by_match_.erase(simulation_it);
+    result.ok = true;
+    result.reason = "ok";
     return result;
 }
 

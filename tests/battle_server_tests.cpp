@@ -1468,6 +1468,64 @@ bool TestBossModeResultProjection() {
     return true;
 }
 
+bool TestSettledMatchRetirementLifecycle() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489650000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
+
+    const auto premature_retire = server.RetireMatch("match-001");
+    CHECK_TRUE(!premature_retire.ok);
+    CHECK_EQ(premature_retire.reason, std::string("match_not_settled"));
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+    const auto built_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built_result.ok);
+    const auto submitted = server.SubmitBattleResult(built_result.signed_result);
+    CHECK_TRUE(submitted.ok);
+    CHECK_TRUE(!submitted.duplicate);
+
+    const auto retired = server.RetireMatch("match-001");
+    CHECK_TRUE(retired.ok);
+    CHECK_EQ(retired.reason, std::string("ok"));
+    CHECK_EQ(retired.match_id, std::string("match-001"));
+    CHECK_EQ(retired.result_hash, built_result.signed_result.result.result_hash);
+    CHECK_EQ(retired.removed_sessions, static_cast<std::size_t>(2));
+    CHECK_TRUE(!retired.already_retired);
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
+
+    const auto snapshot_after_retire = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot_after_retire.snapshot_kind, std::string("match_unknown"));
+    const auto input_after_retire = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
+    CHECK_TRUE(!input_after_retire.ok);
+    CHECK_EQ(input_after_retire.reason, std::string("match_unknown"));
+    const auto duplicate_result_after_retire = server.SubmitBattleResult(built_result.signed_result);
+    CHECK_TRUE(!duplicate_result_after_retire.ok);
+    CHECK_EQ(duplicate_result_after_retire.reason, std::string("match_unknown"));
+    const auto replay_ticket_after_retire = server.RegisterTicket(MakeTicket());
+    CHECK_TRUE(!replay_ticket_after_retire.ok);
+    CHECK_EQ(replay_ticket_after_retire.reason, std::string("match_retired"));
+
+    const auto retired_again = server.RetireMatch("match-001");
+    CHECK_TRUE(retired_again.ok);
+    CHECK_TRUE(retired_again.already_retired);
+    CHECK_EQ(retired_again.removed_sessions, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.result_hash, built_result.signed_result.result.result_hash);
+
+    const auto missing = server.RetireMatch("missing-match");
+    CHECK_TRUE(!missing.ok);
+    CHECK_EQ(missing.reason, std::string("match_not_settled"));
+    return true;
+}
+
 bool TestAuthoritativeReplay60TickFixture() {
     phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
@@ -2922,6 +2980,7 @@ int main() {
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
+        {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
