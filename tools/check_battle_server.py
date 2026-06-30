@@ -430,6 +430,7 @@ def main() -> int:
         or "input_trace_.push_back" not in simulation_impl
         or "event_trace_.push_back" not in simulation_impl
         or "transfer_card_not_authorized" not in simulation_impl
+        or "transfer_card_mode_unsupported" not in simulation_impl
         or "transfer_card_owner_mismatch" not in simulation_impl
         or "transfer_card_mode_forbidden" not in simulation_impl
         or "transfer_card_cost_unpaid" not in simulation_impl
@@ -798,6 +799,7 @@ def main() -> int:
         or "reconnect_result" not in tests_text
         or "disconnected_card_action" not in tests_text
         or "transfer_card_not_authorized" not in tests_text
+        or "transfer_card_mode_unsupported" not in tests_text
         or "transfer_card_owner_mismatch" not in tests_text
         or "transfer_card_mode_forbidden" not in tests_text
         or "transfer_card_cost_unpaid" not in tests_text

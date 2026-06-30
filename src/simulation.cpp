@@ -262,6 +262,9 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
 }
 
 bool BattleSimulation::ConfigureTransferableCard(TransferableCardState card) {
+    if (!IsBossMode(config_.mode_id)) {
+        return false;
+    }
     if (card.card_instance_id.empty() || card.owner_player_id.empty()) {
         return false;
     }
@@ -457,6 +460,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         }
     }
     if (action.action_type == "transfer_card") {
+        if (!IsBossMode(config_.mode_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_mode_unsupported";
+            return result;
+        }
         const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
         const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
         if (target_player_id.empty() || card_instance_id.empty()) {
