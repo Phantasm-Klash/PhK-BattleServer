@@ -71,6 +71,12 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+bool IsAllowedBossFriendlyFirePolicy(std::string_view policy) {
+    return policy == "disabled" ||
+        policy == "player_bullets_only" ||
+        policy == "all_friendly_fire";
+}
+
 std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
     if (x_milli == 0 && y_milli < 0) {
         return "north";
@@ -179,6 +185,9 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
         config_.spawn_period_ticks = 1;
     }
     if (IsBossMode(config_.mode_id)) {
+        if (!IsAllowedBossFriendlyFirePolicy(config_.boss_friendly_fire_policy)) {
+            config_.boss_friendly_fire_policy = "disabled";
+        }
         if (config_.boss_max_hp == 0) {
             config_.boss_max_hp = 1;
         }
@@ -536,6 +545,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["mode_id"] = config_.mode_id;
     snapshot.mode_state["ruleset_version"] = config_.ruleset_version;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
+    snapshot.mode_state["match_seed"] = std::to_string(config_.match_seed);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
     snapshot.mode_state["accepted_input_count"] = std::to_string(accepted_input_count_);
     snapshot.mode_state["fallback_input_count"] = std::to_string(fallback_input_count_);
@@ -579,6 +589,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
             "defeat_required";
+        snapshot.mode_state["boss_friendly_fire_policy"] = config_.boss_friendly_fire_policy;
         snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
         snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
         snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
@@ -685,6 +696,7 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.input_stream_hash = HexHash(input_stream_hash_);
     summary.event_stream_hash = HexHash(event_stream_hash_);
     summary.final_state_hash = CanonicalStateHash();
+    summary.match_seed = config_.match_seed;
     summary.final_tick = current_tick_;
     summary.input_count = accepted_input_count_;
     summary.fallback_input_count = fallback_input_count_;
@@ -717,6 +729,7 @@ ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
     record.input_stream_hash = summary.input_stream_hash;
     record.event_stream_hash = summary.event_stream_hash;
     record.final_state_hash = summary.final_state_hash;
+    record.match_seed = summary.match_seed;
     record.final_tick = summary.final_tick;
     return record;
 }
@@ -733,6 +746,7 @@ ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) co
     fixture.result_hash = DevResultHashFromReplaySummary(fixture.summary);
     fixture.final_snapshot = Snapshot("replay_final");
     fixture.tick_rate_hz = config_.tick_rate_hz;
+    fixture.match_seed = config_.match_seed;
     fixture.event_cursor = fixture.summary.event_count;
     fixture.server_authoritative = true;
     fixture.input_trace = fixture.summary.input_trace;
@@ -786,6 +800,7 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, boss_current_hp_);
         hash = HashAppend(hash, boss_damage_total_);
         hash = HashAppend(hash, boss_defeated_tick_);
+        hash = HashAppend(hash, config_.boss_friendly_fire_policy);
         for (const auto& item : boss_damage_by_player_) {
             hash = HashAppend(hash, item.first);
             hash = HashAppend(hash, item.second);
@@ -839,6 +854,7 @@ std::string CanonicalReplayInputStreamSummaryRecord(
         << record.input_stream_hash << '|'
         << record.event_stream_hash << '|'
         << record.final_state_hash << '|'
+        << record.match_seed << '|'
         << record.final_tick;
     return out.str();
 }
@@ -863,6 +879,7 @@ std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
         << fixture.ruleset_version << '|'
         << fixture.result_hash << '|'
         << fixture.tick_rate_hz << '|'
+        << fixture.match_seed << '|'
         << fixture.event_cursor << '|'
         << (fixture.server_authoritative ? "1" : "0") << '|'
         << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
@@ -960,6 +977,8 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         std::to_string(summary.final_tick) +
         ",\"tick_rate_hz\":" +
         std::to_string(fixture.tick_rate_hz) +
+        ",\"match_seed\":" +
+        std::to_string(fixture.match_seed) +
         ",\"input_count\":" +
         std::to_string(summary.input_count) +
         ",\"fallback_input_count\":" +
@@ -984,7 +1003,14 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
         "\",\"replay_fixture_hash\":\"" +
         DevReplayFixtureHash(fixture) +
-        "\"";
+        "\",\"final_snapshot_tick\":" +
+        std::to_string(fixture.final_snapshot.snapshot_tick) +
+        ",\"final_snapshot_kind\":\"" +
+        fixture.final_snapshot.snapshot_kind +
+        "\",\"final_snapshot_state_hash\":\"" +
+        fixture.final_snapshot.state_hash +
+        "\",\"final_snapshot_event_cursor\":" +
+        std::to_string(fixture.final_snapshot.event_cursor);
     const auto boss_scope = fixture.final_snapshot.mode_state.find("boss_scope");
     if (boss_scope != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_scope\":\"" + boss_scope->second + "\"";
@@ -992,6 +1018,44 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
     if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+    }
+    const auto boss_friendly_fire_policy = fixture.final_snapshot.mode_state.find("boss_friendly_fire_policy");
+    if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_friendly_fire_policy\":\"" + boss_friendly_fire_policy->second + "\"";
+    }
+    const auto boss_min_players = fixture.final_snapshot.mode_state.find("boss_min_players");
+    if (boss_min_players != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_min_players\":" + boss_min_players->second;
+    }
+    const auto boss_max_players = fixture.final_snapshot.mode_state.find("boss_max_players");
+    if (boss_max_players != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_max_players\":" + boss_max_players->second;
+    }
+    const auto boss_start_ready = fixture.final_snapshot.mode_state.find("boss_start_ready");
+    if (boss_start_ready != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_start_ready\":" + boss_start_ready->second;
+    }
+    const auto boss_ready_player_count = fixture.final_snapshot.mode_state.find("boss_ready_player_count");
+    if (boss_ready_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_ready_player_count\":" + boss_ready_player_count->second;
+    }
+    const auto boss_ready_to_start = fixture.final_snapshot.mode_state.find("boss_ready_to_start");
+    if (boss_ready_to_start != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_ready_to_start\":" + boss_ready_to_start->second;
+    }
+    const auto connected_player_count = fixture.final_snapshot.mode_state.find("connected_player_count");
+    if (boss_scope != fixture.final_snapshot.mode_state.end() &&
+        connected_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"connected_player_count\":" + connected_player_count->second;
+    }
+    const auto disconnected_player_count = fixture.final_snapshot.mode_state.find("disconnected_player_count");
+    if (boss_scope != fixture.final_snapshot.mode_state.end() &&
+        disconnected_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"disconnected_player_count\":" + disconnected_player_count->second;
+    }
+    const auto boss_max_hp = fixture.final_snapshot.mode_state.find("boss_max_hp");
+    if (boss_max_hp != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_max_hp\":" + boss_max_hp->second;
     }
     const auto boss_current_hp = fixture.final_snapshot.mode_state.find("boss_current_hp");
     if (boss_current_hp != fixture.final_snapshot.mode_state.end()) {
@@ -1006,10 +1070,26 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         if (player_damage != fixture.final_snapshot.mode_state.end()) {
             json += ",\"boss_damage_" + player_id + "\":" + player_damage->second;
         }
+        const auto player_spawn_slot = fixture.final_snapshot.mode_state.find(
+            "boss_player_" + player_id + "_spawn_slot"
+        );
+        if (player_spawn_slot != fixture.final_snapshot.mode_state.end()) {
+            json += ",\"boss_player_" + player_id + "_spawn_slot\":\"" + player_spawn_slot->second + "\"";
+        }
+        const auto player_fire_target = fixture.final_snapshot.mode_state.find(
+            "boss_player_" + player_id + "_fire_target"
+        );
+        if (player_fire_target != fixture.final_snapshot.mode_state.end()) {
+            json += ",\"boss_player_" + player_id + "_fire_target\":\"" + player_fire_target->second + "\"";
+        }
     }
     const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
     if (boss_defeated != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_defeated\":" + boss_defeated->second;
+    }
+    const auto boss_defeated_tick = fixture.final_snapshot.mode_state.find("boss_defeated_tick");
+    if (boss_defeated_tick != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_defeated_tick\":" + boss_defeated_tick->second;
     }
     const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
     if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
@@ -1063,6 +1143,7 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.input_stream_hash);
     hash = HashAppend(hash, summary.event_stream_hash);
     hash = HashAppend(hash, summary.final_state_hash);
+    hash = HashAppend(hash, summary.match_seed);
     hash = HashAppend(hash, summary.final_tick);
     hash = HashAppend(hash, summary.input_count);
     hash = HashAppend(hash, summary.fallback_input_count);
@@ -1380,6 +1461,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "version_incompatible";
         case InputValidationCode::MatchUnknown:
             return "match_unknown";
+        case InputValidationCode::MatchSettled:
+            return "match_settled";
         case InputValidationCode::MatchMismatch:
             return "match_mismatch";
         case InputValidationCode::PlayerUnknown:

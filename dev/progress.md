@@ -2,6 +2,52 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Replay Seed Result Binding
+
+- Replay summaries, manifest-compatible replay input-stream summary records, canonical replay fixtures, replay records, development mode-result JSON, and signed result hash material now carry the server-owned `match_seed`.
+- `BattleServer::SubmitBattleResult` binds the expected seed from the local replay summary, and `BattleResultVerifier` rejects missing or forged seed material with `match_seed_mismatch` before accepting a development signed battle result.
+- CTest pins the updated replay/result hashes and covers seed tampering across stream records, fixtures, and submitted result JSON. `tools/check_battle_server.py` now also gates the architecture doc's seed binding notes so replay/result audit docs cannot drift from the implementation.
+- This remains deterministic replay/result audit material only. The C++ battle server still does not write inventory, rewards, wallet, Steam state, or business database state.
+
+## 2026-06-30 Decoded Session Boundary
+
+- Direct protobuf-replacement decoded handoff now reuses the negotiated session boundary before simulation state changes.
+- `AcceptDecodedInput`, `AcceptDecodedModeAction`, and decoded reconnect handoff require a registered match session that completed handshake, a matching inbound client-to-server key reference, and valid snapshot/event acknowledgement bounds.
+- CTest now rejects wrong-session-key decoded input and snapshot ACK claims ahead of the authoritative tick without advancing replay counters. This keeps future protobuf decode entrypoints aligned with the encrypted packet adapter while real protobuf/KCP/AEAD remains pending.
+
+## 2026-06-30 Boss Start Readiness Result Binding
+
+- Boss development result projection now carries the server-owned start boundary fields: `boss_min_players`, `boss_max_players`, `boss_start_ready`, `boss_ready_player_count`, and `boss_ready_to_start`.
+- Boss result projection also carries final `connected_player_count` and `disconnected_player_count`, so the business server can audit whether settlement came from the same connected-room state the C++ simulation used.
+- Boss result projection now carries each player's server-generated ring spawn slot and fixed fire target, and `SubmitBattleResult` binds that layout audit material back to the final replay snapshot.
+- `BattleServer::SubmitBattleResult` binds these fields back to the final replay snapshot, and `BattleResultVerifier` rejects forged Boss readiness/capacity/connection-count/layout result material with dedicated mismatch reasons.
+- This is audit/settlement context for Nakama/Go only; the C++ battle server still does not persist Boss HP, rewards, inventory, wallet, or business database state.
+
+## 2026-06-30 Settled Match Freeze Boundary
+
+- Once a signed battle result is accepted, the server facade now freezes that match until `RetireMatch` clears it.
+- Post-settlement input, mode actions, reconnect-style decoded actions, connection-state mutation, transferable-card configuration, encrypted dispatch, and tick advancement are rejected or held with `match_settled`, preserving the signed replay/hash material.
+- Read-only snapshot and replay summary access remain available before retirement for business-server audit; retired matches still reject new tickets as `match_retired`.
+
+## 2026-06-30 Boss Max HP Result Binding
+
+- Development Boss result projection now includes server-owned `boss_max_hp` alongside current HP and damage totals.
+- `BattleServer::SubmitBattleResult` binds `boss_max_hp` to the final replay snapshot, and `BattleResultVerifier` rejects forged max-HP result material as `boss_max_hp_mismatch`.
+- CTest and `tools/check_battle_server.py` cover the projection and tamper path. This is still settlement audit context only; persistent Boss HP and rewards remain in Nakama/Go.
+
+## 2026-06-30 Boss Friendly-Fire Policy Projection
+
+- Boss simulations now normalize the documented friendly-fire policies (`disabled`, `player_bullets_only`, `all_friendly_fire`) and fall back to `disabled` for unknown values.
+- Boss snapshots and development `mode_result_json` carry the server-owned `boss_friendly_fire_policy`, and result verification binds that policy back to the final replay snapshot before accepting a signed callback.
+- Tests and `tools/check_battle_server.py` now gate policy projection, invalid-policy fallback, and tampered result rejection. This only exposes configuration/audit material; full teammate damage mechanics remain pending.
+
+## 2026-06-30 Transfer Card Result Verification Boundary
+
+- `BattleServer::SubmitBattleResult` now binds accepted Boss `transfer_card` projection fields back to the server-owned final replay snapshot before accepting a signed result callback.
+- `BattleResultVerifier` rejects tampered transfer count, card instance id, from/to player ids, and frozen authority flags with dedicated mismatch reasons.
+- The existing Boss result submission test now covers a signed result that includes a server-authorized card transfer, then mutates each transfer projection field to prove the C++ boundary catches forged settlement audit material.
+- This remains replay/result audit projection only; the C++ battle server still does not write inventory, rewards, wallets, Steam state, or databases.
+
 ## 2026-06-30 Boss Result Projection Verification Boundary
 
 - `BattleServer::SubmitBattleResult` now binds Boss settlement projection fields back to the server-owned final replay snapshot before accepting a signed result callback.

@@ -63,6 +63,7 @@ std::string ReplaySummaryHashForSummary(const phk::battle::ReplaySummary& summar
     record.input_stream_hash = summary.input_stream_hash;
     record.event_stream_hash = summary.event_stream_hash;
     record.final_state_hash = summary.final_state_hash;
+    record.match_seed = summary.match_seed;
     record.final_tick = summary.final_tick;
     return phk::battle::DevReplayInputStreamSummaryHash(record);
 }
@@ -640,6 +641,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_cursor_result.ok);
     CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
 
+    auto wrong_owner = valid_result;
+    wrong_owner.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "battle_result_owner",
+        "client"
+    );
+    const auto wrong_owner_result = server.SubmitBattleResult(wrong_owner);
+    CHECK_TRUE(!wrong_owner_result.ok);
+    CHECK_EQ(wrong_owner_result.reason, std::string("battle_result_owner_mismatch"));
+
     auto missing_replay_counts = valid_result;
     missing_replay_counts.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
         std::to_string(summary.event_count) + "}";
@@ -737,6 +748,49 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_replay_fixture_hash_result.ok);
     CHECK_EQ(wrong_replay_fixture_hash_result.reason, std::string("replay_fixture_hash_mismatch"));
 
+    auto wrong_final_snapshot_tick = valid_result;
+    wrong_final_snapshot_tick.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_snapshot_tick\":" + std::to_string(summary.final_tick),
+        "\"final_snapshot_tick\":999"
+    );
+    const auto wrong_final_snapshot_tick_result = server.SubmitBattleResult(wrong_final_snapshot_tick);
+    CHECK_TRUE(!wrong_final_snapshot_tick_result.ok);
+    CHECK_EQ(wrong_final_snapshot_tick_result.reason, std::string("final_snapshot_tick_mismatch"));
+
+    auto wrong_final_snapshot_kind = valid_result;
+    wrong_final_snapshot_kind.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "final_snapshot_kind",
+        "delta"
+    );
+    const auto wrong_final_snapshot_kind_result = server.SubmitBattleResult(wrong_final_snapshot_kind);
+    CHECK_TRUE(!wrong_final_snapshot_kind_result.ok);
+    CHECK_EQ(wrong_final_snapshot_kind_result.reason, std::string("final_snapshot_kind_mismatch"));
+
+    auto wrong_final_snapshot_state_hash = valid_result;
+    wrong_final_snapshot_state_hash.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "final_snapshot_state_hash",
+        "fnv64:0000000000000000"
+    );
+    const auto wrong_final_snapshot_state_hash_result = server.SubmitBattleResult(wrong_final_snapshot_state_hash);
+    CHECK_TRUE(!wrong_final_snapshot_state_hash_result.ok);
+    CHECK_EQ(wrong_final_snapshot_state_hash_result.reason, std::string("final_snapshot_state_hash_mismatch"));
+
+    auto wrong_final_snapshot_event_cursor = valid_result;
+    wrong_final_snapshot_event_cursor.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_snapshot_event_cursor\":" + std::to_string(summary.event_count),
+        "\"final_snapshot_event_cursor\":999"
+    );
+    const auto wrong_final_snapshot_event_cursor_result = server.SubmitBattleResult(wrong_final_snapshot_event_cursor);
+    CHECK_TRUE(!wrong_final_snapshot_event_cursor_result.ok);
+    CHECK_EQ(
+        wrong_final_snapshot_event_cursor_result.reason,
+        std::string("final_snapshot_event_cursor_mismatch")
+    );
+
     auto mutating_projection = valid_result;
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
     const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);
@@ -786,6 +840,7 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(built.ok);
     CHECK_EQ(built.reason, std::string("ok"));
     CHECK_EQ(built.replay_summary.final_tick, static_cast<std::uint64_t>(1));
+    CHECK_TRUE(built.replay_summary.match_seed != 0);
     CHECK_EQ(built.replay_summary.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(built.replay_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(built.replay_summary.mode_action_count, static_cast<std::uint64_t>(0));
@@ -796,7 +851,7 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(built.signed_result.result.mode_id, std::string("certification"));
     CHECK_EQ(built.signed_result.result.version.ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(built.signed_result.result.result_hash, ExpectedDevResultHash(built.replay_summary));
-    CHECK_EQ(built.signed_result.result.result_hash, std::string("sha256:dev-fnv64-7cd25aafda3bc356"));
+    CHECK_EQ(built.signed_result.result.result_hash, std::string("sha256:dev-fnv64-f86264708dfa96b8"));
     CHECK_EQ(built.signed_result.result.replay_id, ExpectedDevReplayId(built.replay_summary));
     CHECK_EQ(built.signed_result.result.replay_id, std::string("battle-replay:match-001:1"));
     CHECK_EQ(built.signed_result.result.player_ids.size(), static_cast<std::size_t>(2));
@@ -812,8 +867,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "375dc2635621991c5658896c6110e33d755350756c002d5e944e177e76ef777f"
-            "bb72a63f2a647098da6d6d483553bab9f9683451404304da1862fb5a4b324efb"
+            "e3dbed2bb9f5db1202d6b434c4e52533a5e65f19a41746d0c4e12622af0690"
+            "f15fc7094fe5b303967ec1d058f0a24db721d17b3dcfd46f5440cc4246dac3b975"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -821,16 +876,20 @@ bool TestBuildSignedBattleResultCallback() {
         phk::battle::CanonicalBattleResultPayload(built.signed_result.result),
         std::string(
             "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|match-001|certification|"
-            "sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|p1,p2,|"
+            "sha256:dev-fnv64-f86264708dfa96b8|battle-replay:match-001:1|p1,p2,|"
             "{\"source\":\"phk-battle-server\",\"projection_only\":true,\"settlement_authority\":\"nakama-go\"}|"
-            "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"tick_rate_hz\":60,\"input_count\":2,"
+            "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"tick_rate_hz\":60,"
+            "\"match_seed\":16031087345790602692,\"input_count\":2,"
             "\"fallback_input_count\":0,\"neutral_fallback_count\":0,\"held_input_fallback_count\":0,"
             "\"mode_action_count\":0,\"input_trace_count\":2,\"event_trace_count\":0,"
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
-            "\"replay_summary_hash\":\"sha256:dev-fnv64-f286e5b4976a50da\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-b861d9cb008d0d02\"}|1782489630000"
+            "\"replay_summary_hash\":\"sha256:dev-fnv64-e6fb6a98c2e6844d\","
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-ed53d4a3d1bd4f9b\","
+            "\"final_snapshot_tick\":1,\"final_snapshot_kind\":\"replay_final\","
+            "\"final_snapshot_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
+            "\"final_snapshot_event_cursor\":0}|1782489630000"
         )
     );
     CHECK_TRUE(
@@ -869,6 +928,11 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"tick_rate_hz\":60") != std::string::npos
     );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"match_seed\":" + std::to_string(built.replay_summary.match_seed)
+        ) != std::string::npos
+    );
     auto missing_tick_rate = built.signed_result;
     missing_tick_rate.result.mode_result_json = ReplaceFirst(
         built.signed_result.result.mode_result_json,
@@ -888,6 +952,26 @@ bool TestBuildSignedBattleResultCallback() {
     const auto wrong_tick_rate_result = server.SubmitBattleResult(wrong_tick_rate);
     CHECK_TRUE(!wrong_tick_rate_result.ok);
     CHECK_EQ(wrong_tick_rate_result.reason, std::string("tick_rate_hz_mismatch"));
+
+    auto missing_match_seed = built.signed_result;
+    missing_match_seed.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"match_seed\":" + std::to_string(built.replay_summary.match_seed) + ",",
+        ""
+    );
+    const auto missing_match_seed_result = server.SubmitBattleResult(missing_match_seed);
+    CHECK_TRUE(!missing_match_seed_result.ok);
+    CHECK_EQ(missing_match_seed_result.reason, std::string("match_seed_mismatch"));
+
+    auto wrong_match_seed = built.signed_result;
+    wrong_match_seed.result.mode_result_json = ReplaceFirst(
+        built.signed_result.result.mode_result_json,
+        "\"match_seed\":" + std::to_string(built.replay_summary.match_seed),
+        "\"match_seed\":" + std::to_string(built.replay_summary.match_seed + 1)
+    );
+    const auto wrong_match_seed_result = server.SubmitBattleResult(wrong_match_seed);
+    CHECK_TRUE(!wrong_match_seed_result.ok);
+    CHECK_EQ(wrong_match_seed_result.reason, std::string("match_seed_mismatch"));
 
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
@@ -936,9 +1020,38 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-b861d9cb008d0d02\""
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-ed53d4a3d1bd4f9b\""
         ) != std::string::npos
     );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_tick\":" + std::to_string(built.replay_summary.final_tick)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"final_snapshot_kind\":\"replay_final\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_state_hash\":\"" + built.replay_summary.final_state_hash + "\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_event_cursor\":" + std::to_string(built.replay_summary.event_count)
+        ) != std::string::npos
+    );
+
+    auto wrong_snapshot_state_hash = built.signed_result;
+    wrong_snapshot_state_hash.result.mode_result_json = ReplaceJsonStringField(
+        built.signed_result.result.mode_result_json,
+        "final_snapshot_state_hash",
+        "fnv64:0000000000000000"
+    );
+    const auto wrong_snapshot_state_hash_result = server.SubmitBattleResult(wrong_snapshot_state_hash);
+    CHECK_TRUE(!wrong_snapshot_state_hash_result.ok);
+    CHECK_EQ(wrong_snapshot_state_hash_result.reason, std::string("final_snapshot_state_hash_mismatch"));
 
     const auto submitted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(submitted.ok);
@@ -1566,6 +1679,7 @@ bool TestBossModeBulletPattern() {
     world_config.match_seed = 99;
     world_config.spawn_period_ticks = 1;
     world_config.max_bullets = 16;
+    world_config.boss_friendly_fire_policy = "player_bullets_only";
     phk::battle::BattleSimulation world_simulation(world_config);
     CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
     const auto world_snapshot = world_simulation.Tick();
@@ -1578,10 +1692,12 @@ bool TestBossModeBulletPattern() {
     CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("player_bullets_only"));
 
     phk::battle::SimulationConfig instance_config = world_config;
     instance_config.match_id = "match-instance-boss-pattern";
     instance_config.mode_id = "instance_boss";
+    instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation instance_simulation(instance_config);
     CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
     const auto instance_snapshot = instance_simulation.Tick();
@@ -1590,6 +1706,17 @@ bool TestBossModeBulletPattern() {
     CHECK_EQ(instance_snapshot.bullets_delta[0].color, std::string("violet"));
     CHECK_EQ(instance_snapshot.bullets_delta[0].radius_milli, static_cast<std::uint32_t>(5000));
     CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    CHECK_EQ(instance_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("all_friendly_fire"));
+
+    phk::battle::SimulationConfig invalid_policy_config = world_config;
+    invalid_policy_config.match_id = "match-world-boss-invalid-friendly-fire";
+    invalid_policy_config.boss_friendly_fire_policy = "client_authored_damage";
+    phk::battle::BattleSimulation invalid_policy_simulation(invalid_policy_config);
+    CHECK_TRUE(invalid_policy_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_EQ(
+        invalid_policy_simulation.Snapshot().mode_state.at("boss_friendly_fire_policy"),
+        std::string("disabled")
+    );
     return true;
 }
 
@@ -1686,6 +1813,7 @@ bool TestBossModeResultProjection() {
     instance_config.mode_id = "instance_boss";
     instance_config.spawn_period_ticks = 1000;
     instance_config.boss_max_hp = 20;
+    instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation simulation(instance_config);
     CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
     CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
@@ -1717,11 +1845,25 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"battle_result_owner\":\"cpp\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_start_ready\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"connected_player_count\":2") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p1_spawn_slot\":\"north\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p1_fire_target\":\"boss_center\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p2_spawn_slot\":\"east\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p2_fire_target\":\"boss_center\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
@@ -1792,22 +1934,95 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         "00112233445566778899ef04"
     )).ok);
 
+    phk::battle::TransferableCardState transfer_card;
+    transfer_card.card_instance_id = "instance-result-card-001";
+    transfer_card.owner_player_id = "p1";
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
+
+    auto transfer = MakeModeAction(2);
+    transfer.match_id = "match-001";
+    transfer.player_id = "p1";
+    transfer.tick = 1;
+    transfer.seq = 2;
+    transfer.action_id = "action-instance-result-transfer";
+    transfer.action_type = "transfer_card";
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-result-card-001\"}";
+    CHECK_TRUE(server.AcceptModeAction(transfer).ok);
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto built = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(built.ok);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_friendly_fire_policy\":\"disabled\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p1_spawn_slot\":\"north\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p1_fire_target\":\"boss_center\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p2_spawn_slot\":\"east\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p2_fire_target\":\"boss_center\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"last_transfer_card_instance_id\":\"instance-result-card-001\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_mode_allowed\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_cost_paid\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_cooldown_ready\":1") !=
+        std::string::npos
+    );
 
     auto wrong_scope = built.signed_result;
     wrong_scope.result.mode_result_json = ReplaceJsonStringField(
@@ -1818,6 +2033,86 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_scope_result = server.SubmitBattleResult(wrong_scope);
     CHECK_TRUE(!wrong_scope_result.ok);
     CHECK_EQ(wrong_scope_result.reason, std::string("boss_scope_mismatch"));
+
+    auto wrong_friendly_fire = built.signed_result;
+    wrong_friendly_fire.result.mode_result_json = ReplaceJsonStringField(
+        wrong_friendly_fire.result.mode_result_json,
+        "boss_friendly_fire_policy",
+        "all_friendly_fire"
+    );
+    const auto wrong_friendly_fire_result = server.SubmitBattleResult(wrong_friendly_fire);
+    CHECK_TRUE(!wrong_friendly_fire_result.ok);
+    CHECK_EQ(wrong_friendly_fire_result.reason, std::string("boss_friendly_fire_policy_mismatch"));
+
+    auto wrong_min_players = built.signed_result;
+    wrong_min_players.result.mode_result_json = ReplaceFirst(
+        wrong_min_players.result.mode_result_json,
+        "\"boss_min_players\":4",
+        "\"boss_min_players\":1"
+    );
+    const auto wrong_min_players_result = server.SubmitBattleResult(wrong_min_players);
+    CHECK_TRUE(!wrong_min_players_result.ok);
+    CHECK_EQ(wrong_min_players_result.reason, std::string("boss_min_players_mismatch"));
+
+    auto wrong_start_ready = built.signed_result;
+    wrong_start_ready.result.mode_result_json = ReplaceFirst(
+        wrong_start_ready.result.mode_result_json,
+        "\"boss_start_ready\":1",
+        "\"boss_start_ready\":0"
+    );
+    const auto wrong_start_ready_result = server.SubmitBattleResult(wrong_start_ready);
+    CHECK_TRUE(!wrong_start_ready_result.ok);
+    CHECK_EQ(wrong_start_ready_result.reason, std::string("boss_start_ready_mismatch"));
+
+    auto wrong_ready_count = built.signed_result;
+    wrong_ready_count.result.mode_result_json = ReplaceFirst(
+        wrong_ready_count.result.mode_result_json,
+        "\"boss_ready_player_count\":0",
+        "\"boss_ready_player_count\":4"
+    );
+    const auto wrong_ready_count_result = server.SubmitBattleResult(wrong_ready_count);
+    CHECK_TRUE(!wrong_ready_count_result.ok);
+    CHECK_EQ(wrong_ready_count_result.reason, std::string("boss_ready_player_count_mismatch"));
+
+    auto wrong_ready_to_start = built.signed_result;
+    wrong_ready_to_start.result.mode_result_json = ReplaceFirst(
+        wrong_ready_to_start.result.mode_result_json,
+        "\"boss_ready_to_start\":0",
+        "\"boss_ready_to_start\":1"
+    );
+    const auto wrong_ready_to_start_result = server.SubmitBattleResult(wrong_ready_to_start);
+    CHECK_TRUE(!wrong_ready_to_start_result.ok);
+    CHECK_EQ(wrong_ready_to_start_result.reason, std::string("boss_ready_to_start_mismatch"));
+
+    auto wrong_connected_count = built.signed_result;
+    wrong_connected_count.result.mode_result_json = ReplaceFirst(
+        wrong_connected_count.result.mode_result_json,
+        "\"connected_player_count\":4",
+        "\"connected_player_count\":3"
+    );
+    const auto wrong_connected_count_result = server.SubmitBattleResult(wrong_connected_count);
+    CHECK_TRUE(!wrong_connected_count_result.ok);
+    CHECK_EQ(wrong_connected_count_result.reason, std::string("connected_player_count_mismatch"));
+
+    auto wrong_disconnected_count = built.signed_result;
+    wrong_disconnected_count.result.mode_result_json = ReplaceFirst(
+        wrong_disconnected_count.result.mode_result_json,
+        "\"disconnected_player_count\":0",
+        "\"disconnected_player_count\":1"
+    );
+    const auto wrong_disconnected_count_result = server.SubmitBattleResult(wrong_disconnected_count);
+    CHECK_TRUE(!wrong_disconnected_count_result.ok);
+    CHECK_EQ(wrong_disconnected_count_result.reason, std::string("disconnected_player_count_mismatch"));
+
+    auto wrong_max_hp = built.signed_result;
+    wrong_max_hp.result.mode_result_json = ReplaceFirst(
+        wrong_max_hp.result.mode_result_json,
+        "\"boss_max_hp\":1000",
+        "\"boss_max_hp\":1"
+    );
+    const auto wrong_max_hp_result = server.SubmitBattleResult(wrong_max_hp);
+    CHECK_TRUE(!wrong_max_hp_result.ok);
+    CHECK_EQ(wrong_max_hp_result.reason, std::string("boss_max_hp_mismatch"));
 
     auto wrong_current_hp = built.signed_result;
     wrong_current_hp.result.mode_result_json = ReplaceFirst(
@@ -1849,6 +2144,26 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(!wrong_player_damage_result.ok);
     CHECK_EQ(wrong_player_damage_result.reason, std::string("boss_player_damage_mismatch"));
 
+    auto wrong_spawn_slot = built.signed_result;
+    wrong_spawn_slot.result.mode_result_json = ReplaceJsonStringField(
+        wrong_spawn_slot.result.mode_result_json,
+        "boss_player_p1_spawn_slot",
+        "south"
+    );
+    const auto wrong_spawn_slot_result = server.SubmitBattleResult(wrong_spawn_slot);
+    CHECK_TRUE(!wrong_spawn_slot_result.ok);
+    CHECK_EQ(wrong_spawn_slot_result.reason, std::string("boss_player_spawn_slot_mismatch"));
+
+    auto wrong_fire_target = built.signed_result;
+    wrong_fire_target.result.mode_result_json = ReplaceJsonStringField(
+        wrong_fire_target.result.mode_result_json,
+        "boss_player_p2_fire_target",
+        "client_cursor"
+    );
+    const auto wrong_fire_target_result = server.SubmitBattleResult(wrong_fire_target);
+    CHECK_TRUE(!wrong_fire_target_result.ok);
+    CHECK_EQ(wrong_fire_target_result.reason, std::string("boss_player_fire_target_mismatch"));
+
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(
         wrong_defeated.result.mode_result_json,
@@ -1858,6 +2173,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_defeated_result = server.SubmitBattleResult(wrong_defeated);
     CHECK_TRUE(!wrong_defeated_result.ok);
     CHECK_EQ(wrong_defeated_result.reason, std::string("boss_defeated_mismatch"));
+
+    auto wrong_defeated_tick = built.signed_result;
+    wrong_defeated_tick.result.mode_result_json = ReplaceFirst(
+        wrong_defeated_tick.result.mode_result_json,
+        "\"boss_defeated_tick\":0",
+        "\"boss_defeated_tick\":1"
+    );
+    const auto wrong_defeated_tick_result = server.SubmitBattleResult(wrong_defeated_tick);
+    CHECK_TRUE(!wrong_defeated_tick_result.ok);
+    CHECK_EQ(wrong_defeated_tick_result.reason, std::string("boss_defeated_tick_mismatch"));
 
     auto wrong_clear_status = built.signed_result;
     wrong_clear_status.result.mode_result_json = ReplaceJsonStringField(
@@ -1878,6 +2203,95 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_disposition_result = server.SubmitBattleResult(wrong_disposition);
     CHECK_TRUE(!wrong_disposition_result.ok);
     CHECK_EQ(wrong_disposition_result.reason, std::string("boss_result_disposition_mismatch"));
+
+    auto wrong_transfer_count = built.signed_result;
+    wrong_transfer_count.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_count.result.mode_result_json,
+        "\"transfer_card_count\":1",
+        "\"transfer_card_count\":2"
+    );
+    const auto wrong_transfer_count_result = server.SubmitBattleResult(wrong_transfer_count);
+    CHECK_TRUE(!wrong_transfer_count_result.ok);
+    CHECK_EQ(wrong_transfer_count_result.reason, std::string("transfer_card_count_mismatch"));
+
+    auto wrong_transfer_instance = built.signed_result;
+    wrong_transfer_instance.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_instance.result.mode_result_json,
+        "last_transfer_card_instance_id",
+        "forged-card"
+    );
+    const auto wrong_transfer_instance_result = server.SubmitBattleResult(wrong_transfer_instance);
+    CHECK_TRUE(!wrong_transfer_instance_result.ok);
+    CHECK_EQ(wrong_transfer_instance_result.reason, std::string("transfer_card_instance_mismatch"));
+
+    auto wrong_transfer_from = built.signed_result;
+    wrong_transfer_from.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_from.result.mode_result_json,
+        "last_transfer_from_player_id",
+        "p2"
+    );
+    const auto wrong_transfer_from_result = server.SubmitBattleResult(wrong_transfer_from);
+    CHECK_TRUE(!wrong_transfer_from_result.ok);
+    CHECK_EQ(wrong_transfer_from_result.reason, std::string("transfer_card_from_player_mismatch"));
+
+    auto wrong_transfer_to = built.signed_result;
+    wrong_transfer_to.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_to.result.mode_result_json,
+        "last_transfer_to_player_id",
+        "p3"
+    );
+    const auto wrong_transfer_to_result = server.SubmitBattleResult(wrong_transfer_to);
+    CHECK_TRUE(!wrong_transfer_to_result.ok);
+    CHECK_EQ(wrong_transfer_to_result.reason, std::string("transfer_card_to_player_mismatch"));
+
+    auto wrong_transfer_owner = built.signed_result;
+    wrong_transfer_owner.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_owner.result.mode_result_json,
+        "last_transfer_authority_owner_player_id",
+        "p2"
+    );
+    const auto wrong_transfer_owner_result = server.SubmitBattleResult(wrong_transfer_owner);
+    CHECK_TRUE(!wrong_transfer_owner_result.ok);
+    CHECK_EQ(wrong_transfer_owner_result.reason, std::string("transfer_card_authority_owner_mismatch"));
+
+    auto wrong_transfer_mode_allowed = built.signed_result;
+    wrong_transfer_mode_allowed.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_mode_allowed.result.mode_result_json,
+        "\"last_transfer_authority_mode_allowed\":1",
+        "\"last_transfer_authority_mode_allowed\":0"
+    );
+    const auto wrong_transfer_mode_allowed_result = server.SubmitBattleResult(wrong_transfer_mode_allowed);
+    CHECK_TRUE(!wrong_transfer_mode_allowed_result.ok);
+    CHECK_EQ(
+        wrong_transfer_mode_allowed_result.reason,
+        std::string("transfer_card_authority_mode_allowed_mismatch")
+    );
+
+    auto wrong_transfer_cost_paid = built.signed_result;
+    wrong_transfer_cost_paid.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_cost_paid.result.mode_result_json,
+        "\"last_transfer_authority_cost_paid\":1",
+        "\"last_transfer_authority_cost_paid\":0"
+    );
+    const auto wrong_transfer_cost_paid_result = server.SubmitBattleResult(wrong_transfer_cost_paid);
+    CHECK_TRUE(!wrong_transfer_cost_paid_result.ok);
+    CHECK_EQ(
+        wrong_transfer_cost_paid_result.reason,
+        std::string("transfer_card_authority_cost_paid_mismatch")
+    );
+
+    auto wrong_transfer_cooldown = built.signed_result;
+    wrong_transfer_cooldown.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_cooldown.result.mode_result_json,
+        "\"last_transfer_authority_cooldown_ready\":1",
+        "\"last_transfer_authority_cooldown_ready\":0"
+    );
+    const auto wrong_transfer_cooldown_result = server.SubmitBattleResult(wrong_transfer_cooldown);
+    CHECK_TRUE(!wrong_transfer_cooldown_result.ok);
+    CHECK_EQ(
+        wrong_transfer_cooldown_result.reason,
+        std::string("transfer_card_authority_cooldown_mismatch")
+    );
 
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
@@ -1955,6 +2369,48 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto submitted = server.SubmitBattleResult(built_result.signed_result);
     CHECK_TRUE(submitted.ok);
     CHECK_TRUE(!submitted.duplicate);
+    const auto settled_summary = server.MatchReplaySummary("match-001");
+
+    const auto input_after_settle = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
+    CHECK_TRUE(!input_after_settle.ok);
+    CHECK_EQ(input_after_settle.reason, std::string("match_settled"));
+    auto ready_after_settle = MakeModeAction(2);
+    ready_after_settle.tick = 2;
+    ready_after_settle.seq = 2;
+    ready_after_settle.action_id = "ready-after-settle";
+    ready_after_settle.action_type = "ready";
+    ready_after_settle.payload_json = "{\"ready\":true}";
+    const auto mode_action_after_settle = server.AcceptModeAction(ready_after_settle);
+    CHECK_TRUE(!mode_action_after_settle.ok);
+    CHECK_EQ(mode_action_after_settle.reason, std::string("match_settled"));
+    const auto disconnect_after_settle = server.SetPlayerConnected("match-001", "p1", false);
+    CHECK_TRUE(!disconnect_after_settle.ok);
+    CHECK_EQ(disconnect_after_settle.reason, std::string("match_settled"));
+    phk::battle::TransferableCardState card_after_settle;
+    card_after_settle.card_instance_id = "card-after-settle";
+    card_after_settle.owner_player_id = "p1";
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", card_after_settle));
+    phk::battle::BattleEncryptedPacket encrypted_after_settle;
+    encrypted_after_settle.header.match_id = "match-001";
+    encrypted_after_settle.header.player_id = "p1";
+    encrypted_after_settle.header.tick = 2;
+    encrypted_after_settle.header.seq = 2;
+    encrypted_after_settle.header.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(encrypted_after_settle.header);
+    encrypted_after_settle.ciphertext = {1, 2, 3};
+    encrypted_after_settle.auth_tag = std::vector<std::uint8_t>(16, 7);
+    const auto encrypted_dispatch_after_settle = server.DispatchEncrypted(encrypted_after_settle);
+    CHECK_TRUE(!encrypted_dispatch_after_settle.ok);
+    CHECK_EQ(encrypted_dispatch_after_settle.reason, std::string("match_settled"));
+
+    const auto tick_after_settle = server.TickMatch("match-001");
+    CHECK_EQ(tick_after_settle.snapshot_kind, std::string("match_settled"));
+    CHECK_EQ(tick_after_settle.snapshot_tick, settled_summary.final_tick);
+    const auto summary_after_settle_mutations = server.MatchReplaySummary("match-001");
+    CHECK_EQ(summary_after_settle_mutations.final_tick, settled_summary.final_tick);
+    CHECK_EQ(summary_after_settle_mutations.input_count, settled_summary.input_count);
+    CHECK_EQ(summary_after_settle_mutations.event_count, settled_summary.event_count);
+    CHECK_EQ(summary_after_settle_mutations.final_state_hash, settled_summary.final_state_hash);
 
     const auto retired = server.RetireMatch("match-001");
     CHECK_TRUE(retired.ok);
@@ -2002,6 +2458,7 @@ bool TestAuthoritativeReplay60TickFixture() {
     const auto first_summary = first.Summary();
     const auto second_summary = second.Summary();
     CHECK_EQ(first_summary.final_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(first_summary.match_seed, config.match_seed);
     CHECK_EQ(first_summary.input_count, static_cast<std::uint64_t>(120));
     CHECK_EQ(first_summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first_summary.neutral_fallback_count, static_cast<std::uint64_t>(0));
@@ -2023,7 +2480,7 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first_summary.input_stream_hash, std::string("fnv64:183370bd6f8c18e7"));
     CHECK_EQ(first_summary.event_stream_hash, std::string("fnv64:daa6853bacb4fdd3"));
     CHECK_EQ(first_summary.final_state_hash, std::string("fnv64:7c13fa803ae1b2dd"));
-    CHECK_EQ(ExpectedDevResultHash(first_summary), std::string("sha256:dev-fnv64-eb5d3d3884abf76a"));
+    CHECK_EQ(ExpectedDevResultHash(first_summary), std::string("sha256:dev-fnv64-a16275656f937e1d"));
     CHECK_EQ(ExpectedDevReplayId(first_summary), std::string("battle-replay:match-replay-60:60"));
     CHECK_EQ(first.BulletCount(), static_cast<std::size_t>(10));
     CHECK_EQ(first.Snapshot().mode_state.at("tick_rate_hz"), std::string("60"));
@@ -2060,6 +2517,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.player_ids[0], std::string("p1"));
     CHECK_EQ(fixture.player_ids[1], std::string("p2"));
     CHECK_EQ(fixture.tick_rate_hz, phk::battle::kBattleTickRateHz);
+    CHECK_EQ(fixture.match_seed, config.match_seed);
     CHECK_EQ(fixture.event_cursor, fixture.summary.event_count);
     CHECK_TRUE(fixture.server_authoritative);
     CHECK_EQ(fixture.replay_summary_record.version.protocol_version, phk::v1::kProtocolVersion);
@@ -2074,15 +2532,17 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.replay_summary_record.input_stream_hash, fixture.summary.input_stream_hash);
     CHECK_EQ(fixture.replay_summary_record.event_stream_hash, fixture.summary.event_stream_hash);
     CHECK_EQ(fixture.replay_summary_record.final_state_hash, fixture.summary.final_state_hash);
+    CHECK_EQ(fixture.replay_summary_record.match_seed, fixture.summary.match_seed);
     CHECK_EQ(fixture.replay_summary_record.final_tick, fixture.summary.final_tick);
     CHECK_EQ(fixture.summary.final_tick, static_cast<std::uint64_t>(60));
+    CHECK_EQ(fixture.summary.match_seed, config.match_seed);
     CHECK_EQ(fixture.summary.input_count, static_cast<std::uint64_t>(120));
     CHECK_EQ(fixture.summary.fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(fixture.summary.event_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(fixture.summary.input_stream_hash, std::string("fnv64:a0b383d4a7be0bf7"));
     CHECK_EQ(fixture.summary.event_stream_hash, std::string("fnv64:daa6853bacb4fdd3"));
     CHECK_EQ(fixture.summary.final_state_hash, std::string("fnv64:8049946f03724f36"));
-    CHECK_EQ(fixture.result_hash, std::string("sha256:dev-fnv64-a7519545ad65902e"));
+    CHECK_EQ(fixture.result_hash, std::string("sha256:dev-fnv64-5efd3f91d3827299"));
     CHECK_EQ(fixture.replay_id, std::string("battle-replay:match-replay-fixture:60"));
     CHECK_TRUE(fixture.input_trace == fixture.summary.input_trace);
     CHECK_TRUE(fixture.event_trace == fixture.summary.event_trace);
@@ -2099,6 +2559,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.final_snapshot.event_cursor, fixture.event_cursor);
     CHECK_EQ(fixture.final_snapshot.mode_state.at("mode_id"), config.mode_id);
     CHECK_EQ(fixture.final_snapshot.mode_state.at("tick_rate_hz"), std::string("60"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("match_seed"), std::to_string(config.match_seed));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("accepted_input_count"), std::string("120"));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
     CHECK_EQ(fixture.final_snapshot.players.size(), static_cast<std::size_t>(2));
@@ -2114,19 +2575,20 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(summary_record.input_stream_hash, fixture.summary.input_stream_hash);
     CHECK_EQ(summary_record.event_stream_hash, fixture.summary.event_stream_hash);
     CHECK_EQ(summary_record.final_state_hash, fixture.summary.final_state_hash);
+    CHECK_EQ(summary_record.match_seed, config.match_seed);
     CHECK_EQ(summary_record.final_tick, static_cast<std::uint64_t>(60));
     CHECK_TRUE(
         phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record) ==
         "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-replay-fixture:60|"
         "user-alice|match-replay-fixture|120|4|fnv64:a0b383d4a7be0bf7|"
-        "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|60"
+        "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60"
     );
     CHECK_EQ(
         phk::battle::DevReplayInputStreamSummaryHash(summary_record),
-        std::string("sha256:dev-fnv64-2a7544832ca5ff92")
+        std::string("sha256:dev-fnv64-28cdfb99face4a10")
     );
     auto tampered_record = summary_record;
-    tampered_record.final_tick = 61;
+    tampered_record.match_seed += 1;
     CHECK_TRUE(
         phk::battle::CanonicalReplayInputStreamSummaryRecord(tampered_record) !=
         phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record)
@@ -2138,12 +2600,12 @@ bool TestReplayFixtureBoundary() {
     const auto canonical_fixture_payload = phk::battle::CanonicalReplayFixturePayload(fixture);
     CHECK_TRUE(canonical_fixture_payload.find("battle-replay:match-replay-fixture:60|user-alice") == 0);
     CHECK_TRUE(canonical_fixture_payload.find("|pvp_duel|ruleset-local-s0|") != std::string::npos);
-    CHECK_TRUE(canonical_fixture_payload.find("|60|4|1|") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("|60|424242|4|1|") != std::string::npos);
     CHECK_TRUE(
         canonical_fixture_payload.find(
             "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-replay-fixture:60|"
             "user-alice|match-replay-fixture|120|4|fnv64:a0b383d4a7be0bf7|"
-            "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|60"
+            "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60"
         ) != std::string::npos
     );
     CHECK_TRUE(canonical_fixture_payload.find("|match-replay-fixture|60|replay_final|fnv64:8049946f03724f36|4|") != std::string::npos);
@@ -2156,7 +2618,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-92909ca8a1120107")
+        std::string("sha256:dev-fnv64-3527845dc49e78a0")
     );
     auto tampered_fixture_record = fixture;
     tampered_fixture_record.replay_summary_record.final_state_hash = "fnv64:0000000000000000";
@@ -2176,6 +2638,9 @@ bool TestReplayFixtureBoundary() {
     auto tampered_fixture_trace = fixture;
     tampered_fixture_trace.input_trace.back() += "|tampered";
     CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_trace) != phk::battle::DevReplayFixtureHash(fixture));
+    auto tampered_fixture_seed = fixture;
+    tampered_fixture_seed.match_seed += 1;
+    CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_seed) != phk::battle::DevReplayFixtureHash(fixture));
     auto tampered_fixture_authority = fixture;
     tampered_fixture_authority.server_authoritative = false;
     CHECK_TRUE(phk::battle::DevReplayFixtureHash(tampered_fixture_authority) != phk::battle::DevReplayFixtureHash(fixture));
@@ -2228,6 +2693,7 @@ bool TestReplayRecordBridgeBoundary() {
     CHECK_EQ(built.replay_record.stream.match_id, built.replay_record.match_id);
     CHECK_EQ(built.replay_record.stream.input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(built.replay_record.stream.event_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(built.replay_record.stream.match_seed, static_cast<std::uint64_t>(16031087345790602692ull));
     CHECK_EQ(built.replay_record.stream.final_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(built.replay_record.stream.input_stream_hash, std::string("fnv64:6b09da7d62e0941e"));
     CHECK_EQ(built.replay_record.stream.event_stream_hash, std::string("fnv64:14650fb0739d0383"));
@@ -2237,7 +2703,7 @@ bool TestReplayRecordBridgeBoundary() {
     CHECK_EQ(built.replay_record.settlement.result.replay_id, built.replay_record.replay_id);
     CHECK_EQ(
         built.replay_record.settlement.result.result_hash,
-        std::string("sha256:dev-fnv64-7cd25aafda3bc356")
+        std::string("sha256:dev-fnv64-f86264708dfa96b8")
     );
     CHECK_TRUE(built.replay_record.settlement.server_authoritative);
     CHECK_EQ(
@@ -2263,7 +2729,8 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_TRUE(canonical_record.find("1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-001:1|") != std::string::npos);
     CHECK_TRUE(canonical_record.find("user-alice|match-001|2|0|fnv64:6b09da7d62e0941e|") != std::string::npos);
-    CHECK_TRUE(canonical_record.find("sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("fnv64:14650fb0739d0383|fnv64:72a3385f1a7c7fe3|16031087345790602692|1") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("sha256:dev-fnv64-f86264708dfa96b8|battle-replay:match-001:1|") != std::string::npos);
     CHECK_TRUE(canonical_record.find("|ED25519|battle-local-1|") != std::string::npos);
     CHECK_EQ(
         built.replay_record_hash,
@@ -2271,7 +2738,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-54d3460c16224ec7")
+        std::string("sha256:dev-fnv64-c4e0fa7ecf81b6f0")
     );
 
     auto tampered_stream = built.replay_record;
@@ -2850,6 +3317,8 @@ bool TestDecodedPayloadHeaderBinding() {
     CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
     const auto accept = AcceptDefaultHandshake(server);
     CHECK_TRUE(accept.ok);
+    const auto bob_accept = AcceptHandshakeForTicket(server, MakeTicketForBob());
+    CHECK_TRUE(bob_accept.ok);
 
     phk::battle::BattlePacketHeader input_header;
     input_header.match_id = "match-001";
@@ -2898,10 +3367,28 @@ bool TestDecodedPayloadHeaderBinding() {
     p2_header.player_id = "p2";
     p2_header.tick = 1;
     p2_header.seq = 1;
+    p2_header.key_id = bob_accept.client_to_server_key_ref;
+
+    auto wrong_key_p2_header = p2_header;
+    wrong_key_p2_header.key_id = accept.client_to_server_key_ref;
+    const auto wrong_key_p2_result = server.AcceptDecodedInput(wrong_key_p2_header, p2_input);
+    CHECK_TRUE(!wrong_key_p2_result.ok);
+    CHECK_EQ(wrong_key_p2_result.reason, std::string("session_key_mismatch"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+
     const auto accepted_p2_input = server.AcceptDecodedInput(p2_header, p2_input);
     CHECK_TRUE(accepted_p2_input.ok);
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    auto ack_ahead_input = MakeInput("p2", 2, 2, 1u << 2);
+    auto ack_ahead_header = p2_header;
+    ack_ahead_header.tick = 2;
+    ack_ahead_header.seq = 2;
+    ack_ahead_header.ack = 2;
+    const auto ack_ahead_result = server.AcceptDecodedInput(ack_ahead_header, ack_ahead_input);
+    CHECK_TRUE(!ack_ahead_result.ok);
+    CHECK_EQ(ack_ahead_result.reason, std::string("snapshot_ack_ahead"));
 
     auto action = MakeModeAction(2);
     action.tick = 2;

@@ -297,6 +297,16 @@ def main() -> int:
         print("missing files:", ", ".join(missing), file=sys.stderr)
         return 1
 
+    architecture_text = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    if (
+        "match seed binding" not in architecture_text
+        or "match seed plus final snapshot" not in architecture_text
+        or "match seed, player ids" not in architecture_text
+        or "replay/seed-bound development signed-result callback material" not in architecture_text
+    ):
+        print("architecture doc missing replay/result match seed binding notes", file=sys.stderr)
+        return 1
+
     protocol_battle = WORKSPACE / "PhK-Protocol" / "proto" / "phk" / "v1" / "battle.proto"
     protocol_matchmaking = WORKSPACE / "PhK-Protocol" / "proto" / "phk" / "v1" / "matchmaking.proto"
     if not protocol_battle.exists() or not protocol_matchmaking.exists():
@@ -328,7 +338,12 @@ def main() -> int:
         "required_input_stream_hash" not in result_text
         or "required_event_stream_hash" not in result_text
         or "required_final_state_hash" not in result_text
+        or "required_battle_result_owner" not in result_text
         or "required_replay_fixture_hash" not in result_text
+        or "required_final_snapshot_tick" not in result_text
+        or "required_final_snapshot_kind" not in result_text
+        or "required_final_snapshot_state_hash" not in result_text
+        or "required_final_snapshot_event_cursor" not in result_text
         or "required_tick_rate_hz" not in result_text
         or "require_dev_signature_payload_binding" not in result_text
         or "DevBattleResultSignatureHex" not in result_text
@@ -421,6 +436,8 @@ def main() -> int:
         or "transfer_card_cooldown_blocked" not in simulation_impl
         or "transferable_cards_" not in simulation_impl
         or '"boss_result_disposition"' not in simulation_impl
+        or '"boss_friendly_fire_policy"' not in simulation_impl
+        or "IsAllowedBossFriendlyFirePolicy" not in simulation_impl
         or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
@@ -443,6 +460,10 @@ def main() -> int:
         or '"tick_rate_hz"' not in simulation_impl
         or "DevReplayInputStreamSummaryHash(fixture.replay_summary_record)" not in simulation_impl
         or "DevReplayFixtureHash(fixture)" not in simulation_impl
+        or "final_snapshot_tick" not in simulation_impl
+        or "final_snapshot_kind" not in simulation_impl
+        or "final_snapshot_state_hash" not in simulation_impl
+        or "final_snapshot_event_cursor" not in simulation_impl
         or "player.x_milli" not in simulation_impl
         or "bullet.pattern_id" not in simulation_impl
         or "snapshot.mode_state" not in simulation_impl
@@ -515,16 +536,37 @@ def main() -> int:
         or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
         or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
+        or 'options.required_battle_result_owner = "cpp"' not in server_impl
         or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record)" not in server_impl
         or "options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture)" not in server_impl
+        or "options.required_final_snapshot_tick = replay_fixture.final_snapshot.snapshot_tick" not in server_impl
+        or "options.required_final_snapshot_kind = replay_fixture.final_snapshot.snapshot_kind" not in server_impl
+        or "options.required_final_snapshot_state_hash = replay_fixture.final_snapshot.state_hash" not in server_impl
+        or "options.required_final_snapshot_event_cursor = replay_fixture.final_snapshot.event_cursor" not in server_impl
         or "options.require_boss_result_fields = true" not in server_impl
         or "options.required_boss_scope = boss_scope->second" not in server_impl
         or "options.required_boss_completion_policy" not in server_impl
+        or "options.required_boss_friendly_fire_policy" not in server_impl
+        or "options.required_connected_player_count" not in server_impl
+        or "options.required_disconnected_player_count" not in server_impl
+        or "options.required_boss_max_hp" not in server_impl
         or "options.required_boss_current_hp" not in server_impl
         or "options.required_boss_damage_total" not in server_impl
+        or "options.required_boss_spawn_slot_by_player" not in server_impl
+        or "options.required_boss_fire_target_by_player" not in server_impl
         or "options.required_boss_defeated" not in server_impl
+        or "options.required_boss_defeated_tick" not in server_impl
         or "options.required_boss_clear_status" not in server_impl
         or "options.required_boss_result_disposition" not in server_impl
+        or "options.require_transfer_result_fields = true" not in server_impl
+        or "options.required_transfer_card_count" not in server_impl
+        or "options.required_last_transfer_card_instance_id" not in server_impl
+        or "options.required_last_transfer_from_player_id" not in server_impl
+        or "options.required_last_transfer_to_player_id" not in server_impl
+        or "options.required_last_transfer_authority_owner_player_id" not in server_impl
+        or "options.required_last_transfer_authority_mode_allowed" not in server_impl
+        or "options.required_last_transfer_authority_cost_paid" not in server_impl
+        or "options.required_last_transfer_authority_cooldown_ready" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
@@ -546,6 +588,7 @@ def main() -> int:
         or "result_hash_mismatch" not in result_impl
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
+        or "battle_result_owner_mismatch" not in result_impl
         or "final_tick_mismatch" not in result_impl
         or "tick_rate_hz_mismatch" not in result_impl
         or "input_count_mismatch" not in result_impl
@@ -557,13 +600,32 @@ def main() -> int:
         or "final_state_hash_mismatch" not in result_impl
         or "replay_summary_hash_mismatch" not in result_impl
         or "replay_fixture_hash_mismatch" not in result_impl
+        or "final_snapshot_tick_mismatch" not in result_impl
+        or "final_snapshot_kind_mismatch" not in result_impl
+        or "final_snapshot_state_hash_mismatch" not in result_impl
+        or "final_snapshot_event_cursor_mismatch" not in result_impl
         or "boss_scope_mismatch" not in result_impl
         or "boss_completion_policy_mismatch" not in result_impl
+        or "boss_friendly_fire_policy_mismatch" not in result_impl
+        or "connected_player_count_mismatch" not in result_impl
+        or "disconnected_player_count_mismatch" not in result_impl
+        or "boss_max_hp_mismatch" not in result_impl
         or "boss_current_hp_mismatch" not in result_impl
         or "boss_damage_total_mismatch" not in result_impl
+        or "boss_player_spawn_slot_mismatch" not in result_impl
+        or "boss_player_fire_target_mismatch" not in result_impl
         or "boss_defeated_mismatch" not in result_impl
+        or "boss_defeated_tick_mismatch" not in result_impl
         or "boss_clear_status_mismatch" not in result_impl
         or "boss_result_disposition_mismatch" not in result_impl
+        or "transfer_card_count_mismatch" not in result_impl
+        or "transfer_card_instance_mismatch" not in result_impl
+        or "transfer_card_from_player_mismatch" not in result_impl
+        or "transfer_card_to_player_mismatch" not in result_impl
+        or "transfer_card_authority_owner_mismatch" not in result_impl
+        or "transfer_card_authority_mode_allowed_mismatch" not in result_impl
+        or "transfer_card_authority_cost_paid_mismatch" not in result_impl
+        or "transfer_card_authority_cooldown_mismatch" not in result_impl
         or "dev_result_signature_mismatch" not in result_impl
         or "DevBattleResultSignatureHex" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
@@ -657,21 +719,26 @@ def main() -> int:
         or "DriveAuthoritativeReplay60Ticks" not in tests_text
         or "fnv64:183370bd6f8c18e7" not in tests_text
         or "fnv64:7c13fa803ae1b2dd" not in tests_text
-        or "sha256:dev-fnv64-eb5d3d3884abf76a" not in tests_text
+        or "sha256:dev-fnv64-a16275656f937e1d" not in tests_text
         or "fnv64:a0b383d4a7be0bf7" not in tests_text
         or "fnv64:8049946f03724f36" not in tests_text
-        or "sha256:dev-fnv64-a7519545ad65902e" not in tests_text
+        or "sha256:dev-fnv64-5efd3f91d3827299" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "DevReplayInputStreamSummaryHash(summary_record)" not in tests_text
-        or "sha256:dev-fnv64-2a7544832ca5ff92" not in tests_text
+        or "sha256:dev-fnv64-28cdfb99face4a10" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
-        or "sha256:dev-fnv64-92909ca8a1120107" not in tests_text
+        or "sha256:dev-fnv64-3527845dc49e78a0" not in tests_text
         or "ReplayRecordBridgeBoundary" not in tests_text
         or "BuildReplayRecord(\"match-001\"" not in tests_text
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
         or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-54d3460c16224ec7" not in tests_text
+        or "sha256:dev-fnv64-c4e0fa7ecf81b6f0" not in tests_text
+        or "final_snapshot_tick_mismatch" not in tests_text
+        or "final_snapshot_kind_mismatch" not in tests_text
+        or "final_snapshot_state_hash_mismatch" not in tests_text
+        or "final_snapshot_event_cursor_mismatch" not in tests_text
+        or '"final_snapshot_kind\\":\\"replay_final\\"' not in tests_text
         or "tampered_stream" not in tests_text
         or "tampered_loadout" not in tests_text
         or "tampered_settlement" not in tests_text
@@ -689,11 +756,14 @@ def main() -> int:
         or "ReplaceJsonStringField" not in tests_text
         or "ModeResultJsonForSummary" in tests_text
         or "MakeBattleResultForSummary" in tests_text
-        or "sha256:dev-fnv64-7cd25aafda3bc356" not in tests_text
-        or "sha256:dev-fnv64-b861d9cb008d0d02" not in tests_text
-        or "sha256:dev-fnv64-f286e5b4976a50da" not in tests_text
+        or "sha256:dev-fnv64-f86264708dfa96b8" not in tests_text
+        or "sha256:dev-fnv64-ed53d4a3d1bd4f9b" not in tests_text
+        or "sha256:dev-fnv64-e6fb6a98c2e6844d" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
+        or "battle_result_owner_mismatch" not in tests_text
+        or "match_seed_mismatch" not in tests_text
+        or "tampered_fixture_seed" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
         or "final_state_hash_mismatch" not in tests_text
@@ -731,13 +801,31 @@ def main() -> int:
         or "boss_result_disposition" not in tests_text
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
+        or "boss_friendly_fire_policy_mismatch" not in tests_text
+        or "connected_player_count_mismatch" not in tests_text
+        or "disconnected_player_count_mismatch" not in tests_text
+        or "boss_max_hp_mismatch" not in tests_text
+        or "player_bullets_only" not in tests_text
+        or "all_friendly_fire" not in tests_text
+        or "client_authored_damage" not in tests_text
         or "boss_current_hp_mismatch" not in tests_text
         or "boss_damage_total_mismatch" not in tests_text
         or '\\"boss_damage_p1\\":10' not in tests_text
         or '\\"boss_damage_p2\\":10' not in tests_text
+        or "boss_player_spawn_slot_mismatch" not in tests_text
+        or "boss_player_fire_target_mismatch" not in tests_text
         or "boss_defeated_mismatch" not in tests_text
+        or "boss_defeated_tick_mismatch" not in tests_text
         or "boss_clear_status_mismatch" not in tests_text
         or "boss_result_disposition_mismatch" not in tests_text
+        or "transfer_card_count_mismatch" not in tests_text
+        or "transfer_card_instance_mismatch" not in tests_text
+        or "transfer_card_from_player_mismatch" not in tests_text
+        or "transfer_card_to_player_mismatch" not in tests_text
+        or "transfer_card_authority_owner_mismatch" not in tests_text
+        or "transfer_card_authority_mode_allowed_mismatch" not in tests_text
+        or "transfer_card_authority_cost_paid_mismatch" not in tests_text
+        or "transfer_card_authority_cooldown_mismatch" not in tests_text
         or "world_damage_report" not in tests_text
         or "instance_cleared" not in tests_text
         or "instance_incomplete" not in tests_text

@@ -106,6 +106,20 @@ InputValidationResult EventCursorAheadResult() {
     return result;
 }
 
+InputValidationResult SnapshotAckAheadResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::EventCursorAhead;
+    result.reason = "snapshot_ack_ahead";
+    return result;
+}
+
+InputValidationResult MatchSettledResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::MatchSettled;
+    result.reason = "match_settled";
+    return result;
+}
+
 std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& payload_json) {
     constexpr const char* kCursorField = "\"last_seen_event_cursor\"";
     const std::string field(kCursorField);
@@ -440,6 +454,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "match_unknown";
         return result;
     }
+    if (result_hash_by_match_.find(packet.header.match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_settled";
+        return result;
+    }
     const auto session_validation = ValidateEncryptedSession(packet.header);
     if (!session_validation.ok) {
         result.reason = session_validation.reason;
@@ -522,6 +540,46 @@ EncryptedSessionValidation BattleServer::ValidateEncryptedSession(
     return result;
 }
 
+InputValidationResult BattleServer::ValidateDecodedSessionBoundary(
+    const BattlePacketHeader& header
+) const {
+    const auto simulation_it = simulations_by_match_.find(header.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    if (result_hash_by_match_.find(header.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
+    }
+
+    const auto session_validation = ValidateEncryptedSession(header);
+    if (!session_validation.ok) {
+        InputValidationResult result;
+        result.code = session_validation.reason == "player_unknown"
+            ? InputValidationCode::PlayerUnknown
+            : InputValidationCode::InvalidModeAction;
+        result.reason = session_validation.reason;
+        return result;
+    }
+
+    if (IsSnapshotAckBoundPayload(header.payload_type) &&
+        header.ack > simulation_it->second.CurrentTick()) {
+        return SnapshotAckAheadResult();
+    }
+    if (IsReconnectPayload(header.payload_type) &&
+        header.ack > simulation_it->second.Summary().event_count) {
+        return EventCursorAheadResult();
+    }
+
+    InputValidationResult result;
+    result.ok = true;
+    result.code = InputValidationCode::Ok;
+    result.reason = "ok";
+    return result;
+}
+
 InputValidationResult BattleServer::AcceptDecodedInput(
     const BattlePacketHeader& header,
     const BattleInput& input
@@ -529,6 +587,10 @@ InputValidationResult BattleServer::AcceptDecodedInput(
     const auto binding = ValidateDecodedInputBinding(header, input);
     if (!binding.ok) {
         return binding;
+    }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
     }
     return AcceptInput(input);
 }
@@ -541,6 +603,10 @@ InputValidationResult BattleServer::AcceptDecodedModeAction(
     if (!binding.ok) {
         return binding;
     }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
+    }
     return AcceptModeAction(action);
 }
 
@@ -552,12 +618,19 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     if (!binding.ok) {
         return binding;
     }
+    const auto session_boundary = ValidateDecodedSessionBoundary(header);
+    if (!session_boundary.ok) {
+        return session_boundary;
+    }
     const auto simulation_it = simulations_by_match_.find(action.match_id);
     if (simulation_it == simulations_by_match_.end()) {
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
         return result;
+    }
+    if (result_hash_by_match_.find(action.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
         return UnknownPlayerResult();
@@ -589,6 +662,9 @@ bool BattleServer::ConfigureTransferableCard(
     if (simulation_it == simulations_by_match_.end()) {
         return false;
     }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return false;
+    }
     return simulation_it->second.ConfigureTransferableCard(std::move(card));
 }
 
@@ -599,6 +675,9 @@ InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
         return result;
+    }
+    if (result_hash_by_match_.find(input.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, input.match_id, input.player_id)) {
         return UnknownPlayerResult();
@@ -613,6 +692,9 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
         return result;
+    }
+    if (result_hash_by_match_.find(action.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
         return UnknownPlayerResult();
@@ -640,6 +722,9 @@ InputValidationResult BattleServer::SetPlayerConnected(
         result.reason = "match_unknown";
         return result;
     }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
+    }
     return simulation_it->second.SetPlayerConnected(player_id, connected);
 }
 
@@ -649,6 +734,10 @@ BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
         BattleSnapshot snapshot;
         snapshot.match_id = match_id;
         snapshot.snapshot_kind = "match_unknown";
+        return snapshot;
+    }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        BattleSnapshot snapshot = simulation_it->second.Snapshot("match_settled");
         return snapshot;
     }
     return simulation_it->second.Tick();
@@ -812,9 +901,11 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.now_ms = config_.now_ms;
     const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
     const ReplaySummary& summary = replay_fixture.summary;
+    options.required_battle_result_owner = "cpp";
     options.required_result_hash = DevResultHashFromReplaySummary(summary);
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
+    options.required_match_seed = summary.match_seed;
     options.required_final_tick = summary.final_tick;
     options.required_tick_rate_hz = replay_fixture.tick_rate_hz;
     options.required_input_count = summary.input_count;
@@ -829,6 +920,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_final_state_hash = summary.final_state_hash;
     options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record);
     options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture);
+    options.required_final_snapshot_tick = replay_fixture.final_snapshot.snapshot_tick;
+    options.required_final_snapshot_kind = replay_fixture.final_snapshot.snapshot_kind;
+    options.required_final_snapshot_state_hash = replay_fixture.final_snapshot.state_hash;
+    options.required_final_snapshot_event_cursor = replay_fixture.final_snapshot.event_cursor;
     options.require_replay_counter_fields = true;
     const auto& mode_state = replay_fixture.final_snapshot.mode_state;
     const auto boss_scope = mode_state.find("boss_scope");
@@ -836,9 +931,19 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.require_boss_result_fields = true;
         options.required_boss_scope = boss_scope->second;
         options.required_boss_completion_policy = mode_state.at("boss_completion_policy");
+        options.required_boss_friendly_fire_policy = mode_state.at("boss_friendly_fire_policy");
+        options.required_boss_min_players = std::stoull(mode_state.at("boss_min_players"));
+        options.required_boss_max_players = std::stoull(mode_state.at("boss_max_players"));
+        options.required_boss_start_ready = std::stoull(mode_state.at("boss_start_ready"));
+        options.required_boss_ready_player_count = std::stoull(mode_state.at("boss_ready_player_count"));
+        options.required_boss_ready_to_start = std::stoull(mode_state.at("boss_ready_to_start"));
+        options.required_connected_player_count = std::stoull(mode_state.at("connected_player_count"));
+        options.required_disconnected_player_count = std::stoull(mode_state.at("disconnected_player_count"));
+        options.required_boss_max_hp = std::stoull(mode_state.at("boss_max_hp"));
         options.required_boss_current_hp = std::stoull(mode_state.at("boss_current_hp"));
         options.required_boss_damage_total = std::stoull(mode_state.at("boss_damage_total"));
         options.required_boss_defeated = std::stoull(mode_state.at("boss_defeated"));
+        options.required_boss_defeated_tick = std::stoull(mode_state.at("boss_defeated_tick"));
         options.required_boss_clear_status = mode_state.at("boss_clear_status");
         options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
         for (const auto& player : replay_fixture.final_snapshot.players) {
@@ -846,7 +951,31 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
             if (damage_it != mode_state.end()) {
                 options.required_boss_damage_by_player[player.player_id] = std::stoull(damage_it->second);
             }
+            const auto spawn_slot_it = mode_state.find("boss_player_" + player.player_id + "_spawn_slot");
+            if (spawn_slot_it != mode_state.end()) {
+                options.required_boss_spawn_slot_by_player[player.player_id] = spawn_slot_it->second;
+            }
+            const auto fire_target_it = mode_state.find("boss_player_" + player.player_id + "_fire_target");
+            if (fire_target_it != mode_state.end()) {
+                options.required_boss_fire_target_by_player[player.player_id] = fire_target_it->second;
+            }
         }
+    }
+    const auto transfer_card_count = mode_state.find("transfer_card_count");
+    if (transfer_card_count != mode_state.end()) {
+        options.require_transfer_result_fields = true;
+        options.required_transfer_card_count = std::stoull(transfer_card_count->second);
+        options.required_last_transfer_card_instance_id = mode_state.at("last_transfer_card_instance_id");
+        options.required_last_transfer_from_player_id = mode_state.at("last_transfer_from_player_id");
+        options.required_last_transfer_to_player_id = mode_state.at("last_transfer_to_player_id");
+        options.required_last_transfer_authority_owner_player_id =
+            mode_state.at("last_transfer_authority_owner_player_id");
+        options.required_last_transfer_authority_mode_allowed =
+            std::stoull(mode_state.at("last_transfer_authority_mode_allowed"));
+        options.required_last_transfer_authority_cost_paid =
+            std::stoull(mode_state.at("last_transfer_authority_cost_paid"));
+        options.required_last_transfer_authority_cooldown_ready =
+            std::stoull(mode_state.at("last_transfer_authority_cooldown_ready"));
     }
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
