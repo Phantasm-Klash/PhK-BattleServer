@@ -413,6 +413,10 @@ def main() -> int:
         or "input_tick_duplicate" not in simulation_impl
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
+        or "ContainsClientAuthoredAuthorityField" not in simulation_impl
+        or "mode_action_authority_field_forbidden" not in simulation_impl
+        or "cast_card_slot_missing" not in simulation_impl
+        or "cast_card_slot_invalid" not in simulation_impl
         or "mode_action_type_unsupported" not in simulation_impl
         or "player_disconnected" not in simulation_impl
         or "player_it->second.connected = true" not in simulation_impl
@@ -802,6 +806,10 @@ def main() -> int:
         or "remote_rebind_player_connected" not in tests_text
         or "reconnect_result" not in tests_text
         or "disconnected_card_action" not in tests_text
+        or "cast_card_slot_missing" not in tests_text
+        or "cast_card_slot_invalid" not in tests_text
+        or "mode_action_authority_field_forbidden" not in tests_text
+        or '\\"card_slot\\":1,\\"damage\\":999,\\"boss_hp\\":0' not in tests_text
         or "transfer_card_not_authorized" not in tests_text
         or "transfer_card_mode_unsupported" not in tests_text
         or "transfer_card_owner_mismatch" not in tests_text
