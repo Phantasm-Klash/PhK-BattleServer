@@ -48,6 +48,13 @@ struct RegisterTicketResult {
 	std::string reason;
 	BattleSessionRecord session;
 	VerificationResult verification;
+	std::size_t active_sessions_before = 0;
+	std::size_t active_matches_before = 0;
+	std::size_t active_sessions_after = 0;
+	std::size_t active_matches_after = 0;
+	std::size_t match_session_count_before = 0;
+	std::size_t match_session_count_after = 0;
+	bool created_match = false;
 };
 
 struct SubmitBattleResultResult {
@@ -63,7 +70,17 @@ struct RetireMatchResult {
 	std::string reason;
 	std::string match_id;
 	std::string result_hash;
+	std::string input_stream_hash;
+	std::string event_stream_hash;
+	std::string final_state_hash;
+	std::uint64_t final_tick = 0;
+	std::uint64_t input_count = 0;
+	std::uint64_t event_count = 0;
+	std::size_t active_sessions_before = 0;
+	std::size_t active_matches_before = 0;
 	std::size_t removed_sessions = 0;
+	std::size_t active_sessions_after = 0;
+	std::size_t active_matches_after = 0;
 	bool already_retired = false;
 };
 

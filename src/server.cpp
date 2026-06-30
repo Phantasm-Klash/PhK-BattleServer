@@ -318,13 +318,39 @@ std::size_t BattleServer::ActiveMatchCount() const {
 
 RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& signed_ticket) {
     RegisterTicketResult result;
+    result.active_sessions_before = sessions_by_ticket_.size();
+    result.active_matches_before = simulations_by_match_.size();
+    for (const auto& item : sessions_by_ticket_) {
+        if (item.second.match_id == signed_ticket.ticket.match_id) {
+            ++result.match_session_count_before;
+        }
+    }
+    auto finish = [this, &result]() -> RegisterTicketResult {
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
+        result.match_session_count_after = 0;
+        for (const auto& item : sessions_by_ticket_) {
+            if (item.second.match_id == result.session.match_id || result.session.match_id.empty()) {
+                if (result.session.match_id.empty()) {
+                    continue;
+                }
+                ++result.match_session_count_after;
+            }
+        }
+        if (result.session.match_id.empty()) {
+            result.match_session_count_after = result.match_session_count_before;
+        }
+        return result;
+    };
     if (result_hash_by_match_.find(signed_ticket.ticket.match_id) != result_hash_by_match_.end()) {
         result.reason = "match_retired";
-        return result;
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
     }
     if (sessions_by_ticket_.find(signed_ticket.ticket.ticket_id) != sessions_by_ticket_.end()) {
         result.reason = "ticket_replay";
-        return result;
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
     }
 
     TicketVerificationOptions options;
@@ -335,14 +361,16 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     result.verification = ticket_verifier_.Verify(signed_ticket, options);
     if (!result.verification.ok) {
         result.reason = result.verification.reason;
-        return result;
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
     }
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& existing = item.second;
         if (existing.match_id == signed_ticket.ticket.match_id &&
             existing.player_id == signed_ticket.ticket.player_id) {
             result.reason = "player_session_replay";
-            return result;
+            result.session.match_id = signed_ticket.ticket.match_id;
+            return finish();
         }
     }
     std::size_t match_session_count = 0;
@@ -354,7 +382,8 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     }
     if (match_session_count >= MatchMaxPlayersForMode(config_, signed_ticket.ticket.mode_id)) {
         result.reason = "match_full";
-        return result;
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
     }
 
     BattleSessionRecord session;
@@ -379,13 +408,16 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         simulation_config.match_seed = DeriveMatchSeed(session.match_id);
         simulation_config.tick_rate_hz = kBattleTickRateHz;
         simulation_it = simulations_by_match_.emplace(session.match_id, BattleSimulation(simulation_config)).first;
+        result.created_match = true;
     } else if (
         simulation_it->second.Config().mode_id != session.mode_id ||
         simulation_it->second.Config().ruleset_version != signed_ticket.ticket.ruleset_version
     ) {
         sessions_by_ticket_.erase(session.ticket_id);
         result.reason = "match_mode_ruleset_mismatch";
-        return result;
+        result.session = session;
+        result.created_match = false;
+        return finish();
     }
     const auto initial_position = InitialPlayerPosition(
         session.mode_id,
@@ -396,7 +428,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     result.ok = true;
     result.reason = "ok";
     result.session = session;
-    return result;
+    return finish();
 }
 
 BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& hello) {
@@ -1059,9 +1091,13 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
 RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
     RetireMatchResult result;
     result.match_id = match_id;
+    result.active_sessions_before = sessions_by_ticket_.size();
+    result.active_matches_before = simulations_by_match_.size();
     const auto result_hash_it = result_hash_by_match_.find(match_id);
     if (result_hash_it == result_hash_by_match_.end()) {
         result.reason = "match_not_settled";
+        result.active_sessions_after = result.active_sessions_before;
+        result.active_matches_after = result.active_matches_before;
         return result;
     }
     result.result_hash = result_hash_it->second;
@@ -1071,8 +1107,17 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
         result.ok = true;
         result.reason = "ok";
         result.already_retired = true;
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
         return result;
     }
+    const ReplaySummary summary = simulation_it->second.Summary();
+    result.input_stream_hash = summary.input_stream_hash;
+    result.event_stream_hash = summary.event_stream_hash;
+    result.final_state_hash = summary.final_state_hash;
+    result.final_tick = summary.final_tick;
+    result.input_count = summary.input_count;
+    result.event_count = summary.event_count;
 
     for (auto session_it = sessions_by_ticket_.begin(); session_it != sessions_by_ticket_.end();) {
         if (session_it->second.match_id == match_id) {
@@ -1085,6 +1130,8 @@ RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {
     simulations_by_match_.erase(simulation_it);
     result.ok = true;
     result.reason = "ok";
+    result.active_sessions_after = sessions_by_ticket_.size();
+    result.active_matches_after = simulations_by_match_.size();
     return result;
 }
 
