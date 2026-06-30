@@ -617,10 +617,10 @@ def main() -> int:
         print("server implementation missing mode/ruleset, Boss pending config guard, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, transfer-card config facade, or registered-player authority guards", file=sys.stderr)
         return 1
     if (
-        server_impl.count("result.pending_boss_configs_before = pending_boss_config_by_match_.size()") < 2
-        or server_impl.count("result.pending_boss_configs_after = pending_boss_config_by_match_.size()") < 2
+        server_impl.count("result.pending_boss_configs_before = pending_boss_config_by_match_.size()") < 3
+        or server_impl.count("result.pending_boss_configs_after = pending_boss_config_by_match_.size()") < 3
     ):
-        print("server implementation missing Boss pending-config counts on configure and ticket registration lifecycle paths", file=sys.stderr)
+        print("server implementation missing Boss pending-config counts on configure, ticket registration, and cancellation lifecycle paths", file=sys.stderr)
         return 1
 
     server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
@@ -731,6 +731,7 @@ def main() -> int:
         or "boss_config_already_pending" not in tests_text
         or "pending_boss_configs_before" not in tests_text
         or "first_boss_ticket.pending_boss_configs_after" not in tests_text
+        or "cancelled_pending.pending_boss_configs_after" not in tests_text
     ):
         print("protocol/server tests missing header-bound development nonce or Boss pending-config lifecycle coverage", file=sys.stderr)
         return 1
