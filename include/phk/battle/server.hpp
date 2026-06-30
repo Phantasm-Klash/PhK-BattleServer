@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -171,6 +172,7 @@ private:
 		const std::string& mode_id,
 		std::size_t player_index
 	) const;
+	void UpdateBossRosterLock(const std::string& match_id, const BattleSimulation& simulation);
 
 	BattleServerConfig config_;
 	TicketVerifier ticket_verifier_;
@@ -180,6 +182,7 @@ private:
 	std::map<std::string, BattleSessionRecord> sessions_by_ticket_;
 	std::map<std::string, BattleSimulation> simulations_by_match_;
 	std::map<std::string, std::string> result_hash_by_match_;
+	std::set<std::string> boss_roster_locked_match_ids_;
 };
 
 class DecodedBattlePacketAdapter final {

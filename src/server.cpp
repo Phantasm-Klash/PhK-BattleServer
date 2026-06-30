@@ -385,10 +385,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         result.session.match_id = signed_ticket.ticket.match_id;
         return finish();
     }
-    const auto existing_simulation_it = simulations_by_match_.find(signed_ticket.ticket.match_id);
-    if (existing_simulation_it != simulations_by_match_.end() &&
-        IsBossMode(existing_simulation_it->second.Config().mode_id) &&
-        BossMatchReadyForResult(existing_simulation_it->second)) {
+    if (boss_roster_locked_match_ids_.find(signed_ticket.ticket.match_id) != boss_roster_locked_match_ids_.end()) {
         result.reason = "boss_roster_locked";
         result.session.match_id = signed_ticket.ticket.match_id;
         return finish();
@@ -744,7 +741,11 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     if (!accepted.ok) {
         return accepted;
     }
-    return simulation_it->second.SetPlayerConnected(action.player_id, true);
+    auto connected = simulation_it->second.SetPlayerConnected(action.player_id, true);
+    if (connected.ok) {
+        UpdateBossRosterLock(action.match_id, simulation_it->second);
+    }
+    return connected;
 }
 
 bool BattleServer::ConfigureTransferableCard(
@@ -792,7 +793,11 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
     if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
         return UnknownPlayerResult();
     }
-    return simulation_it->second.AcceptModeAction(action);
+    auto result = simulation_it->second.AcceptModeAction(action);
+    if (result.ok) {
+        UpdateBossRosterLock(action.match_id, simulation_it->second);
+    }
+    return result;
 }
 
 bool BattleServer::IsPlayerConnected(const std::string& match_id, const std::string& player_id) const {
@@ -818,7 +823,11 @@ InputValidationResult BattleServer::SetPlayerConnected(
     if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
         return MatchSettledResult();
     }
-    return simulation_it->second.SetPlayerConnected(player_id, connected);
+    auto result = simulation_it->second.SetPlayerConnected(player_id, connected);
+    if (result.ok) {
+        UpdateBossRosterLock(match_id, simulation_it->second);
+    }
+    return result;
 }
 
 BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
@@ -833,7 +842,9 @@ BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
         BattleSnapshot snapshot = simulation_it->second.Snapshot("match_settled");
         return snapshot;
     }
-    return simulation_it->second.Tick();
+    BattleSnapshot snapshot = simulation_it->second.Tick();
+    UpdateBossRosterLock(match_id, simulation_it->second);
+    return snapshot;
 }
 
 BattleSnapshot BattleServer::MatchSnapshot(const std::string& match_id) const {
@@ -1291,6 +1302,15 @@ std::pair<std::int32_t, std::int32_t> BattleServer::InitialPlayerPosition(
         return {20000, 0};
     }
     return {static_cast<std::int32_t>(player_index) * 10000 - 30000, 0};
+}
+
+void BattleServer::UpdateBossRosterLock(
+    const std::string& match_id,
+    const BattleSimulation& simulation
+) {
+    if (IsBossMode(simulation.Config().mode_id) && BossMatchReadyForResult(simulation)) {
+        boss_roster_locked_match_ids_.insert(match_id);
+    }
 }
 
 }  // namespace phk::battle
