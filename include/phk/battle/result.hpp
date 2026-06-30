@@ -58,10 +58,18 @@ struct BattleResultVerificationOptions {
     std::string required_boss_completion_policy;
     std::string required_boss_clear_status;
     std::string required_boss_result_disposition;
+    std::string required_last_transfer_card_instance_id;
+    std::string required_last_transfer_from_player_id;
+    std::string required_last_transfer_to_player_id;
+    std::string required_last_transfer_authority_owner_player_id;
     std::uint64_t required_boss_current_hp = 0;
     std::uint64_t required_boss_damage_total = 0;
     std::uint64_t required_boss_defeated = 0;
     std::uint64_t required_boss_defeated_tick = 0;
+    std::uint64_t required_transfer_card_count = 0;
+    std::uint64_t required_last_transfer_authority_mode_allowed = 0;
+    std::uint64_t required_last_transfer_authority_cost_paid = 0;
+    std::uint64_t required_last_transfer_authority_cooldown_ready = 0;
     std::map<std::string, std::uint64_t> required_boss_damage_by_player;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
@@ -69,6 +77,7 @@ struct BattleResultVerificationOptions {
     bool require_projection_only_reward = true;
     bool require_replay_counter_fields = false;
     bool require_boss_result_fields = false;
+    bool require_transfer_result_fields = false;
 };
 
 struct BattleResultVerification {

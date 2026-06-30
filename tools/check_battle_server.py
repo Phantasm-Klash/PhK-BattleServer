@@ -526,6 +526,15 @@ def main() -> int:
         or "options.required_boss_defeated_tick" not in server_impl
         or "options.required_boss_clear_status" not in server_impl
         or "options.required_boss_result_disposition" not in server_impl
+        or "options.require_transfer_result_fields = true" not in server_impl
+        or "options.required_transfer_card_count" not in server_impl
+        or "options.required_last_transfer_card_instance_id" not in server_impl
+        or "options.required_last_transfer_from_player_id" not in server_impl
+        or "options.required_last_transfer_to_player_id" not in server_impl
+        or "options.required_last_transfer_authority_owner_player_id" not in server_impl
+        or "options.required_last_transfer_authority_mode_allowed" not in server_impl
+        or "options.required_last_transfer_authority_cost_paid" not in server_impl
+        or "options.required_last_transfer_authority_cooldown_ready" not in server_impl
         or "input_stream_hash" not in server_impl
         or "event_stream_hash" not in server_impl
         or "final_state_hash" not in server_impl
@@ -566,6 +575,14 @@ def main() -> int:
         or "boss_defeated_tick_mismatch" not in result_impl
         or "boss_clear_status_mismatch" not in result_impl
         or "boss_result_disposition_mismatch" not in result_impl
+        or "transfer_card_count_mismatch" not in result_impl
+        or "transfer_card_instance_mismatch" not in result_impl
+        or "transfer_card_from_player_mismatch" not in result_impl
+        or "transfer_card_to_player_mismatch" not in result_impl
+        or "transfer_card_authority_owner_mismatch" not in result_impl
+        or "transfer_card_authority_mode_allowed_mismatch" not in result_impl
+        or "transfer_card_authority_cost_paid_mismatch" not in result_impl
+        or "transfer_card_authority_cooldown_mismatch" not in result_impl
         or "dev_result_signature_mismatch" not in result_impl
         or "DevBattleResultSignatureHex" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
@@ -741,6 +758,14 @@ def main() -> int:
         or "boss_defeated_tick_mismatch" not in tests_text
         or "boss_clear_status_mismatch" not in tests_text
         or "boss_result_disposition_mismatch" not in tests_text
+        or "transfer_card_count_mismatch" not in tests_text
+        or "transfer_card_instance_mismatch" not in tests_text
+        or "transfer_card_from_player_mismatch" not in tests_text
+        or "transfer_card_to_player_mismatch" not in tests_text
+        or "transfer_card_authority_owner_mismatch" not in tests_text
+        or "transfer_card_authority_mode_allowed_mismatch" not in tests_text
+        or "transfer_card_authority_cost_paid_mismatch" not in tests_text
+        or "transfer_card_authority_cooldown_mismatch" not in tests_text
         or "world_damage_report" not in tests_text
         or "instance_cleared" not in tests_text
         or "instance_incomplete" not in tests_text

@@ -849,6 +849,22 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
             }
         }
     }
+    const auto transfer_card_count = mode_state.find("transfer_card_count");
+    if (transfer_card_count != mode_state.end()) {
+        options.require_transfer_result_fields = true;
+        options.required_transfer_card_count = std::stoull(transfer_card_count->second);
+        options.required_last_transfer_card_instance_id = mode_state.at("last_transfer_card_instance_id");
+        options.required_last_transfer_from_player_id = mode_state.at("last_transfer_from_player_id");
+        options.required_last_transfer_to_player_id = mode_state.at("last_transfer_to_player_id");
+        options.required_last_transfer_authority_owner_player_id =
+            mode_state.at("last_transfer_authority_owner_player_id");
+        options.required_last_transfer_authority_mode_allowed =
+            std::stoull(mode_state.at("last_transfer_authority_mode_allowed"));
+        options.required_last_transfer_authority_cost_paid =
+            std::stoull(mode_state.at("last_transfer_authority_cost_paid"));
+        options.required_last_transfer_authority_cooldown_ready =
+            std::stoull(mode_state.at("last_transfer_authority_cooldown_ready"));
+    }
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
         if (session.match_id == signed_result.result.match_id) {

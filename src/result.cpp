@@ -306,6 +306,74 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "boss_result_disposition_mismatch");
         return verification;
     }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "transfer_card_count", options.required_transfer_card_count)) {
+        Fail(verification, "transfer_card_count_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "last_transfer_card_instance_id",
+            options.required_last_transfer_card_instance_id
+        )) {
+        Fail(verification, "transfer_card_instance_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "last_transfer_from_player_id",
+            options.required_last_transfer_from_player_id
+        )) {
+        Fail(verification, "transfer_card_from_player_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "last_transfer_to_player_id",
+            options.required_last_transfer_to_player_id
+        )) {
+        Fail(verification, "transfer_card_to_player_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "last_transfer_authority_owner_player_id",
+            options.required_last_transfer_authority_owner_player_id
+        )) {
+        Fail(verification, "transfer_card_authority_owner_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "last_transfer_authority_mode_allowed",
+            options.required_last_transfer_authority_mode_allowed
+        )) {
+        Fail(verification, "transfer_card_authority_mode_allowed_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "last_transfer_authority_cost_paid",
+            options.required_last_transfer_authority_cost_paid
+        )) {
+        Fail(verification, "transfer_card_authority_cost_paid_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "last_transfer_authority_cooldown_ready",
+            options.required_last_transfer_authority_cooldown_ready
+        )) {
+        Fail(verification, "transfer_card_authority_cooldown_mismatch");
+        return verification;
+    }
     if (result.reward_projection_json.empty()) {
         Fail(verification, "reward_projection_missing");
         return verification;

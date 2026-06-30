@@ -2,6 +2,13 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Transfer Card Result Verification Boundary
+
+- `BattleServer::SubmitBattleResult` now binds accepted Boss `transfer_card` projection fields back to the server-owned final replay snapshot before accepting a signed result callback.
+- `BattleResultVerifier` rejects tampered transfer count, card instance id, from/to player ids, and frozen authority flags with dedicated mismatch reasons.
+- The existing Boss result submission test now covers a signed result that includes a server-authorized card transfer, then mutates each transfer projection field to prove the C++ boundary catches forged settlement audit material.
+- This remains replay/result audit projection only; the C++ battle server still does not write inventory, rewards, wallets, Steam state, or databases.
+
 ## 2026-06-30 Boss Result Projection Verification Boundary
 
 - `BattleServer::SubmitBattleResult` now binds Boss settlement projection fields back to the server-owned final replay snapshot before accepting a signed result callback.

@@ -1793,8 +1793,22 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         "00112233445566778899ef04"
     )).ok);
 
+    phk::battle::TransferableCardState transfer_card;
+    transfer_card.card_instance_id = "instance-result-card-001";
+    transfer_card.owner_player_id = "p1";
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
+
+    auto transfer = MakeModeAction(2);
+    transfer.match_id = "match-001";
+    transfer.player_id = "p1";
+    transfer.tick = 1;
+    transfer.seq = 2;
+    transfer.action_id = "action-instance-result-transfer";
+    transfer.action_type = "transfer_card";
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-result-card-001\"}";
+    CHECK_TRUE(server.AcceptModeAction(transfer).ok);
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto built = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(built.ok);
@@ -1810,6 +1824,36 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"last_transfer_card_instance_id\":\"instance-result-card-001\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_mode_allowed\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_cost_paid\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_cooldown_ready\":1") !=
+        std::string::npos
+    );
 
     auto wrong_scope = built.signed_result;
     wrong_scope.result.mode_result_json = ReplaceJsonStringField(
@@ -1890,6 +1934,95 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_disposition_result = server.SubmitBattleResult(wrong_disposition);
     CHECK_TRUE(!wrong_disposition_result.ok);
     CHECK_EQ(wrong_disposition_result.reason, std::string("boss_result_disposition_mismatch"));
+
+    auto wrong_transfer_count = built.signed_result;
+    wrong_transfer_count.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_count.result.mode_result_json,
+        "\"transfer_card_count\":1",
+        "\"transfer_card_count\":2"
+    );
+    const auto wrong_transfer_count_result = server.SubmitBattleResult(wrong_transfer_count);
+    CHECK_TRUE(!wrong_transfer_count_result.ok);
+    CHECK_EQ(wrong_transfer_count_result.reason, std::string("transfer_card_count_mismatch"));
+
+    auto wrong_transfer_instance = built.signed_result;
+    wrong_transfer_instance.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_instance.result.mode_result_json,
+        "last_transfer_card_instance_id",
+        "forged-card"
+    );
+    const auto wrong_transfer_instance_result = server.SubmitBattleResult(wrong_transfer_instance);
+    CHECK_TRUE(!wrong_transfer_instance_result.ok);
+    CHECK_EQ(wrong_transfer_instance_result.reason, std::string("transfer_card_instance_mismatch"));
+
+    auto wrong_transfer_from = built.signed_result;
+    wrong_transfer_from.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_from.result.mode_result_json,
+        "last_transfer_from_player_id",
+        "p2"
+    );
+    const auto wrong_transfer_from_result = server.SubmitBattleResult(wrong_transfer_from);
+    CHECK_TRUE(!wrong_transfer_from_result.ok);
+    CHECK_EQ(wrong_transfer_from_result.reason, std::string("transfer_card_from_player_mismatch"));
+
+    auto wrong_transfer_to = built.signed_result;
+    wrong_transfer_to.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_to.result.mode_result_json,
+        "last_transfer_to_player_id",
+        "p3"
+    );
+    const auto wrong_transfer_to_result = server.SubmitBattleResult(wrong_transfer_to);
+    CHECK_TRUE(!wrong_transfer_to_result.ok);
+    CHECK_EQ(wrong_transfer_to_result.reason, std::string("transfer_card_to_player_mismatch"));
+
+    auto wrong_transfer_owner = built.signed_result;
+    wrong_transfer_owner.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_owner.result.mode_result_json,
+        "last_transfer_authority_owner_player_id",
+        "p2"
+    );
+    const auto wrong_transfer_owner_result = server.SubmitBattleResult(wrong_transfer_owner);
+    CHECK_TRUE(!wrong_transfer_owner_result.ok);
+    CHECK_EQ(wrong_transfer_owner_result.reason, std::string("transfer_card_authority_owner_mismatch"));
+
+    auto wrong_transfer_mode_allowed = built.signed_result;
+    wrong_transfer_mode_allowed.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_mode_allowed.result.mode_result_json,
+        "\"last_transfer_authority_mode_allowed\":1",
+        "\"last_transfer_authority_mode_allowed\":0"
+    );
+    const auto wrong_transfer_mode_allowed_result = server.SubmitBattleResult(wrong_transfer_mode_allowed);
+    CHECK_TRUE(!wrong_transfer_mode_allowed_result.ok);
+    CHECK_EQ(
+        wrong_transfer_mode_allowed_result.reason,
+        std::string("transfer_card_authority_mode_allowed_mismatch")
+    );
+
+    auto wrong_transfer_cost_paid = built.signed_result;
+    wrong_transfer_cost_paid.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_cost_paid.result.mode_result_json,
+        "\"last_transfer_authority_cost_paid\":1",
+        "\"last_transfer_authority_cost_paid\":0"
+    );
+    const auto wrong_transfer_cost_paid_result = server.SubmitBattleResult(wrong_transfer_cost_paid);
+    CHECK_TRUE(!wrong_transfer_cost_paid_result.ok);
+    CHECK_EQ(
+        wrong_transfer_cost_paid_result.reason,
+        std::string("transfer_card_authority_cost_paid_mismatch")
+    );
+
+    auto wrong_transfer_cooldown = built.signed_result;
+    wrong_transfer_cooldown.result.mode_result_json = ReplaceFirst(
+        wrong_transfer_cooldown.result.mode_result_json,
+        "\"last_transfer_authority_cooldown_ready\":1",
+        "\"last_transfer_authority_cooldown_ready\":0"
+    );
+    const auto wrong_transfer_cooldown_result = server.SubmitBattleResult(wrong_transfer_cooldown);
+    CHECK_TRUE(!wrong_transfer_cooldown_result.ok);
+    CHECK_EQ(
+        wrong_transfer_cooldown_result.reason,
+        std::string("transfer_card_authority_cooldown_mismatch")
+    );
 
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
