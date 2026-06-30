@@ -78,6 +78,13 @@ std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std
     return config.max_players;
 }
 
+bool BossMatchReadyForResult(const BattleSimulation& simulation) {
+    if (!IsBossMode(simulation.Config().mode_id)) {
+        return true;
+    }
+    return simulation.PlayerCount() >= 4 && simulation.PlayerCount() <= 8;
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -698,6 +705,10 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
         result.reason = "match_unknown";
         return result;
     }
+    if (!BossMatchReadyForResult(simulation_it->second)) {
+        result.reason = "boss_match_not_startable";
+        return result;
+    }
 
     const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
     result.replay_summary = replay_fixture.summary;
@@ -788,6 +799,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         result.reason = "match_unknown";
         return result;
     }
+    if (!BossMatchReadyForResult(simulation_it->second)) {
+        result.reason = "boss_match_not_startable";
+        return result;
+    }
 
     BattleResultVerificationOptions options;
     options.required_match_id = signed_result.result.match_id;
@@ -826,6 +841,12 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_defeated = std::stoull(mode_state.at("boss_defeated"));
         options.required_boss_clear_status = mode_state.at("boss_clear_status");
         options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
+        for (const auto& player : replay_fixture.final_snapshot.players) {
+            const auto damage_it = mode_state.find("boss_damage_" + player.player_id);
+            if (damage_it != mode_state.end()) {
+                options.required_boss_damage_by_player[player.player_id] = std::stoull(damage_it->second);
+            }
+        }
     }
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;

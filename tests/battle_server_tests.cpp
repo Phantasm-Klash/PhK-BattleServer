@@ -1379,6 +1379,14 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_player_count"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p2_spawn_slot"), std::string("east"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p2_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p3_spawn_slot"), std::string("south"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p3_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p4_spawn_slot"), std::string("west"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p4_fire_target"), std::string("boss_center"));
     CHECK_EQ(boss_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(boss_snapshot.players[0].x_milli, 0);
     CHECK_EQ(boss_snapshot.players[0].y_milli, -60000);
@@ -1394,6 +1402,8 @@ bool TestBossModeSpawnLayout() {
     CHECK_TRUE(pvp_server.RegisterTicket(MakeTicketForBob()).ok);
     const auto pvp_snapshot = pvp_server.MatchSnapshot("match-001");
     CHECK_TRUE(pvp_snapshot.mode_state.find("battle_layout") == pvp_snapshot.mode_state.end());
+    CHECK_TRUE(pvp_snapshot.mode_state.find("boss_player_p1_spawn_slot") == pvp_snapshot.mode_state.end());
+    CHECK_TRUE(pvp_snapshot.mode_state.find("boss_player_p1_fire_target") == pvp_snapshot.mode_state.end());
     CHECK_EQ(pvp_snapshot.players[0].x_milli, -20000);
     CHECK_EQ(pvp_snapshot.players[0].y_milli, 0);
     CHECK_EQ(pvp_snapshot.players[1].x_milli, 20000);
@@ -1432,6 +1442,30 @@ bool TestBossModeCapacityGuard() {
     CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(snapshot.mode_state.at("boss_max_players"), std::string("8"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p1_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p2_spawn_slot"), std::string("east"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p2_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p3_spawn_slot"), std::string("south"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p3_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p4_spawn_slot"), std::string("west"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p4_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p5_spawn_slot"), std::string("northeast"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p5_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p6_spawn_slot"), std::string("southeast"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p6_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p7_spawn_slot"), std::string("southwest"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p7_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p8_spawn_slot"), std::string("northwest"));
+    CHECK_EQ(snapshot.mode_state.at("boss_player_p8_fire_target"), std::string("boss_center"));
+    CHECK_EQ(snapshot.players[4].x_milli, 42426);
+    CHECK_EQ(snapshot.players[4].y_milli, -42426);
+    CHECK_EQ(snapshot.players[5].x_milli, 42426);
+    CHECK_EQ(snapshot.players[5].y_milli, 42426);
+    CHECK_EQ(snapshot.players[6].x_milli, -42426);
+    CHECK_EQ(snapshot.players[6].y_milli, 42426);
+    CHECK_EQ(snapshot.players[7].x_milli, -42426);
+    CHECK_EQ(snapshot.players[7].y_milli, -42426);
 
     phk::battle::BattleServer pvp_server(config);
     for (std::size_t index = 1; index <= 10; ++index) {
@@ -1743,6 +1777,20 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         "instance_boss",
         "00112233445566778899ef02"
     )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-instance-result-3",
+        "user-instance-result-3",
+        "p3",
+        "instance_boss",
+        "00112233445566778899ef03"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-instance-result-4",
+        "user-instance-result-4",
+        "p4",
+        "instance_boss",
+        "00112233445566778899ef04"
+    )).ok);
 
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
@@ -1755,6 +1803,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
@@ -1789,6 +1839,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(!wrong_damage_total_result.ok);
     CHECK_EQ(wrong_damage_total_result.reason, std::string("boss_damage_total_mismatch"));
 
+    auto wrong_player_damage = built.signed_result;
+    wrong_player_damage.result.mode_result_json = ReplaceFirst(
+        wrong_player_damage.result.mode_result_json,
+        "\"boss_damage_p1\":10",
+        "\"boss_damage_p1\":0"
+    );
+    const auto wrong_player_damage_result = server.SubmitBattleResult(wrong_player_damage);
+    CHECK_TRUE(!wrong_player_damage_result.ok);
+    CHECK_EQ(wrong_player_damage_result.reason, std::string("boss_player_damage_mismatch"));
+
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(
         wrong_defeated.result.mode_result_json,
@@ -1822,6 +1882,53 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
     CHECK_TRUE(!accepted.duplicate);
+    return true;
+}
+
+bool TestBossModeResultRequiresStartableRoom() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489645000;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 3; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-underfilled-boss-" + std::to_string(index),
+            "user-underfilled-boss-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            "00112233445566778899fa0" + std::to_string(index)
+        )).ok);
+    }
+    const auto underfilled_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(underfilled_snapshot.players.size(), static_cast<std::size_t>(3));
+    CHECK_EQ(underfilled_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(underfilled_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+
+    const auto underfilled_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!underfilled_result.ok);
+    CHECK_EQ(underfilled_result.reason, std::string("boss_match_not_startable"));
+
+    const auto underfilled_replay_record = server.BuildReplayRecord("match-001", "user-underfilled", "stage-boss");
+    CHECK_TRUE(!underfilled_replay_record.ok);
+    CHECK_EQ(underfilled_replay_record.reason, std::string("boss_match_not_startable"));
+
+    phk::battle::SignedBattleResult forged_result;
+    forged_result.result.match_id = "match-001";
+    const auto forged_submit = server.SubmitBattleResult(forged_result);
+    CHECK_TRUE(!forged_submit.ok);
+    CHECK_EQ(forged_submit.reason, std::string("boss_match_not_startable"));
+
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-underfilled-boss-4",
+        "user-underfilled-boss-4",
+        "p4",
+        "world_boss",
+        "00112233445566778899fa04"
+    )).ok);
+    const auto startable_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(startable_snapshot.players.size(), static_cast<std::size_t>(4));
+    CHECK_EQ(startable_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
     return true;
 }
 
@@ -3342,6 +3449,7 @@ int main() {
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
+        {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},

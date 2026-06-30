@@ -71,6 +71,34 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
+    if (x_milli == 0 && y_milli < 0) {
+        return "north";
+    }
+    if (x_milli > 0 && y_milli < 0) {
+        return "northeast";
+    }
+    if (x_milli > 0 && y_milli == 0) {
+        return "east";
+    }
+    if (x_milli > 0 && y_milli > 0) {
+        return "southeast";
+    }
+    if (x_milli == 0 && y_milli > 0) {
+        return "south";
+    }
+    if (x_milli < 0 && y_milli > 0) {
+        return "southwest";
+    }
+    if (x_milli < 0 && y_milli == 0) {
+        return "west";
+    }
+    if (x_milli < 0 && y_milli < 0) {
+        return "northwest";
+    }
+    return "center";
+}
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
     const std::string prefix = "\"" + std::string(field_name) + "\":\"";
     const auto value_start = payload_json.find(prefix);
@@ -566,6 +594,12 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         }
         for (const auto& item : boss_damage_by_player_) {
             snapshot.mode_state["boss_damage_" + item.first] = std::to_string(item.second);
+        }
+        for (const auto& item : players_) {
+            const PlayerState& player = item.second;
+            snapshot.mode_state["boss_player_" + player.player_id + "_spawn_slot"] =
+                BossSpawnSlotName(player.x_milli, player.y_milli);
+            snapshot.mode_state["boss_player_" + player.player_id + "_fire_target"] = "boss_center";
         }
     }
     if (transfer_card_count_ > 0) {
