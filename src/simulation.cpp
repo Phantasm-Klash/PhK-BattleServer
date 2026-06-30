@@ -214,6 +214,9 @@ InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& pl
     PlayerState& player = player_it->second;
     if (player.connected != connected) {
         player.connected = connected;
+        if (!connected) {
+            ready_player_ids_.erase(player.player_id);
+        }
         AccumulateConnectionEvent(player);
     }
 
@@ -482,6 +485,18 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     }
     snapshot.mode_state["connected_player_count"] = std::to_string(connected_player_count);
     snapshot.mode_state["disconnected_player_count"] = std::to_string(players_.size() - connected_player_count);
+    std::size_t ready_connected_player_count = 0;
+    for (const auto& player_id : ready_player_ids_) {
+        const auto player_it = players_.find(player_id);
+        if (player_it != players_.end() && player_it->second.connected) {
+            ++ready_connected_player_count;
+        }
+    }
+    snapshot.mode_state["ready_player_count"] = std::to_string(ready_connected_player_count);
+    snapshot.mode_state["all_players_ready"] =
+        !players_.empty() &&
+            connected_player_count == players_.size() &&
+            ready_connected_player_count == players_.size() ? "1" : "0";
     if (IsBossMode(config_.mode_id)) {
         snapshot.mode_state["battle_layout"] = "boss_center_ring";
         snapshot.mode_state["boss_center_x_milli"] = "0";
@@ -662,6 +677,9 @@ std::string BattleSimulation::CanonicalStateHash() const {
     hash = HashAppend(hash, neutral_fallback_count_);
     hash = HashAppend(hash, held_input_fallback_count_);
     hash = HashAppend(hash, mode_action_count_);
+    for (const auto& player_id : ready_player_ids_) {
+        hash = HashAppend(hash, player_id);
+    }
     if (transfer_card_count_ > 0) {
         hash = HashAppend(hash, transfer_card_count_);
         hash = HashAppend(hash, last_transfer_card_instance_id_);
@@ -1027,12 +1045,19 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
                 AccumulateConnectionEvent(player_it->second);
             }
         }
+        if (action.action_type == "ready") {
+            ApplyReadyModeAction(action);
+        }
         if (action.action_type == "transfer_card") {
             ApplyTransferCardModeAction(action);
         }
         AccumulateAcceptedModeAction(action);
     }
     pending_mode_actions_by_tick_.erase(actions_it);
+}
+
+void BattleSimulation::ApplyReadyModeAction(const BattleModeAction& action) {
+    ready_player_ids_.insert(action.player_id);
 }
 
 void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& action) {

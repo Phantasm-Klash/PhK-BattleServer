@@ -189,6 +189,7 @@ private:
     void ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyBossDamageForInput(const PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyModeActionsForTick(std::uint64_t tick);
+    void ApplyReadyModeAction(const BattleModeAction& action);
     void ApplyTransferCardModeAction(const BattleModeAction& action);
     void SpawnBulletsForTick();
     void AdvanceBullets();
@@ -216,6 +217,7 @@ private:
     bool has_last_mode_action_ = false;
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
+    std::set<std::string> ready_player_ids_;
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;

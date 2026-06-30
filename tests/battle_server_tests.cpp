@@ -812,8 +812,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "42766442ae642a9d237b9d39a374e07c806bf254c442bedf61712b4bb95374be"
-            "c68b481e82a70219a790811577b7b7f80480d6309885965be5860f278d964c3a"
+            "375dc2635621991c5658896c6110e33d755350756c002d5e944e177e76ef777f"
+            "bb72a63f2a647098da6d6d483553bab9f9683451404304da1862fb5a4b324efb"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -830,7 +830,7 @@ bool TestBuildSignedBattleResultCallback() {
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"replay_summary_hash\":\"sha256:dev-fnv64-f286e5b4976a50da\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e23b1e341f35e87\"}|1782489630000"
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-b861d9cb008d0d02\"}|1782489630000"
         )
     );
     CHECK_TRUE(
@@ -936,7 +936,7 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-4e23b1e341f35e87\""
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-b861d9cb008d0d02\""
         ) != std::string::npos
     );
 
@@ -1184,6 +1184,56 @@ bool TestFallbackInputReplayAudit() {
     CHECK_EQ(held_snapshot.mode_state.at("held_input_fallback_count"), std::string("1"));
     CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_EQ(simulation.Summary().final_state_hash, held_snapshot.state_hash);
+    return true;
+}
+
+bool TestReadyModeActionLifecycleState() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-ready";
+    config.mode_id = "pvp_duel";
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
+
+    const auto initial_snapshot = simulation.Snapshot();
+    CHECK_EQ(initial_snapshot.mode_state.at("ready_player_count"), std::string("0"));
+    CHECK_EQ(initial_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+
+    auto p1_ready = MakeModeAction(1);
+    p1_ready.match_id = config.match_id;
+    p1_ready.player_id = "p1";
+    p1_ready.tick = 1;
+    p1_ready.seq = 1;
+    p1_ready.action_id = "ready-p1";
+    p1_ready.action_type = "ready";
+    p1_ready.payload_json = "{\"ready\":true}";
+    CHECK_TRUE(simulation.AcceptModeAction(p1_ready).ok);
+    const auto p1_ready_snapshot = simulation.Tick();
+    CHECK_EQ(p1_ready_snapshot.mode_state.at("ready_player_count"), std::string("1"));
+    CHECK_EQ(p1_ready_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+
+    auto p2_ready = p1_ready;
+    p2_ready.player_id = "p2";
+    p2_ready.tick = 2;
+    p2_ready.seq = 1;
+    p2_ready.action_id = "ready-p2";
+    CHECK_TRUE(simulation.AcceptModeAction(p2_ready).ok);
+    const auto all_ready_snapshot = simulation.Tick();
+    CHECK_EQ(all_ready_snapshot.mode_state.at("ready_player_count"), std::string("2"));
+    CHECK_EQ(all_ready_snapshot.mode_state.at("all_players_ready"), std::string("1"));
+
+    CHECK_TRUE(simulation.SetPlayerConnected("p2", false).ok);
+    const auto disconnected_snapshot = simulation.Snapshot();
+    CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("ready_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+
+    CHECK_TRUE(simulation.SetPlayerConnected("p2", true).ok);
+    const auto reconnected_snapshot = simulation.Snapshot();
+    CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("ready_player_count"), std::string("1"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
     return true;
 }
 
@@ -1774,7 +1824,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-f2df27561abbe64e")
+        std::string("sha256:dev-fnv64-92909ca8a1120107")
     );
     auto tampered_fixture_record = fixture;
     tampered_fixture_record.replay_summary_record.final_state_hash = "fnv64:0000000000000000";
@@ -1889,7 +1939,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-c17015ae6005b256")
+        std::string("sha256:dev-fnv64-54d3460c16224ec7")
     );
 
     auto tampered_stream = built.replay_record;
@@ -3057,6 +3107,7 @@ int main() {
 		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
+        {"ReadyModeActionLifecycleState", TestReadyModeActionLifecycleState},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
