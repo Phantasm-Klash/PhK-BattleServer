@@ -34,6 +34,12 @@ struct BossMatchConfig {
 struct ConfigureBossMatchResult {
     bool ok = false;
     std::string reason;
+    std::size_t active_sessions_before = 0;
+    std::size_t active_matches_before = 0;
+    std::size_t pending_boss_configs_before = 0;
+    std::size_t active_sessions_after = 0;
+    std::size_t active_matches_after = 0;
+    std::size_t pending_boss_configs_after = 0;
 };
 
 struct BattleSessionRecord {

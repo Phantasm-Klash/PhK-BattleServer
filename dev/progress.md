@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Pending Config Idempotency Boundary
+
+- `ConfigureBossMatch` now treats a pre-created Boss match config as a one-shot allocation contract before the first battle ticket creates the simulation.
+- Reconfiguring the same pending `match_id` is rejected with `boss_config_already_pending`, preserving the original Boss instance id, season, phase, HP, and friendly-fire material that later feeds snapshots, replay fixtures, and signed-result audit projection.
+- `ConfigureBossMatchResult` now reports active session/match counts and pending Boss config counts before and after the call, giving compact structured lifecycle status without logging large state dumps. This remains in-memory battle allocation metadata only and does not write Boss persistence, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Lifecycle State Audit Boundary
 
 - Boss snapshots now expose `boss_lifecycle_state` as `waiting_for_players`, `waiting_for_ready`, or `start_ready`, derived only from server-owned connected/registered/ready state.
