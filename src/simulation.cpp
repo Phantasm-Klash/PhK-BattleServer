@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -117,6 +119,26 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
         return "";
     }
     return std::string(payload_json.substr(string_start, string_end - string_start));
+}
+
+std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return std::nullopt;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    if (payload_json.substr(token_start, 4) == "true") {
+        return true;
+    }
+    if (payload_json.substr(token_start, 5) == "false") {
+        return false;
+    }
+    return std::nullopt;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -421,6 +443,19 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_client_result_forbidden";
         return result;
     }
+    if (action.action_type == "ready") {
+        const auto ready = ExtractJsonBoolField(action.payload_json, "ready");
+        if (!ready.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "ready_payload_missing";
+            return result;
+        }
+        if (!ready.value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "ready_payload_not_true";
+            return result;
+        }
+    }
     if (action.action_type == "transfer_card") {
         const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
         const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
@@ -573,18 +608,24 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             connected_player_count == players_.size() &&
             ready_connected_player_count == players_.size() ? "1" : "0";
     if (IsBossMode(config_.mode_id)) {
+        const bool boss_start_ready = connected_player_count >= 4 && connected_player_count <= 8;
+        const bool boss_all_registered_connected =
+            !players_.empty() && connected_player_count == players_.size();
+        const bool boss_all_registered_ready =
+            boss_all_registered_connected && ready_connected_player_count == players_.size();
         snapshot.mode_state["battle_layout"] = "boss_center_ring";
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
         snapshot.mode_state["player_fire_target"] = "boss_center";
         snapshot.mode_state["boss_min_players"] = "4";
         snapshot.mode_state["boss_max_players"] = "8";
+        snapshot.mode_state["boss_registered_player_count"] = std::to_string(players_.size());
         snapshot.mode_state["boss_ready_player_count"] = std::to_string(ready_connected_player_count);
-        snapshot.mode_state["boss_start_ready"] =
-            connected_player_count >= 4 && connected_player_count <= 8 ? "1" : "0";
+        snapshot.mode_state["boss_all_registered_connected"] = BoolToken(boss_all_registered_connected);
+        snapshot.mode_state["boss_all_registered_ready"] = BoolToken(boss_all_registered_ready);
+        snapshot.mode_state["boss_start_ready"] = BoolToken(boss_start_ready);
         snapshot.mode_state["boss_ready_to_start"] =
-            snapshot.mode_state["boss_start_ready"] == "1" &&
-                snapshot.mode_state["all_players_ready"] == "1" ? "1" : "0";
+            BoolToken(boss_start_ready && boss_all_registered_ready);
         snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
@@ -1031,6 +1072,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_max_players != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_max_players\":" + boss_max_players->second;
     }
+    const auto boss_registered_player_count = fixture.final_snapshot.mode_state.find("boss_registered_player_count");
+    if (boss_registered_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_registered_player_count\":" + boss_registered_player_count->second;
+    }
     const auto boss_start_ready = fixture.final_snapshot.mode_state.find("boss_start_ready");
     if (boss_start_ready != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_start_ready\":" + boss_start_ready->second;
@@ -1038,6 +1083,14 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_ready_player_count = fixture.final_snapshot.mode_state.find("boss_ready_player_count");
     if (boss_ready_player_count != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_ready_player_count\":" + boss_ready_player_count->second;
+    }
+    const auto boss_all_registered_connected = fixture.final_snapshot.mode_state.find("boss_all_registered_connected");
+    if (boss_all_registered_connected != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_all_registered_connected\":" + boss_all_registered_connected->second;
+    }
+    const auto boss_all_registered_ready = fixture.final_snapshot.mode_state.find("boss_all_registered_ready");
+    if (boss_all_registered_ready != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_all_registered_ready\":" + boss_all_registered_ready->second;
     }
     const auto boss_ready_to_start = fixture.final_snapshot.mode_state.find("boss_ready_to_start");
     if (boss_ready_to_start != fixture.final_snapshot.mode_state.end()) {

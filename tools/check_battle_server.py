@@ -799,11 +799,19 @@ def main() -> int:
         or "transfer_card_mode_forbidden" not in tests_text
         or "transfer_card_cost_unpaid" not in tests_text
         or "transfer_card_cooldown_blocked" not in tests_text
+        or "ready_payload_missing" not in tests_text
+        or "ready_payload_not_true" not in tests_text
         or "ConfigureTransferableCard" not in tests_text
         or "boss_result_disposition" not in tests_text
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
         or "boss_friendly_fire_policy_mismatch" not in tests_text
+        or "boss_registered_player_count" not in tests_text
+        or "boss_registered_player_count_mismatch" not in tests_text
+        or "boss_all_registered_connected" not in tests_text
+        or "boss_all_registered_connected_mismatch" not in tests_text
+        or "boss_all_registered_ready" not in tests_text
+        or "boss_all_registered_ready_mismatch" not in tests_text
         or "connected_player_count_mismatch" not in tests_text
         or "disconnected_player_count_mismatch" not in tests_text
         or "boss_max_hp_mismatch" not in tests_text

@@ -355,6 +355,15 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_registered_player_count",
+            options.required_boss_registered_player_count
+        )) {
+        Fail(verification, "boss_registered_player_count_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_start_ready", options.required_boss_start_ready)) {
         Fail(verification, "boss_start_ready_mismatch");
         return verification;
@@ -366,6 +375,24 @@ BattleResultVerification BattleResultVerifier::Verify(
             options.required_boss_ready_player_count
         )) {
         Fail(verification, "boss_ready_player_count_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_all_registered_connected",
+            options.required_boss_all_registered_connected
+        )) {
+        Fail(verification, "boss_all_registered_connected_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_all_registered_ready",
+            options.required_boss_all_registered_ready
+        )) {
+        Fail(verification, "boss_all_registered_ready_mismatch");
         return verification;
     }
     if (options.require_boss_result_fields &&

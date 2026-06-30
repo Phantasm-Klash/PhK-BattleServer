@@ -1333,6 +1333,25 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(initial_snapshot.mode_state.at("ready_player_count"), std::string("0"));
     CHECK_EQ(initial_snapshot.mode_state.at("all_players_ready"), std::string("0"));
 
+    auto missing_ready_payload = MakeModeAction(1);
+    missing_ready_payload.match_id = config.match_id;
+    missing_ready_payload.player_id = "p1";
+    missing_ready_payload.tick = 1;
+    missing_ready_payload.seq = 1;
+    missing_ready_payload.action_id = "ready-missing-payload";
+    missing_ready_payload.action_type = "ready";
+    missing_ready_payload.payload_json = "{\"client_ready\":true}";
+    const auto missing_ready_result = simulation.AcceptModeAction(missing_ready_payload);
+    CHECK_TRUE(!missing_ready_result.ok);
+    CHECK_EQ(missing_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto false_ready_payload = missing_ready_payload;
+    false_ready_payload.payload_json = "{\"ready\":false}";
+    const auto false_ready_result = simulation.AcceptModeAction(false_ready_payload);
+    CHECK_TRUE(!false_ready_result.ok);
+    CHECK_EQ(false_ready_result.reason, std::string("ready_payload_not_true"));
+    CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";
@@ -1499,8 +1518,11 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("player_fire_target"), std::string("boss_center"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_min_players"), std::string("4"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_max_players"), std::string("8"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_player_count"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_fire_target"), std::string("boss_center"));
@@ -1562,7 +1584,10 @@ bool TestBossModeCapacityGuard() {
 
     const auto snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(8));
+    CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("8"));
     CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(snapshot.mode_state.at("boss_max_players"), std::string("8"));
     CHECK_EQ(snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
@@ -1628,6 +1653,9 @@ bool TestBossStartReadinessTracksConnectedPlayers() {
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("3"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_connected"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
 
@@ -1635,6 +1663,9 @@ bool TestBossStartReadinessTracksConnectedPlayers() {
     const auto reconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("4"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     return true;
@@ -1669,14 +1700,20 @@ bool TestBossReadyToStartRequiresAllReadyPlayers() {
 
     const auto ready_snapshot = server.TickMatch("match-001");
     CHECK_EQ(ready_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
     CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_all_registered_ready"), std::string("1"));
     CHECK_EQ(ready_snapshot.mode_state.at("all_players_ready"), std::string("1"));
     CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_player_count"), std::string("3"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_connected"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     return true;
@@ -1858,8 +1895,11 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_registered_player_count\":2") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_start_ready\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_all_registered_connected\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_all_registered_ready\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"connected_player_count\":2") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
@@ -1971,8 +2011,11 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_registered_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_connected\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_ready\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
@@ -2064,6 +2107,19 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(!wrong_min_players_result.ok);
     CHECK_EQ(wrong_min_players_result.reason, std::string("boss_min_players_mismatch"));
 
+    auto wrong_registered_player_count = built.signed_result;
+    wrong_registered_player_count.result.mode_result_json = ReplaceFirst(
+        wrong_registered_player_count.result.mode_result_json,
+        "\"boss_registered_player_count\":4",
+        "\"boss_registered_player_count\":3"
+    );
+    const auto wrong_registered_player_count_result = server.SubmitBattleResult(wrong_registered_player_count);
+    CHECK_TRUE(!wrong_registered_player_count_result.ok);
+    CHECK_EQ(
+        wrong_registered_player_count_result.reason,
+        std::string("boss_registered_player_count_mismatch")
+    );
+
     auto wrong_start_ready = built.signed_result;
     wrong_start_ready.result.mode_result_json = ReplaceFirst(
         wrong_start_ready.result.mode_result_json,
@@ -2083,6 +2139,32 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_ready_count_result = server.SubmitBattleResult(wrong_ready_count);
     CHECK_TRUE(!wrong_ready_count_result.ok);
     CHECK_EQ(wrong_ready_count_result.reason, std::string("boss_ready_player_count_mismatch"));
+
+    auto wrong_all_registered_connected = built.signed_result;
+    wrong_all_registered_connected.result.mode_result_json = ReplaceFirst(
+        wrong_all_registered_connected.result.mode_result_json,
+        "\"boss_all_registered_connected\":1",
+        "\"boss_all_registered_connected\":0"
+    );
+    const auto wrong_all_registered_connected_result = server.SubmitBattleResult(wrong_all_registered_connected);
+    CHECK_TRUE(!wrong_all_registered_connected_result.ok);
+    CHECK_EQ(
+        wrong_all_registered_connected_result.reason,
+        std::string("boss_all_registered_connected_mismatch")
+    );
+
+    auto wrong_all_registered_ready = built.signed_result;
+    wrong_all_registered_ready.result.mode_result_json = ReplaceFirst(
+        wrong_all_registered_ready.result.mode_result_json,
+        "\"boss_all_registered_ready\":0",
+        "\"boss_all_registered_ready\":1"
+    );
+    const auto wrong_all_registered_ready_result = server.SubmitBattleResult(wrong_all_registered_ready);
+    CHECK_TRUE(!wrong_all_registered_ready_result.ok);
+    CHECK_EQ(
+        wrong_all_registered_ready_result.reason,
+        std::string("boss_all_registered_ready_mismatch")
+    );
 
     auto wrong_ready_to_start = built.signed_result;
     wrong_ready_to_start.result.mode_result_json = ReplaceFirst(
