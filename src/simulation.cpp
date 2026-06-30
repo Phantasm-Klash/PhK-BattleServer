@@ -150,6 +150,13 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     if (config_.spawn_period_ticks == 0) {
         config_.spawn_period_ticks = 1;
     }
+    if (IsBossMode(config_.mode_id)) {
+        if (config_.boss_max_hp == 0) {
+            config_.boss_max_hp = 1;
+        }
+        boss_max_hp_ = config_.boss_max_hp;
+        boss_current_hp_ = config_.boss_max_hp;
+    }
 }
 
 const SimulationConfig& BattleSimulation::Config() const {
@@ -189,6 +196,9 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
     player.last_input.match_id = config_.match_id;
     player.last_input.player_id = player_id;
     players_[player_id] = player;
+    if (IsBossMode(config_.mode_id)) {
+        boss_damage_by_player_[player_id] = 0;
+    }
     return true;
 }
 
@@ -434,7 +444,7 @@ BattleSnapshot BattleSimulation::Tick() {
         } else {
             AccumulateFallbackInput(player, input);
         }
-        ApplyInput(player, input);
+        ApplyInput(player, input, tick_to_apply);
     }
 
     if (pending_it != pending_inputs_by_tick_.end()) {
@@ -477,6 +487,19 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
         snapshot.mode_state["player_fire_target"] = "boss_center";
+        snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
+        snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
+            "damage_report_to_business" :
+            "defeat_required";
+        snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
+        snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
+        snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
+        snapshot.mode_state["boss_defeated"] = BoolToken(boss_current_hp_ == 0);
+        snapshot.mode_state["boss_defeated_tick"] = std::to_string(boss_defeated_tick_);
+        snapshot.mode_state["boss_clear_status"] = boss_current_hp_ == 0 ? "cleared" : "running";
+        for (const auto& item : boss_damage_by_player_) {
+            snapshot.mode_state["boss_damage_" + item.first] = std::to_string(item.second);
+        }
     }
     if (has_last_mode_action_) {
         snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
@@ -629,6 +652,16 @@ std::string BattleSimulation::CanonicalStateHash() const {
     hash = HashAppend(hash, neutral_fallback_count_);
     hash = HashAppend(hash, held_input_fallback_count_);
     hash = HashAppend(hash, mode_action_count_);
+    if (IsBossMode(config_.mode_id)) {
+        hash = HashAppend(hash, boss_max_hp_);
+        hash = HashAppend(hash, boss_current_hp_);
+        hash = HashAppend(hash, boss_damage_total_);
+        hash = HashAppend(hash, boss_defeated_tick_);
+        for (const auto& item : boss_damage_by_player_) {
+            hash = HashAppend(hash, item.first);
+            hash = HashAppend(hash, item.second);
+        }
+    }
 
     for (const auto& item : players_) {
         const PlayerState& player = item.second;
@@ -862,7 +895,7 @@ BattleInput BattleSimulation::InputForTick(const PlayerState& player) const {
     return input;
 }
 
-void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input) {
+void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick) {
     constexpr std::uint32_t kUp = 1u << 0;
     constexpr std::uint32_t kDown = 1u << 1;
     constexpr std::uint32_t kLeft = 1u << 2;
@@ -873,6 +906,38 @@ void BattleSimulation::ApplyInput(PlayerState& player, const BattleInput& input)
 
     player.x_milli = ClampMilli(player.x_milli + axis_x * speed, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
     player.y_milli = ClampMilli(player.y_milli + axis_y * speed, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+    ApplyBossDamageForInput(player, input, applied_tick);
+}
+
+void BattleSimulation::ApplyBossDamageForInput(
+    const PlayerState& player,
+    const BattleInput& input,
+    std::uint64_t applied_tick
+) {
+    if (!IsBossMode(config_.mode_id) || !input.shoot || boss_current_hp_ == 0) {
+        return;
+    }
+
+    constexpr std::uint64_t kPlayerShotDamagePerTick = 10;
+    const std::uint64_t damage = std::min(kPlayerShotDamagePerTick, boss_current_hp_);
+    boss_current_hp_ -= damage;
+    boss_damage_total_ += damage;
+    boss_damage_by_player_[player.player_id] += damage;
+
+    if (boss_current_hp_ == 0 && boss_defeated_tick_ == 0) {
+        boss_defeated_tick_ = applied_tick;
+        event_stream_hash_ = HashAppend(event_stream_hash_, config_.match_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, config_.mode_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, applied_tick);
+        event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, boss_damage_total_);
+        event_trace_.push_back(
+            "boss_defeated|tick=" + std::to_string(applied_tick) +
+            "|player=" + player.player_id +
+            "|total_damage=" + std::to_string(boss_damage_total_)
+        );
+        ++event_count_;
+    }
 }
 
 void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {

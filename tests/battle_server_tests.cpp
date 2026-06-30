@@ -1318,6 +1318,91 @@ bool TestBossModeBulletPattern() {
     return true;
 }
 
+bool TestBossModeAuthoritativeDamageState() {
+    phk::battle::SimulationConfig world_config;
+    world_config.match_id = "match-world-boss-damage";
+    world_config.mode_id = "world_boss";
+    world_config.match_seed = 100;
+    world_config.spawn_period_ticks = 1000;
+    world_config.boss_max_hp = 100;
+    phk::battle::BattleSimulation world_simulation(world_config);
+    CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(world_simulation.AddPlayer("p2", 60000, 0));
+
+    auto p1_shoot = MakeInput("p1", 1, 1, 0);
+    p1_shoot.match_id = world_config.match_id;
+    p1_shoot.shoot = true;
+    auto p2_shoot = MakeInput("p2", 1, 1, 0);
+    p2_shoot.match_id = world_config.match_id;
+    p2_shoot.shoot = true;
+    CHECK_TRUE(world_simulation.AcceptInput(p1_shoot).ok);
+    CHECK_TRUE(world_simulation.AcceptInput(p2_shoot).ok);
+    const auto damaged_snapshot = world_simulation.Tick();
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_scope"), std::string("world_persistent"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_completion_policy"), std::string("damage_report_to_business"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_max_hp"), std::string("100"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_current_hp"), std::string("80"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_total"), std::string("20"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_p1"), std::string("10"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_defeated"), std::string("0"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_clear_status"), std::string("running"));
+
+    CHECK_TRUE(world_simulation.SetPlayerConnected("p2", false).ok);
+    auto disconnected_input = p2_shoot;
+    disconnected_input.tick = 2;
+    disconnected_input.seq = 2;
+    const auto disconnected_result = world_simulation.AcceptInput(disconnected_input);
+    CHECK_TRUE(!disconnected_result.ok);
+    CHECK_EQ(disconnected_result.reason, std::string("player_disconnected"));
+    p1_shoot.tick = 2;
+    p1_shoot.seq = 2;
+    CHECK_TRUE(world_simulation.AcceptInput(p1_shoot).ok);
+    const auto disconnected_damage_snapshot = world_simulation.Tick();
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_current_hp"), std::string("70"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_total"), std::string("30"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_p1"), std::string("20"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("connected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+
+    phk::battle::SimulationConfig instance_config;
+    instance_config.match_id = "match-instance-boss-damage";
+    instance_config.mode_id = "instance_boss";
+    instance_config.spawn_period_ticks = 1000;
+    instance_config.boss_max_hp = 20;
+    phk::battle::BattleSimulation instance_simulation(instance_config);
+    CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(instance_simulation.AddPlayer("p2", 60000, 0));
+    p1_shoot.match_id = instance_config.match_id;
+    p1_shoot.tick = 1;
+    p1_shoot.seq = 1;
+    p2_shoot.match_id = instance_config.match_id;
+    p2_shoot.tick = 1;
+    p2_shoot.seq = 1;
+    CHECK_TRUE(instance_simulation.AcceptInput(p1_shoot).ok);
+    CHECK_TRUE(instance_simulation.AcceptInput(p2_shoot).ok);
+    const auto defeated_snapshot = instance_simulation.Tick();
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_scope"), std::string("instance_match"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_completion_policy"), std::string("defeat_required"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_current_hp"), std::string("0"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_damage_total"), std::string("20"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated"), std::string("1"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated_tick"), std::string("1"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
+    CHECK_EQ(instance_simulation.Summary().event_count, static_cast<std::uint64_t>(1));
+    CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("boss_defeated|tick=1") != std::string::npos);
+
+    phk::battle::SimulationConfig pvp_config;
+    pvp_config.match_id = "match-pvp-no-boss-damage";
+    pvp_config.mode_id = "pvp_duel";
+    phk::battle::BattleSimulation pvp_simulation(pvp_config);
+    CHECK_TRUE(pvp_simulation.AddPlayer("p1", -20000, 0));
+    const auto pvp_snapshot = pvp_simulation.Snapshot();
+    CHECK_TRUE(pvp_snapshot.mode_state.find("boss_current_hp") == pvp_snapshot.mode_state.end());
+    return true;
+}
+
 bool TestAuthoritativeReplay60TickFixture() {
     phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
@@ -2770,6 +2855,7 @@ int main() {
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
+        {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},

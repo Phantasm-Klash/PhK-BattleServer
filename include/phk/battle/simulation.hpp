@@ -129,6 +129,7 @@ struct SimulationConfig {
     std::uint32_t max_seq_ahead = 32;
     std::uint32_t spawn_period_ticks = 30;
     std::uint32_t max_bullets = 256;
+    std::uint64_t boss_max_hp = 1000;
 };
 
 class BattleSimulation {
@@ -184,7 +185,8 @@ private:
     [[nodiscard]] std::uint64_t MixSeed(std::uint64_t value) const;
     [[nodiscard]] std::string CanonicalStateHash() const;
     [[nodiscard]] BattleInput InputForTick(const PlayerState& player) const;
-    void ApplyInput(PlayerState& player, const BattleInput& input);
+    void ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
+    void ApplyBossDamageForInput(const PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyModeActionsForTick(std::uint64_t tick);
     void SpawnBulletsForTick();
     void AdvanceBullets();
@@ -204,9 +206,14 @@ private:
     std::uint64_t input_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_stream_hash_ = 1469598103934665603ull;
     std::uint64_t event_count_ = 0;
+    std::uint64_t boss_max_hp_ = 0;
+    std::uint64_t boss_current_hp_ = 0;
+    std::uint64_t boss_damage_total_ = 0;
+    std::uint64_t boss_defeated_tick_ = 0;
     bool has_last_mode_action_ = false;
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
+    std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
