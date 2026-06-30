@@ -1008,6 +1008,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_damage_total"] = std::to_string(boss_damage_total_);
         snapshot.mode_state["boss_defeated"] = BoolToken(boss_defeated);
         snapshot.mode_state["boss_defeated_tick"] = std::to_string(boss_defeated_tick_);
+        snapshot.mode_state["boss_combat_started"] = BoolToken(boss_combat_started_);
         snapshot.mode_state["boss_clear_status"] =
             boss_defeated && (!instance_boss || instance_clear_credit) ? "cleared" :
             (instance_boss && replay_final_snapshot ? "failed" : "running");
@@ -1189,6 +1190,32 @@ std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
     return hash;
 }
 
+bool BattleSimulation::BossReadyToStartForTick(std::uint64_t tick) const {
+    if (!IsBossMode(config_.mode_id) ||
+        players_.size() < kBossModeMinPlayers ||
+        players_.size() > kBossModeMaxPlayers) {
+        return false;
+    }
+
+    std::set<std::string> ready_player_ids = ready_player_ids_;
+    const auto actions_it = pending_mode_actions_by_tick_.find(tick);
+    if (actions_it != pending_mode_actions_by_tick_.end()) {
+        for (const auto& action : actions_it->second) {
+            if (action.action_type == "ready") {
+                ready_player_ids.insert(action.player_id);
+            }
+        }
+    }
+
+    for (const auto& item : players_) {
+        const PlayerState& player = item.second;
+        if (!player.connected || ready_player_ids.find(player.player_id) == ready_player_ids.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string BattleSimulation::CanonicalStateHash() const {
     std::uint64_t hash = kFnvOffset;
     hash = HashAppend(hash, config_.match_id);
@@ -1235,6 +1262,7 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, boss_current_hp_);
         hash = HashAppend(hash, boss_damage_total_);
         hash = HashAppend(hash, boss_defeated_tick_);
+        hash = HashAppend(hash, boss_combat_started_ ? 1u : 0u);
         hash = HashAppend(hash, config_.boss_friendly_fire_policy);
         for (const auto& item : boss_damage_by_player_) {
             hash = HashAppend(hash, item.first);
@@ -1680,6 +1708,12 @@ void BattleSimulation::ApplyBossDamageForInput(
     std::uint64_t applied_tick
 ) {
     if (!IsBossMode(config_.mode_id) || !input.shoot || boss_current_hp_ == 0) {
+        return;
+    }
+    if (!boss_combat_started_) {
+        boss_combat_started_ = BossReadyToStartForTick(applied_tick);
+    }
+    if (!boss_combat_started_) {
         return;
     }
 

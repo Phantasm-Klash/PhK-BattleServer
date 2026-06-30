@@ -1,4 +1,5 @@
 ﻿#include <cstdlib>
+#include <array>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -191,6 +192,38 @@ phk::battle::SimulationConfig MakeAuthoritativeReplay60Config(std::string match_
 bool AddReplayFixturePlayers(phk::battle::BattleSimulation& simulation) {
     CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
     CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
+    return true;
+}
+
+bool AddBossFixturePlayers(phk::battle::BattleSimulation& simulation) {
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(simulation.AddPlayer("p4", -60000, 0));
+    return true;
+}
+
+bool AcceptBossReadyActions(
+    phk::battle::BattleSimulation& simulation,
+    const std::string& match_id,
+    std::uint64_t tick,
+    std::uint64_t p1_seq,
+    std::uint64_t p2_seq,
+    std::uint64_t p3_seq,
+    std::uint64_t p4_seq,
+    const std::string& action_prefix
+) {
+    const std::array<std::uint64_t, 4> seqs = {p1_seq, p2_seq, p3_seq, p4_seq};
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(seqs[index - 1]);
+        ready.match_id = match_id;
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = tick;
+        ready.action_id = action_prefix + "-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(simulation.AcceptModeAction(ready).ok);
+    }
     return true;
 }
 
@@ -2340,6 +2373,8 @@ bool TestBossModeAuthoritativeDamageState() {
     phk::battle::BattleSimulation world_simulation(world_config);
     CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
     CHECK_TRUE(world_simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(world_simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(world_simulation.AddPlayer("p4", -60000, 0));
 
     auto p1_shoot = MakeInput("p1", 1, 1, 0);
     p1_shoot.match_id = world_config.match_id;
@@ -2347,6 +2382,28 @@ bool TestBossModeAuthoritativeDamageState() {
     auto p2_shoot = MakeInput("p2", 1, 1, 0);
     p2_shoot.match_id = world_config.match_id;
     p2_shoot.shoot = true;
+    CHECK_TRUE(world_simulation.AcceptInput(p1_shoot).ok);
+    CHECK_TRUE(world_simulation.AcceptInput(p2_shoot).ok);
+    const auto not_started_snapshot = world_simulation.Tick();
+    CHECK_EQ(not_started_snapshot.mode_state.at("boss_current_hp"), std::string("100"));
+    CHECK_EQ(not_started_snapshot.mode_state.at("boss_damage_total"), std::string("0"));
+    CHECK_EQ(not_started_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index + 1);
+        ready.match_id = world_config.match_id;
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 2;
+        ready.seq = index <= 2 ? 2 : 1;
+        ready.action_id = "world-damage-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(world_simulation.AcceptModeAction(ready).ok);
+    }
+    p1_shoot.tick = 2;
+    p1_shoot.seq = 3;
+    p2_shoot.tick = 2;
+    p2_shoot.seq = 3;
     CHECK_TRUE(world_simulation.AcceptInput(p1_shoot).ok);
     CHECK_TRUE(world_simulation.AcceptInput(p2_shoot).ok);
     const auto damaged_snapshot = world_simulation.Tick();
@@ -2358,25 +2415,26 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_p1"), std::string("10"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_defeated"), std::string("0"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_clear_status"), std::string("running"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_result_disposition"), std::string("world_damage_report"));
 
     CHECK_TRUE(world_simulation.SetPlayerConnected("p2", false).ok);
     auto disconnected_input = p2_shoot;
-    disconnected_input.tick = 2;
-    disconnected_input.seq = 2;
+    disconnected_input.tick = 3;
+    disconnected_input.seq = 4;
     const auto disconnected_result = world_simulation.AcceptInput(disconnected_input);
     CHECK_TRUE(!disconnected_result.ok);
     CHECK_EQ(disconnected_result.reason, std::string("player_disconnected"));
-    p1_shoot.tick = 2;
-    p1_shoot.seq = 2;
+    p1_shoot.tick = 3;
+    p1_shoot.seq = 4;
     CHECK_TRUE(world_simulation.AcceptInput(p1_shoot).ok);
     const auto disconnected_damage_snapshot = world_simulation.Tick();
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_current_hp"), std::string("70"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_total"), std::string("30"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_p1"), std::string("20"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
-    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("connected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("connected_player_count"), std::string("3"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
 
     phk::battle::SimulationConfig instance_config;
@@ -2387,6 +2445,8 @@ bool TestBossModeAuthoritativeDamageState() {
     phk::battle::BattleSimulation instance_simulation(instance_config);
     CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
     CHECK_TRUE(instance_simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(instance_simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(instance_simulation.AddPlayer("p4", -60000, 0));
     p1_shoot.match_id = instance_config.match_id;
     p1_shoot.tick = 1;
     p1_shoot.seq = 1;
@@ -2395,6 +2455,17 @@ bool TestBossModeAuthoritativeDamageState() {
     p2_shoot.seq = 1;
     CHECK_TRUE(instance_simulation.AcceptInput(p1_shoot).ok);
     CHECK_TRUE(instance_simulation.AcceptInput(p2_shoot).ok);
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index + 1);
+        ready.match_id = instance_config.match_id;
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = index <= 2 ? 2 : 1;
+        ready.action_id = "instance-damage-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(instance_simulation.AcceptModeAction(ready).ok);
+    }
     const auto defeated_snapshot = instance_simulation.Tick();
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_scope"), std::string("instance_match"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_completion_policy"), std::string("defeat_required"));
@@ -2402,10 +2473,16 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_damage_total"), std::string("20"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated"), std::string("1"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated_tick"), std::string("1"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_result_disposition"), std::string("instance_cleared"));
-    CHECK_EQ(instance_simulation.Summary().event_count, static_cast<std::uint64_t>(1));
-    CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("boss_defeated|tick=1") != std::string::npos);
+    CHECK_EQ(instance_simulation.Summary().event_count, static_cast<std::uint64_t>(5));
+    bool saw_boss_defeated_event = false;
+    for (const auto& trace : instance_simulation.Summary().event_trace) {
+        saw_boss_defeated_event =
+            saw_boss_defeated_event || trace.find("boss_defeated|tick=1") != std::string::npos;
+    }
+    CHECK_TRUE(saw_boss_defeated_event);
 
     phk::battle::SimulationConfig pvp_config;
     pvp_config.match_id = "match-pvp-no-boss-damage";
@@ -2428,8 +2505,7 @@ bool TestBossModeResultProjection() {
     instance_config.boss_season_id = "instance-season-s0";
     instance_config.boss_phase_id = "instance-phase-a";
     phk::battle::BattleSimulation simulation(instance_config);
-    CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
-    CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(AddBossFixturePlayers(simulation));
 
     auto p1_shoot = MakeInput("p1", 1, 1, 0);
     p1_shoot.match_id = instance_config.match_id;
@@ -2451,6 +2527,16 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(simulation.AcceptInput(p1_shoot).ok);
     CHECK_TRUE(simulation.AcceptInput(p2_shoot).ok);
     CHECK_TRUE(simulation.AcceptModeAction(transfer).ok);
+    CHECK_TRUE(AcceptBossReadyActions(
+        simulation,
+        instance_config.match_id,
+        1,
+        3,
+        2,
+        1,
+        1,
+        "instance-result-projection-ready"
+    ));
     CHECK_EQ(simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
 
     const auto fixture = simulation.BuildReplayFixture("user-boss");
@@ -2464,13 +2550,13 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_registered_player_count\":2") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_start_ready\":0") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_registered_player_count\":4") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_player_count\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_all_registered_connected\":1") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_all_registered_ready\":0") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"connected_player_count\":2") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_all_registered_ready\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_to_start\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
@@ -2481,11 +2567,13 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_player_p2_spawn_slot\":\"east\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_player_p2_fire_target\":\"boss_center\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
-    CHECK_TRUE(mode_result_json.find("\"boss_instance_surviving_player_count\":2") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_instance_surviving_player_count\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_instance_clear_credit\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_instance_result_state\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
@@ -2556,11 +2644,21 @@ bool TestInstanceBossResultStateMutualExclusion() {
     cleared_config.match_id = "match-instance-boss-final-cleared";
     cleared_config.boss_max_hp = 10;
     phk::battle::BattleSimulation cleared_simulation(cleared_config);
-    CHECK_TRUE(cleared_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(AddBossFixturePlayers(cleared_simulation));
     auto shoot = MakeInput("p1", 1, 1, 0);
     shoot.match_id = cleared_config.match_id;
     shoot.shoot = true;
     CHECK_TRUE(cleared_simulation.AcceptInput(shoot).ok);
+    CHECK_TRUE(AcceptBossReadyActions(
+        cleared_simulation,
+        cleared_config.match_id,
+        1,
+        2,
+        1,
+        1,
+        1,
+        "instance-cleared-ready"
+    ));
     CHECK_EQ(cleared_simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
     const auto cleared_fixture = cleared_simulation.BuildReplayFixture("user-instance-cleared");
     CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
@@ -2569,20 +2667,33 @@ bool TestInstanceBossResultStateMutualExclusion() {
         std::string("instance_cleared")
     );
     CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_result_state"), std::string("cleared"));
-    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_surviving_player_count"), std::string("1"));
+    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_surviving_player_count"), std::string("4"));
     CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_clear_credit"), std::string("1"));
 
     phk::battle::SimulationConfig no_survivor_config = failed_config;
     no_survivor_config.match_id = "match-instance-boss-no-survivor";
     no_survivor_config.boss_max_hp = 10;
     phk::battle::BattleSimulation no_survivor_simulation(no_survivor_config);
-    CHECK_TRUE(no_survivor_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(AddBossFixturePlayers(no_survivor_simulation));
     shoot.match_id = no_survivor_config.match_id;
     shoot.tick = 1;
     shoot.seq = 1;
     CHECK_TRUE(no_survivor_simulation.AcceptInput(shoot).ok);
+    CHECK_TRUE(AcceptBossReadyActions(
+        no_survivor_simulation,
+        no_survivor_config.match_id,
+        1,
+        2,
+        1,
+        1,
+        1,
+        "instance-no-survivor-ready"
+    ));
     CHECK_EQ(no_survivor_simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
     CHECK_TRUE(no_survivor_simulation.SetPlayerConnected("p1", false).ok);
+    CHECK_TRUE(no_survivor_simulation.SetPlayerConnected("p2", false).ok);
+    CHECK_TRUE(no_survivor_simulation.SetPlayerConnected("p3", false).ok);
+    CHECK_TRUE(no_survivor_simulation.SetPlayerConnected("p4", false).ok);
     const auto no_survivor_fixture = no_survivor_simulation.BuildReplayFixture("user-instance-no-survivor");
     CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_defeated"), std::string("1"));
     CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_clear_status"), std::string("failed"));
