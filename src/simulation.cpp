@@ -456,6 +456,11 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "invalid_card_slot";
         return result;
     }
+    if (input.mode_action_id.size() > config_.max_mode_action_id_bytes) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "input_mode_action_id_too_large";
+        return result;
+    }
 
     result.ok = true;
     result.code = InputValidationCode::Ok;

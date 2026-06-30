@@ -1137,6 +1137,16 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!invalid_card_slot_result.ok);
     CHECK_EQ(invalid_card_slot_result.reason, std::string("invalid_card_slot"));
 
+    auto oversized_input_mode_action_id = MakeInput("p1", 1, 1, 0);
+    oversized_input_mode_action_id.mode_action_id =
+        std::string(phk::battle::kDefaultMaxModeActionIdBytes + 1, 'a');
+    const auto oversized_input_mode_action_id_result = first.AcceptInput(oversized_input_mode_action_id);
+    CHECK_TRUE(!oversized_input_mode_action_id_result.ok);
+    CHECK_EQ(
+        oversized_input_mode_action_id_result.reason,
+        std::string("input_mode_action_id_too_large")
+    );
+
     const auto accepted = first.AcceptInput(MakeInput("p1", 1, 1, 1u << 3));
     CHECK_TRUE(accepted.ok);
     const auto duplicate_tick = first.AcceptInput(MakeInput("p1", 1, 2, 1u << 0));
