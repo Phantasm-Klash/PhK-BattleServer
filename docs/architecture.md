@@ -32,7 +32,7 @@ Status: v0.1 skeleton.
 
 - A battle ticket is bound to `match_id`, `player_id`, `mode_id`, `battle_server_id`, endpoint, deck snapshot hash, ruleset version, nonce, and expiry.
 - A match simulation freezes the first registered ticket's `mode_id` and `ruleset_version`; later tickets for the same match must match both.
-- Match session count cannot exceed the configured battle-server `max_players`.
+- Match session count cannot exceed the configured battle-server `max_players`; Boss modes additionally clamp join capacity to the protocol-planned 4-8 player range even if a local server config is accidentally wider.
 - Reused ticket ids are rejected by the server facade.
 - Handshake acceptance re-verifies the ticket structure/expiry and requires the ticket to be registered in the server facade.
 - Handshake hello messages must provide non-empty client key/random material and at least one supported ChaCha20-Poly1305-compatible AEAD label.
@@ -44,6 +44,7 @@ Status: v0.1 skeleton.
 - Mode actions are limited to the shared server-interface action surface: `cast_card`, `select_round_card`, `transfer_card`, `ready`, and `reconnect`. Unknown action types are rejected until full protobuf/native mode dispatch replaces this scaffold.
 - Accepted mode actions are buffered by target tick and only folded into replay/event/hash state when the authoritative simulation advances that tick.
 - Disconnected players remain blocked from input and normal mode actions, but `reconnect` mode actions are accepted as the narrow recovery intent and restore connected state only when their target authoritative tick is processed.
+- Boss mode `boss_start_ready` is derived from connected player count, so a registered 4-player Boss room is not start-ready while one player is disconnected.
 - Client packets cannot submit battle results.
 - Disconnected players cannot submit battle input or mode actions until the server facade marks them connected again.
 - Encrypted-path input and mode-action packets from disconnected players are rejected at the server facade before dispatcher seq/nonce state advances.
