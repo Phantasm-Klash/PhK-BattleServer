@@ -144,6 +144,14 @@ bool IsValidTransferCardInstanceId(std::string_view value) {
         std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
 }
 
+bool IsValidAuditToken(std::string_view value) {
+    return !value.empty() && std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
+}
+
+bool IsValidOptionalAuditToken(std::string_view value) {
+    return value.empty() || IsValidAuditToken(value);
+}
+
 std::string NormalizedBossIdentityField(std::string value, std::string fallback) {
     if (IsValidBossIdentityField(value)) {
         return value;
@@ -594,6 +602,11 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_mode_action_id_too_large";
         return result;
     }
+    if (!IsValidOptionalAuditToken(input.mode_action_id)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "input_mode_action_id_invalid";
+        return result;
+    }
 
     result.ok = true;
     result.code = InputValidationCode::Ok;
@@ -674,6 +687,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
     if (action.action_id.size() > config_.max_mode_action_id_bytes) {
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_id_too_large";
+        return result;
+    }
+    if (!IsValidAuditToken(action.action_id)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_id_invalid";
         return result;
     }
     if (action.action_type.size() > config_.max_mode_action_type_bytes) {
