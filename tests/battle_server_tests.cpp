@@ -3445,6 +3445,134 @@ bool TestSettledMatchRetirementLifecycle() {
     return true;
 }
 
+bool TestUnsettledMatchCancellationLifecycle() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489650000;
+    phk::battle::BattleServer server(config);
+
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-boss-cancel";
+    boss_config.mode_id = "world_boss";
+    boss_config.boss_instance_id = "world-boss-cancel-001";
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+    const auto cancelled_pending = server.CancelMatch("match-boss-cancel");
+    CHECK_TRUE(cancelled_pending.ok);
+    CHECK_EQ(cancelled_pending.reason, std::string("ok"));
+    CHECK_TRUE(cancelled_pending.removed_pending_boss_config);
+    CHECK_TRUE(!cancelled_pending.removed_match);
+    CHECK_EQ(cancelled_pending.removed_sessions, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.active_matches_after, static_cast<std::size_t>(0));
+
+    const auto reconfigure_cancelled = server.ConfigureBossMatch(boss_config);
+    CHECK_TRUE(!reconfigure_cancelled.ok);
+    CHECK_EQ(reconfigure_cancelled.reason, std::string("match_cancelled"));
+    auto cancelled_boss_ticket = MakeModeTicket(
+        "ticket-cancelled-boss",
+        "user-cancelled-boss",
+        "p1",
+        "world_boss",
+        "00112233445566778899ac01"
+    );
+    cancelled_boss_ticket.ticket.match_id = "match-boss-cancel";
+    const auto cancelled_boss_register = server.RegisterTicket(cancelled_boss_ticket);
+    CHECK_TRUE(!cancelled_boss_register.ok);
+    CHECK_EQ(cancelled_boss_register.reason, std::string("match_cancelled"));
+
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
+
+    const auto cancelled = server.CancelMatch("match-001");
+    CHECK_TRUE(cancelled.ok);
+    CHECK_EQ(cancelled.reason, std::string("ok"));
+    CHECK_TRUE(cancelled.removed_match);
+    CHECK_TRUE(!cancelled.removed_pending_boss_config);
+    CHECK_TRUE(!cancelled.already_cancelled);
+    CHECK_EQ(cancelled.removed_sessions, static_cast<std::size_t>(2));
+    CHECK_EQ(cancelled.active_sessions_before, static_cast<std::size_t>(2));
+    CHECK_EQ(cancelled.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(cancelled.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
+
+    const auto cancelled_again = server.CancelMatch("match-001");
+    CHECK_TRUE(cancelled_again.ok);
+    CHECK_TRUE(cancelled_again.already_cancelled);
+    CHECK_TRUE(!cancelled_again.removed_match);
+    CHECK_EQ(cancelled_again.removed_sessions, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_again.reason, std::string("ok"));
+
+    const auto snapshot_after_cancel = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot_after_cancel.snapshot_kind, std::string("match_unknown"));
+    const auto ticket_after_cancel = server.RegisterTicket(MakeTicket());
+    CHECK_TRUE(!ticket_after_cancel.ok);
+    CHECK_EQ(ticket_after_cancel.reason, std::string("match_cancelled"));
+
+    phk::battle::BattleHandshakeHello handshake_after_cancel;
+    handshake_after_cancel.battle_ticket = MakeTicket();
+    FillDistinctHandshakeBytes(handshake_after_cancel);
+    handshake_after_cancel.supported_aead = {"CHACHA20_POLY1305"};
+    const auto handshake_result = server.AcceptHandshake(handshake_after_cancel);
+    CHECK_TRUE(!handshake_result.ok);
+    CHECK_EQ(handshake_result.reason, std::string("match_cancelled"));
+
+    phk::battle::BattlePacketHeader plaintext_after_cancel;
+    plaintext_after_cancel.match_id = "match-001";
+    plaintext_after_cancel.player_id = "p1";
+    plaintext_after_cancel.tick = 2;
+    plaintext_after_cancel.seq = 2;
+    plaintext_after_cancel.payload_type = phk::battle::BattlePayloadType::Snapshot;
+    const auto plaintext_result = server.Dispatch(plaintext_after_cancel, {'s'});
+    CHECK_TRUE(!plaintext_result.ok);
+    CHECK_EQ(plaintext_result.reason, std::string("match_cancelled"));
+
+    phk::battle::BattleEncryptedPacket encrypted_after_cancel;
+    encrypted_after_cancel.header.match_id = "match-001";
+    encrypted_after_cancel.header.player_id = "p1";
+    encrypted_after_cancel.header.tick = 2;
+    encrypted_after_cancel.header.seq = 2;
+    encrypted_after_cancel.header.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(encrypted_after_cancel.header);
+    encrypted_after_cancel.ciphertext = {1, 2, 3};
+    encrypted_after_cancel.auth_tag = std::vector<std::uint8_t>(16, 7);
+    const auto encrypted_result = server.DispatchEncrypted(encrypted_after_cancel);
+    CHECK_TRUE(!encrypted_result.ok);
+    CHECK_EQ(encrypted_result.reason, std::string("match_cancelled"));
+
+    const auto input_after_cancel = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
+    CHECK_TRUE(!input_after_cancel.ok);
+    CHECK_EQ(input_after_cancel.reason, std::string("match_unknown"));
+
+    const auto missing_cancel = server.CancelMatch("missing-match");
+    CHECK_TRUE(!missing_cancel.ok);
+    CHECK_EQ(missing_cancel.reason, std::string("match_unknown"));
+
+    phk::battle::BattleServer settled_server(config);
+    CHECK_TRUE(settled_server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(settled_server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(settled_server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
+    CHECK_TRUE(settled_server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(settled_server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+    const auto built_result = settled_server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built_result.ok);
+    CHECK_TRUE(settled_server.SubmitBattleResult(built_result.signed_result).ok);
+    const auto cancel_settled = settled_server.CancelMatch("match-001");
+    CHECK_TRUE(!cancel_settled.ok);
+    CHECK_EQ(cancel_settled.reason, std::string("match_settled"));
+    CHECK_EQ(cancel_settled.active_sessions_after, static_cast<std::size_t>(2));
+    CHECK_EQ(cancel_settled.active_matches_after, static_cast<std::size_t>(1));
+    CHECK_TRUE(settled_server.RetireMatch("match-001").ok);
+    return true;
+}
+
 bool TestAuthoritativeReplay60TickFixture() {
     phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
@@ -5051,6 +5179,7 @@ int main() {
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
+        {"UnsettledMatchCancellationLifecycle", TestUnsettledMatchCancellationLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},

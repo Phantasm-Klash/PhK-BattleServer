@@ -100,6 +100,20 @@ struct RetireMatchResult {
 	bool already_retired = false;
 };
 
+struct CancelMatchResult {
+	bool ok = false;
+	std::string reason;
+	std::string match_id;
+	std::size_t active_sessions_before = 0;
+	std::size_t active_matches_before = 0;
+	std::size_t removed_sessions = 0;
+	std::size_t active_sessions_after = 0;
+	std::size_t active_matches_after = 0;
+	bool removed_match = false;
+	bool removed_pending_boss_config = false;
+	bool already_cancelled = false;
+};
+
 struct BuildSignedBattleResultResult {
 	bool ok = false;
 	std::string reason;
@@ -174,6 +188,7 @@ public:
 		std::string stage_id = ""
 	) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
+	CancelMatchResult CancelMatch(const std::string& match_id);
 	RetireMatchResult RetireMatch(const std::string& match_id);
 
 private:
@@ -197,8 +212,9 @@ private:
 	BattleDispatcher dispatcher_;
 	std::map<std::string, BattleSessionRecord> sessions_by_ticket_;
 	std::map<std::string, BattleSimulation> simulations_by_match_;
-    std::map<std::string, BossMatchConfig> pending_boss_config_by_match_;
+	std::map<std::string, BossMatchConfig> pending_boss_config_by_match_;
 	std::map<std::string, std::string> result_hash_by_match_;
+	std::set<std::string> cancelled_match_ids_;
 	std::set<std::string> boss_roster_locked_match_ids_;
 };
 
