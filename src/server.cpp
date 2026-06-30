@@ -505,10 +505,7 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     result.signed_result.signature_alg = "ED25519";
     result.signed_result.key_id = config_.server_id;
     result.signed_result.public_key_hex = DevHexMaterial(config_.server_id + ":result-public", 64);
-    result.signed_result.signature_hex = DevHexMaterial(
-        CanonicalBattleResultPayload(battle_result) + ":" + config_.server_id + ":result-signature",
-        128
-    );
+    result.signed_result.signature_hex = DevBattleResultSignatureHex(battle_result, config_.server_id);
     result.signed_result.server_authoritative = true;
     result.ok = true;
     result.reason = "ok";

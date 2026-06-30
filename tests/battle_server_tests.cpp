@@ -726,6 +726,18 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!mutating_projection_result.ok);
     CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
 
+    auto wrong_signature = valid_result;
+    wrong_signature.signature_hex = RepeatHex('c', 128);
+    const auto wrong_signature_result = server.SubmitBattleResult(wrong_signature);
+    CHECK_TRUE(!wrong_signature_result.ok);
+    CHECK_EQ(wrong_signature_result.reason, std::string("dev_result_signature_mismatch"));
+
+    auto stale_signature_payload = valid_result;
+    stale_signature_payload.result.settled_at_ms -= 1;
+    const auto stale_signature_payload_result = server.SubmitBattleResult(stale_signature_payload);
+    CHECK_TRUE(!stale_signature_payload_result.ok);
+    CHECK_EQ(stale_signature_payload_result.reason, std::string("dev_result_signature_mismatch"));
+
 	const auto accepted = server.SubmitBattleResult(valid_result);
 	CHECK_TRUE(accepted.ok);
 	CHECK_EQ(accepted.reason, std::string("ok"));
@@ -775,6 +787,10 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.public_key_hex,
         std::string("951038137a33596eb40aff1c8522a38f571aaa016454c52c7615710a6f440f4d")
+    );
+    CHECK_EQ(
+        built.signed_result.signature_hex,
+        phk::battle::DevBattleResultSignatureHex(built.signed_result.result, config.server_id)
     );
     CHECK_EQ(
         built.signed_result.signature_hex,

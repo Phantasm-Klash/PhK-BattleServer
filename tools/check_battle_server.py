@@ -330,8 +330,10 @@ def main() -> int:
         or "required_final_state_hash" not in result_text
         or "required_replay_fixture_hash" not in result_text
         or "required_tick_rate_hz" not in result_text
+        or "require_dev_signature_payload_binding" not in result_text
+        or "DevBattleResultSignatureHex" not in result_text
     ):
-        print("result boundary missing replay stream/state hash requirements", file=sys.stderr)
+        print("result boundary missing replay stream/state hash or dev signature binding requirements", file=sys.stderr)
         return 1
 
     version_text = (ROOT / "include" / "phk" / "battle" / "version.hpp").read_text(encoding="utf-8")
@@ -450,7 +452,7 @@ def main() -> int:
         or "IsClientToServerEncryptedPayload" not in server_impl
         or "encrypted_payload_type_invalid" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
-        or "CanonicalBattleResultPayload" not in server_impl
+        or "DevBattleResultSignatureHex" not in server_impl
         or "DevModeResultJsonFromReplayFixture(replay_fixture)" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
         or "DevReplayIdFromReplaySummary" not in server_impl
@@ -489,9 +491,11 @@ def main() -> int:
         or "final_state_hash_mismatch" not in result_impl
         or "replay_summary_hash_mismatch" not in result_impl
         or "replay_fixture_hash_mismatch" not in result_impl
+        or "dev_result_signature_mismatch" not in result_impl
+        or "DevBattleResultSignatureHex" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
     ):
-        print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace/digest verification or projection-only result shape", file=sys.stderr)
+        print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace/digest/signature verification or projection-only result shape", file=sys.stderr)
         return 1
 
     protocol_text = (ROOT / "include" / "phk" / "battle" / "protocol.hpp").read_text(encoding="utf-8")
@@ -589,8 +593,11 @@ def main() -> int:
         or "tampered_fixture_mode_state" not in tests_text
         or "tampered_fixture_authority" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
+        or "DevBattleResultSignatureHex(built.signed_result.result, config.server_id)" not in tests_text
         or "BuildSignedBattleResult(\"match-001\")" not in tests_text
         or "const auto valid_result = built_result.signed_result" not in tests_text
+        or "dev_result_signature_mismatch" not in tests_text
+        or "stale_signature_payload" not in tests_text
         or "ReplaceJsonStringField" not in tests_text
         or "ModeResultJsonForSummary" in tests_text
         or "MakeBattleResultForSummary" in tests_text

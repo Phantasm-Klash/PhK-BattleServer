@@ -8,6 +8,12 @@ Status date: 2026-06-29
 - `BattleServer::SubmitBattleResult` binds result verification to the replay fixture tick rate, and `BattleResultVerifier` rejects missing or forged tick-rate material as `tick_rate_hz_mismatch`.
 - CTest and `tools/check_battle_server.py` gate the tick-rate field, verifier option, server binding, callback fingerprint, and negative tamper coverage while full protobuf result bindings remain pending.
 
+## 2026-06-30 Development Result Signature Boundary
+
+- Development signed-result verification now requires the Ed25519-shaped signature field to match deterministic material derived from `CanonicalBattleResultPayload(result)`, the battle server key id, and the current result-signature label.
+- `BattleServer::BuildSignedBattleResult` uses the shared `DevBattleResultSignatureHex` helper, and `SubmitBattleResult` rejects stale or forged payload/signature combinations as `dev_result_signature_mismatch`.
+- This is still a development adapter seam, not real Ed25519; it narrows the placeholder so canonical result payload tampering cannot pass with only a hex-shaped signature while production signing remains pending.
+
 | Area | Status | Notes |
 | --- | --- | --- |
 | Repository skeleton | Started | CMake C++17 project, README, architecture note, source/include layout, CLI entrypoint, tests, and checker are present. `python tools\check_battle_server.py --build` passes locally with CMake/MSVC and CTest. |

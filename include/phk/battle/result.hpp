@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "phk/battle/version.hpp"
@@ -54,6 +55,7 @@ struct BattleResultVerificationOptions {
     std::string required_replay_fixture_hash;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
+    bool require_dev_signature_payload_binding = true;
     bool require_projection_only_reward = true;
     bool require_replay_counter_fields = false;
 };
@@ -73,5 +75,9 @@ public:
 };
 
 [[nodiscard]] std::string CanonicalBattleResultPayload(const BattleResult& result);
+[[nodiscard]] std::string DevBattleResultSignatureHex(
+    const BattleResult& result,
+    std::string_view key_id
+);
 
 }  // namespace phk::battle

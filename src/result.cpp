@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <iomanip>
 #include <sstream>
 
 #include "phk/battle/ticket.hpp"
@@ -83,6 +84,42 @@ bool ContainsForbiddenRewardMutation(std::string_view json) {
         }
     }
     return false;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
+    for (const char ch : value) {
+        hash ^= static_cast<unsigned char>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::uint64_t HashAppend(std::uint64_t hash, std::uint64_t value) {
+    for (int shift = 0; shift < 64; shift += 8) {
+        hash ^= static_cast<unsigned char>((value >> shift) & 0xffu);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string Hex64(std::uint64_t value) {
+    std::ostringstream out;
+    out << std::hex << std::setw(16) << std::setfill('0') << value;
+    return out.str();
+}
+
+std::string DevHexMaterial(std::string_view seed, std::size_t hex_chars) {
+    std::string out;
+    std::uint64_t counter = 0;
+    while (out.size() < hex_chars) {
+        std::uint64_t hash = 1469598103934665603ull;
+        hash = HashAppend(hash, seed);
+        hash = HashAppend(hash, counter);
+        out += Hex64(hash);
+        ++counter;
+    }
+    out.resize(hex_chars);
+    return out;
 }
 
 }  // namespace
@@ -259,6 +296,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "ed25519_public_key_shape_invalid");
         return verification;
     }
+    if (options.require_dev_signature_payload_binding &&
+        signed_result.signature_hex != DevBattleResultSignatureHex(result, signed_result.key_id)) {
+        Fail(verification, "dev_result_signature_mismatch");
+        return verification;
+    }
     if (!signed_result.server_authoritative) {
         Fail(verification, "result_not_server_authoritative");
         return verification;
@@ -267,7 +309,7 @@ BattleResultVerification BattleResultVerifier::Verify(
     verification.ok = true;
     verification.reason = "ok";
     if (options.allow_dev_signature_shape_only) {
-        verification.warnings.push_back("dev_result_signature_shape_only");
+        verification.warnings.push_back("dev_result_signature_payload_bound_not_real_ed25519");
     }
     return verification;
 }
@@ -289,6 +331,16 @@ std::string CanonicalBattleResultPayload(const BattleResult& result) {
         << result.mode_result_json << '|'
         << result.settled_at_ms;
     return out.str();
+}
+
+std::string DevBattleResultSignatureHex(
+    const BattleResult& result,
+    std::string_view key_id
+) {
+    return DevHexMaterial(
+        CanonicalBattleResultPayload(result) + ":" + std::string(key_id) + ":result-signature",
+        128
+    );
 }
 
 }  // namespace phk::battle
