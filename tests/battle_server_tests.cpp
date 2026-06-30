@@ -3493,6 +3493,54 @@ bool TestReplayRecordBridgeBoundary() {
     return true;
 }
 
+bool TestResultAndReplayRecordUseStablePlayerOrder() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489650000;
+    phk::battle::BattleServer server(config);
+
+    auto bob_first_ticket = MakeTicketForBob();
+    bob_first_ticket.ticket.ticket_id = "ticket-000";
+    bob_first_ticket.ticket.ticket_nonce_hex = "000000000000000000000001";
+    auto alice_late_ticket = MakeTicket();
+    alice_late_ticket.ticket.ticket_id = "ticket-999";
+    alice_late_ticket.ticket.ticket_nonce_hex = "000000000000000000000002";
+
+    CHECK_TRUE(server.RegisterTicket(bob_first_ticket).ok);
+    CHECK_TRUE(server.RegisterTicket(alice_late_ticket).ok);
+
+    const auto built = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built.ok);
+    CHECK_EQ(built.signed_result.result.player_ids.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(built.signed_result.result.player_ids[0], std::string("p1"));
+    CHECK_EQ(built.signed_result.result.player_ids[1], std::string("p2"));
+    CHECK_TRUE(
+        phk::battle::CanonicalBattleResultPayload(built.signed_result.result).find("|p1,p2,|") !=
+        std::string::npos
+    );
+    CHECK_EQ(
+        built.signed_result.signature_hex,
+        phk::battle::DevBattleResultSignatureHex(built.signed_result.result, config.server_id)
+    );
+
+    const auto replay_record = server.BuildReplayRecord("match-001", "user-alice", "stage-order");
+    CHECK_TRUE(replay_record.ok);
+    CHECK_EQ(replay_record.replay_record.loadout.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(replay_record.replay_record.loadout[0].player_id, std::string("p1"));
+    CHECK_EQ(replay_record.replay_record.loadout[0].user_id, std::string("user-alice"));
+    CHECK_EQ(replay_record.replay_record.loadout[1].player_id, std::string("p2"));
+    CHECK_EQ(replay_record.replay_record.loadout[1].user_id, std::string("user-bob"));
+    CHECK_EQ(
+        replay_record.replay_record_hash,
+        phk::battle::DevReplayRecordBridgeHash(replay_record.replay_record)
+    );
+
+    const auto submitted = server.SubmitBattleResult(built.signed_result);
+    CHECK_TRUE(submitted.ok);
+    CHECK_EQ(submitted.reason, std::string("ok"));
+    CHECK_TRUE(!submitted.duplicate);
+    return true;
+}
+
 bool TestServerAuthoritativeInputAndSnapshot() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -4681,6 +4729,7 @@ int main() {
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
+        {"ResultAndReplayRecordUseStablePlayerOrder", TestResultAndReplayRecordUseStablePlayerOrder},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
