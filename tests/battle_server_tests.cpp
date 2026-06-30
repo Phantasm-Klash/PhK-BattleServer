@@ -3111,6 +3111,14 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_TRUE(!submitted.duplicate);
     const auto settled_summary = server.MatchReplaySummary("match-001");
 
+    phk::battle::BattleHandshakeHello handshake_after_settle;
+    handshake_after_settle.battle_ticket = MakeTicket();
+    FillDistinctHandshakeBytes(handshake_after_settle);
+    handshake_after_settle.supported_aead = {"CHACHA20_POLY1305"};
+    const auto handshake_after_settle_result = server.AcceptHandshake(handshake_after_settle);
+    CHECK_TRUE(!handshake_after_settle_result.ok);
+    CHECK_EQ(handshake_after_settle_result.reason, std::string("match_settled"));
+
     const auto input_after_settle = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
     CHECK_TRUE(!input_after_settle.ok);
     CHECK_EQ(input_after_settle.reason, std::string("match_settled"));
@@ -3228,6 +3236,9 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto duplicate_result_after_retire = server.SubmitBattleResult(built_result.signed_result);
     CHECK_TRUE(!duplicate_result_after_retire.ok);
     CHECK_EQ(duplicate_result_after_retire.reason, std::string("match_unknown"));
+    const auto handshake_after_retire_result = server.AcceptHandshake(handshake_after_settle);
+    CHECK_TRUE(!handshake_after_retire_result.ok);
+    CHECK_EQ(handshake_after_retire_result.reason, std::string("match_retired"));
     const auto replay_ticket_after_retire = server.RegisterTicket(MakeTicket());
     CHECK_TRUE(!replay_ticket_after_retire.ok);
     CHECK_EQ(replay_ticket_after_retire.reason, std::string("match_retired"));
