@@ -347,6 +347,7 @@ def main() -> int:
         or "BattleSimulation" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
+        or "ReplayRecordBridge" not in simulation_text
         or "ReplayInputStreamSummaryRecord" not in simulation_text
         or "BuildReplayInputStreamSummary" not in simulation_text
         or "BuildReplayFixture" not in simulation_text
@@ -354,6 +355,8 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash" not in simulation_text
         or "CanonicalReplayFixturePayload" not in simulation_text
         or "DevReplayFixtureHash" not in simulation_text
+        or "CanonicalReplayRecordBridgePayload" not in simulation_text
+        or "DevReplayRecordBridgeHash" not in simulation_text
         or "DevModeResultJsonFromReplayFixture" not in simulation_text
         or "DevResultHashFromReplaySummary" not in simulation_text
         or "AcceptModeAction" not in simulation_text
@@ -369,7 +372,7 @@ def main() -> int:
         or "input_trace" not in simulation_text
         or "event_trace" not in simulation_text
     ):
-        print("simulation boundary missing fixed tick, simulation, replay fixture/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, replay trace, or mode action acceptance", file=sys.stderr)
+        print("simulation boundary missing fixed tick, simulation, replay fixture/record/summary, mode/ruleset, reconnect snapshot, seq window, fallback audit, replay trace, or mode action acceptance", file=sys.stderr)
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
@@ -382,6 +385,8 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash" not in simulation_impl
         or "CanonicalReplayFixturePayload" not in simulation_impl
         or "DevReplayFixtureHash" not in simulation_impl
+        or "CanonicalReplayRecordBridgePayload" not in simulation_impl
+        or "DevReplayRecordBridgeHash" not in simulation_impl
         or "DevResultHashFromReplaySummary" not in simulation_impl
         or "DevReplayIdFromReplaySummary" not in simulation_impl
         or 'Snapshot("replay_final")' not in simulation_impl
@@ -410,6 +415,7 @@ def main() -> int:
         or "record.owner_user_id" not in simulation_impl
         or "HashAppend(hash, item)" not in simulation_impl
         or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
+        or "CanonicalReplayRecordBridgePayload(record)" not in simulation_impl
         or "CanonicalSnapshotPayload" not in simulation_impl
         or "DevModeResultJsonFromReplayFixture" not in simulation_impl
         or '"tick_rate_hz"' not in simulation_impl
@@ -419,7 +425,7 @@ def main() -> int:
         or "bullet.pattern_id" not in simulation_impl
         or "snapshot.mode_state" not in simulation_impl
     ):
-        print("simulation implementation missing canonical hash, replay fixture material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
+        print("simulation implementation missing canonical hash, replay fixture/record material, mode/ruleset projection, reconnect, fallback/mode-action replay audit, replay trace hashing, or authoritative input/mode-action validation", file=sys.stderr)
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
@@ -457,8 +463,11 @@ def main() -> int:
         or "IsClientToServerEncryptedPayload" not in server_impl
         or "encrypted_payload_type_invalid" not in server_impl
         or "BuildSignedBattleResult" not in server_impl
+        or "BuildReplayRecord" not in server_impl
+        or "BuildReplayRecordResult" not in server_impl
         or "DevBattleResultSignatureHex" not in server_impl
         or "DevModeResultJsonFromReplayFixture(replay_fixture)" not in server_impl
+        or "DevReplayRecordBridgeHash(record)" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
         or "DevReplayIdFromReplaySummary" not in server_impl
         or "projection_only" not in server_impl
@@ -475,7 +484,7 @@ def main() -> int:
         or "replay_summary_hash" not in server_impl
         or "replay_fixture_hash" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result callback, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, or registered-player authority guards", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
@@ -592,6 +601,13 @@ def main() -> int:
         or "sha256:dev-fnv64-2a7544832ca5ff92" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
         or "sha256:dev-fnv64-f2df27561abbe64e" not in tests_text
+        or "ReplayRecordBridgeBoundary" not in tests_text
+        or "BuildReplayRecord(\"match-001\"" not in tests_text
+        or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
+        or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
+        or "sha256:dev-fnv64-425681f95cd69c34" not in tests_text
+        or "tampered_stream" not in tests_text
+        or "tampered_settlement" not in tests_text
         or "tampered_fixture_snapshot" not in tests_text
         or "tampered_fixture_player" not in tests_text
         or "tampered_fixture_bullet" not in tests_text

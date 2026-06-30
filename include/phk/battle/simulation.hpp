@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "phk/battle/protocol.hpp"
+#include "phk/battle/result.hpp"
 
 namespace phk::battle {
 
@@ -91,6 +92,19 @@ struct ReplayFixture {
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
     std::uint64_t event_cursor = 0;
     bool server_authoritative = true;
+};
+
+struct ReplayRecordBridge {
+    VersionStamp version;
+    std::string replay_id;
+    std::string match_id;
+    std::string owner_user_id;
+    std::string mode_id;
+    std::string stage_id;
+    ReplayInputStreamSummaryRecord stream;
+    SignedBattleResult settlement;
+    bool server_authoritative = true;
+    std::int64_t created_at_ms = 0;
 };
 
 struct SimulationConfig {
@@ -197,6 +211,8 @@ private:
 );
 [[nodiscard]] std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture);
 [[nodiscard]] std::string DevReplayFixtureHash(const ReplayFixture& fixture);
+[[nodiscard]] std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record);
+[[nodiscard]] std::string DevReplayRecordBridgeHash(const ReplayRecordBridge& record);
 [[nodiscard]] std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture);
 [[nodiscard]] std::string DevResultHashFromReplaySummary(const ReplaySummary& summary);
 [[nodiscard]] std::string DevReplayIdFromReplaySummary(const ReplaySummary& summary);

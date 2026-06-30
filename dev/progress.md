@@ -2,6 +2,12 @@
 
 Status date: 2026-06-29
 
+## 2026-06-30 Replay Record Bridge Boundary
+
+- Added `ReplayRecordBridge` and `BattleServer::BuildReplayRecord` as a dependency-light `ReplayRecord` protobuf replacement target before generated C++ bindings land.
+- The bridge binds the server-owned replay id, owner user id, match/mode/stage ids, manifest-compatible replay stream summary, server-built signed battle result settlement, server-authoritative flags, created-at timestamp, canonical payload, and deterministic development record hash.
+- CTest and `tools/check_battle_server.py` now gate the bridge API, canonical payload, pinned record hash, stream/settlement/authority tamper sensitivity, and `ReplayRecord.stream/settlement/server_authoritative` manifest fields. This remains export/scaffold material only and does not persist replay rows, rewards, inventory, wallet, or database state.
+
 ## 2026-06-30 Signed Result Tick-Rate Boundary
 
 - Development signed-result `mode_result_json` now carries explicit `tick_rate_hz` from the canonical replay fixture, currently pinned to the 60Hz authoritative simulation contract.

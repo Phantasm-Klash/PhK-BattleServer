@@ -512,6 +512,41 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     return result;
 }
 
+BuildReplayRecordResult BattleServer::BuildReplayRecord(
+    const std::string& match_id,
+    std::string owner_user_id,
+    std::string stage_id
+) const {
+    BuildReplayRecordResult result;
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.reason = "match_unknown";
+        return result;
+    }
+
+    auto signed_result = BuildSignedBattleResult(match_id);
+    if (!signed_result.ok) {
+        result.reason = signed_result.reason;
+        return result;
+    }
+
+    const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture(owner_user_id);
+    ReplayRecordBridge& record = result.replay_record;
+    record.replay_id = replay_fixture.replay_id;
+    record.match_id = replay_fixture.match_id;
+    record.owner_user_id = replay_fixture.owner_user_id;
+    record.mode_id = replay_fixture.mode_id;
+    record.stage_id = std::move(stage_id);
+    record.stream = replay_fixture.replay_summary_record;
+    record.settlement = std::move(signed_result.signed_result);
+    record.server_authoritative = replay_fixture.server_authoritative;
+    record.created_at_ms = config_.now_ms > 0 ? config_.now_ms : 1;
+    result.replay_record_hash = DevReplayRecordBridgeHash(record);
+    result.ok = true;
+    result.reason = "ok";
+    return result;
+}
+
 SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResult& signed_result) {
     SubmitBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);

@@ -1326,6 +1326,88 @@ bool TestReplayFixtureBoundary() {
     return true;
 }
 
+bool TestReplayRecordBridgeBoundary() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489640000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
+    CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
+    CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+
+    const auto missing = server.BuildReplayRecord("match-missing", "user-alice", "stage-dev");
+    CHECK_TRUE(!missing.ok);
+    CHECK_EQ(missing.reason, std::string("match_unknown"));
+
+    const auto built = server.BuildReplayRecord("match-001", "user-alice", "stage-dev");
+    CHECK_TRUE(built.ok);
+    CHECK_EQ(built.reason, std::string("ok"));
+    CHECK_EQ(built.replay_record.replay_id, std::string("battle-replay:match-001:1"));
+    CHECK_EQ(built.replay_record.match_id, std::string("match-001"));
+    CHECK_EQ(built.replay_record.owner_user_id, std::string("user-alice"));
+    CHECK_EQ(built.replay_record.mode_id, std::string("certification"));
+    CHECK_EQ(built.replay_record.stage_id, std::string("stage-dev"));
+    CHECK_TRUE(built.replay_record.server_authoritative);
+    CHECK_EQ(built.replay_record.created_at_ms, config.now_ms);
+    CHECK_EQ(built.replay_record.stream.replay_id, built.replay_record.replay_id);
+    CHECK_EQ(built.replay_record.stream.owner_user_id, built.replay_record.owner_user_id);
+    CHECK_EQ(built.replay_record.stream.match_id, built.replay_record.match_id);
+    CHECK_EQ(built.replay_record.stream.input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(built.replay_record.stream.event_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(built.replay_record.stream.final_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(built.replay_record.stream.input_stream_hash, std::string("fnv64:6b09da7d62e0941e"));
+    CHECK_EQ(built.replay_record.stream.event_stream_hash, std::string("fnv64:14650fb0739d0383"));
+    CHECK_EQ(built.replay_record.stream.final_state_hash, std::string("fnv64:72a3385f1a7c7fe3"));
+    CHECK_EQ(built.replay_record.settlement.result.match_id, built.replay_record.match_id);
+    CHECK_EQ(built.replay_record.settlement.result.mode_id, built.replay_record.mode_id);
+    CHECK_EQ(built.replay_record.settlement.result.replay_id, built.replay_record.replay_id);
+    CHECK_EQ(
+        built.replay_record.settlement.result.result_hash,
+        std::string("sha256:dev-fnv64-7cd25aafda3bc356")
+    );
+    CHECK_TRUE(built.replay_record.settlement.server_authoritative);
+    CHECK_EQ(
+        built.replay_record.settlement.signature_hex,
+        phk::battle::DevBattleResultSignatureHex(
+            built.replay_record.settlement.result,
+            built.replay_record.settlement.key_id
+        )
+    );
+
+    const auto canonical_record = phk::battle::CanonicalReplayRecordBridgePayload(built.replay_record);
+    CHECK_TRUE(canonical_record.find("battle-replay:match-001:1|match-001|user-alice|certification|stage-dev|") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-001:1|") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("user-alice|match-001|2|0|fnv64:6b09da7d62e0941e|") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|") != std::string::npos);
+    CHECK_TRUE(canonical_record.find("|ED25519|battle-local-1|") != std::string::npos);
+    CHECK_EQ(
+        built.replay_record_hash,
+        phk::battle::DevReplayRecordBridgeHash(built.replay_record)
+    );
+    CHECK_EQ(
+        built.replay_record_hash,
+        std::string("sha256:dev-fnv64-425681f95cd69c34")
+    );
+
+    auto tampered_stream = built.replay_record;
+    tampered_stream.stream.final_state_hash = "fnv64:0000000000000000";
+    CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_stream) != built.replay_record_hash);
+    auto tampered_settlement = built.replay_record;
+    tampered_settlement.settlement.result.result_hash = "sha256:dev-fnv64-0000000000000000";
+    CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_settlement) != built.replay_record_hash);
+    auto tampered_authority = built.replay_record;
+    tampered_authority.server_authoritative = false;
+    CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_authority) != built.replay_record_hash);
+    auto tampered_signature = built.replay_record;
+    tampered_signature.settlement.signature_hex = RepeatHex('d', 128);
+    CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_signature) != built.replay_record_hash);
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "stream"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "settlement"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "server_authoritative"));
+    return true;
+}
+
 bool TestServerAuthoritativeInputAndSnapshot() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -2260,6 +2342,7 @@ int main() {
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
+		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},

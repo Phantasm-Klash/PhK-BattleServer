@@ -669,6 +669,38 @@ std::string DevReplayFixtureHash(const ReplayFixture& fixture) {
     return out.str();
 }
 
+std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record) {
+    std::ostringstream out;
+    out << record.version.protocol_version << '|'
+        << record.version.business_api_version << '|'
+        << record.version.battle_api_version << '|'
+        << record.version.ruleset_version << '|'
+        << record.replay_id << '|'
+        << record.match_id << '|'
+        << record.owner_user_id << '|'
+        << record.mode_id << '|'
+        << record.stage_id << '|'
+        << CanonicalReplayInputStreamSummaryRecord(record.stream) << '|'
+        << CanonicalBattleResultPayload(record.settlement.result) << '|'
+        << record.settlement.signature_alg << '|'
+        << record.settlement.key_id << '|'
+        << record.settlement.public_key_hex << '|'
+        << record.settlement.signature_hex << '|'
+        << (record.settlement.server_authoritative ? "1" : "0") << '|'
+        << (record.server_authoritative ? "1" : "0") << '|'
+        << record.created_at_ms;
+    return out.str();
+}
+
+std::string DevReplayRecordBridgeHash(const ReplayRecordBridge& record) {
+    std::uint64_t hash = kFnvOffset;
+    hash = HashAppend(hash, CanonicalReplayRecordBridgePayload(record));
+
+    std::ostringstream out;
+    out << "sha256:dev-fnv64-" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return out.str();
+}
+
 std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const ReplaySummary& summary = fixture.summary;
     return "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +

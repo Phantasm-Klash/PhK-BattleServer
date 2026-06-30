@@ -55,6 +55,13 @@ struct BuildSignedBattleResultResult {
 	ReplaySummary replay_summary;
 };
 
+struct BuildReplayRecordResult {
+	bool ok = false;
+	std::string reason;
+	ReplayRecordBridge replay_record;
+	std::string replay_record_hash;
+};
+
 enum class DecodedBattlePayloadKind {
 	None,
 	Input,
@@ -100,6 +107,11 @@ public:
 	) const;
 	ReplaySummary MatchReplaySummary(const std::string& match_id) const;
 	BuildSignedBattleResultResult BuildSignedBattleResult(const std::string& match_id) const;
+	BuildReplayRecordResult BuildReplayRecord(
+		const std::string& match_id,
+		std::string owner_user_id = "",
+		std::string stage_id = ""
+	) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
 
 private:
