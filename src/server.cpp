@@ -82,7 +82,9 @@ bool BossMatchReadyForResult(const BattleSimulation& simulation) {
     if (!IsBossMode(simulation.Config().mode_id)) {
         return true;
     }
-    return simulation.PlayerCount() >= 4 && simulation.PlayerCount() <= 8;
+    const auto mode_state = simulation.Snapshot().mode_state;
+    const auto ready_to_start = mode_state.find("boss_ready_to_start");
+    return ready_to_start != mode_state.end() && ready_to_start->second == "1";
 }
 
 InputValidationResult UnknownPlayerResult() {
