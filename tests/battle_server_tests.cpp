@@ -1714,6 +1714,21 @@ bool TestBossTransferCardValidation() {
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
 
+    phk::battle::TransferableCardState invalid_audit_card;
+    invalid_audit_card.card_instance_id = "boss-card;tampered:p1>p2";
+    invalid_audit_card.owner_player_id = "p1";
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", invalid_audit_card));
+
+    auto invalid_audit_transfer = MakeModeAction(1);
+    invalid_audit_transfer.tick = 1;
+    invalid_audit_transfer.action_id = "action-boss-transfer-card-invalid-audit";
+    invalid_audit_transfer.action_type = "transfer_card";
+    invalid_audit_transfer.payload_json =
+        "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card;tampered:p1>p2\"}";
+    const auto invalid_audit_result = server.AcceptModeAction(invalid_audit_transfer);
+    CHECK_TRUE(!invalid_audit_result.ok);
+    CHECK_EQ(invalid_audit_result.reason, std::string("transfer_card_instance_id_invalid"));
+
     const auto unauthorized = server.AcceptModeAction(transfer);
     CHECK_TRUE(!unauthorized.ok);
     CHECK_EQ(unauthorized.reason, std::string("transfer_card_not_authorized"));

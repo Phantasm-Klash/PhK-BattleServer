@@ -127,10 +127,21 @@ bool IsAllowedBossIdentityChar(char ch) {
     return std::isalnum(byte) || ch == '_' || ch == '-' || ch == ':' || ch == '.';
 }
 
+bool IsAllowedAuditTokenChar(char ch) {
+    const auto byte = static_cast<unsigned char>(ch);
+    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == '.' || ch == '\\';
+}
+
 bool IsValidBossIdentityField(std::string_view value) {
     return !value.empty() &&
         value.size() <= kDefaultMaxBossIdentityBytes &&
         std::all_of(value.begin(), value.end(), IsAllowedBossIdentityChar);
+}
+
+bool IsValidTransferCardInstanceId(std::string_view value) {
+    return !value.empty() &&
+        value.size() <= kDefaultMaxTransferCardInstanceIdBytes &&
+        std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
 }
 
 std::string NormalizedBossIdentityField(std::string value, std::string fallback) {
@@ -475,7 +486,7 @@ bool BattleSimulation::ConfigureTransferableCard(TransferableCardState card) {
     if (!IsBossMode(config_.mode_id)) {
         return false;
     }
-    if (card.card_instance_id.empty() || card.owner_player_id.empty()) {
+    if (!IsValidTransferCardInstanceId(card.card_instance_id) || card.owner_player_id.empty()) {
         return false;
     }
     if (players_.find(card.owner_player_id) == players_.end()) {
@@ -775,6 +786,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         if (target_player_id.empty() || card_instance_id.empty()) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "transfer_card_payload_missing_fields";
+            return result;
+        }
+        if (!IsValidTransferCardInstanceId(card_instance_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_instance_id_invalid";
             return result;
         }
         if (target_player_id == action.player_id) {
