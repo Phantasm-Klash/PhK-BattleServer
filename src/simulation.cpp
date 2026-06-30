@@ -1011,6 +1011,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_defeated != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_defeated\":" + boss_defeated->second;
     }
+    const auto boss_defeated_tick = fixture.final_snapshot.mode_state.find("boss_defeated_tick");
+    if (boss_defeated_tick != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_defeated_tick\":" + boss_defeated_tick->second;
+    }
     const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
     if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_clear_status\":\"" + boss_clear_status->second + "\"";

@@ -839,6 +839,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_current_hp = std::stoull(mode_state.at("boss_current_hp"));
         options.required_boss_damage_total = std::stoull(mode_state.at("boss_damage_total"));
         options.required_boss_defeated = std::stoull(mode_state.at("boss_defeated"));
+        options.required_boss_defeated_tick = std::stoull(mode_state.at("boss_defeated_tick"));
         options.required_boss_clear_status = mode_state.at("boss_clear_status");
         options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
         for (const auto& player : replay_fixture.final_snapshot.players) {

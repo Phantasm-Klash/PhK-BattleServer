@@ -1722,6 +1722,7 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
@@ -1806,6 +1807,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
 
@@ -1858,6 +1860,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_defeated_result = server.SubmitBattleResult(wrong_defeated);
     CHECK_TRUE(!wrong_defeated_result.ok);
     CHECK_EQ(wrong_defeated_result.reason, std::string("boss_defeated_mismatch"));
+
+    auto wrong_defeated_tick = built.signed_result;
+    wrong_defeated_tick.result.mode_result_json = ReplaceFirst(
+        wrong_defeated_tick.result.mode_result_json,
+        "\"boss_defeated_tick\":0",
+        "\"boss_defeated_tick\":1"
+    );
+    const auto wrong_defeated_tick_result = server.SubmitBattleResult(wrong_defeated_tick);
+    CHECK_TRUE(!wrong_defeated_tick_result.ok);
+    CHECK_EQ(wrong_defeated_tick_result.reason, std::string("boss_defeated_tick_mismatch"));
 
     auto wrong_clear_status = built.signed_result;
     wrong_clear_status.result.mode_result_json = ReplaceJsonStringField(

@@ -292,6 +292,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "boss_defeated_tick", options.required_boss_defeated_tick)) {
+        Fail(verification, "boss_defeated_tick_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonStringField(result.mode_result_json, "boss_clear_status", options.required_boss_clear_status)) {
         Fail(verification, "boss_clear_status_mismatch");
         return verification;
