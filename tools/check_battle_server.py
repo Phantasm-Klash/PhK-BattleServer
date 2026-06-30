@@ -348,6 +348,7 @@ def main() -> int:
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
         or "ReplayRecordBridge" not in simulation_text
+        or "ReplayLoadoutBridge" not in simulation_text
         or "ReplayInputStreamSummaryRecord" not in simulation_text
         or "BuildReplayInputStreamSummary" not in simulation_text
         or "BuildReplayFixture" not in simulation_text
@@ -355,6 +356,7 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash" not in simulation_text
         or "CanonicalReplayFixturePayload" not in simulation_text
         or "DevReplayFixtureHash" not in simulation_text
+        or "CanonicalReplayLoadoutBridgePayload" not in simulation_text
         or "CanonicalReplayRecordBridgePayload" not in simulation_text
         or "DevReplayRecordBridgeHash" not in simulation_text
         or "DevModeResultJsonFromReplayFixture" not in simulation_text
@@ -385,6 +387,7 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash" not in simulation_impl
         or "CanonicalReplayFixturePayload" not in simulation_impl
         or "DevReplayFixtureHash" not in simulation_impl
+        or "CanonicalReplayLoadoutBridgePayload" not in simulation_impl
         or "CanonicalReplayRecordBridgePayload" not in simulation_impl
         or "DevReplayRecordBridgeHash" not in simulation_impl
         or "DevResultHashFromReplaySummary" not in simulation_impl
@@ -415,6 +418,7 @@ def main() -> int:
         or "record.owner_user_id" not in simulation_impl
         or "HashAppend(hash, item)" not in simulation_impl
         or "CanonicalReplayFixturePayload(fixture)" not in simulation_impl
+        or "CanonicalReplayLoadoutBridgePayload(record.loadout)" not in simulation_impl
         or "CanonicalReplayRecordBridgePayload(record)" not in simulation_impl
         or "CanonicalSnapshotPayload" not in simulation_impl
         or "DevModeResultJsonFromReplayFixture" not in simulation_impl
@@ -465,6 +469,9 @@ def main() -> int:
         or "BuildSignedBattleResult" not in server_impl
         or "BuildReplayRecord" not in server_impl
         or "BuildReplayRecordResult" not in server_impl
+        or "session.deck_snapshot_hash = signed_ticket.ticket.deck_snapshot_hash" not in server_impl
+        or "ReplayLoadoutBridge loadout" not in server_impl
+        or "record.loadout.push_back" not in server_impl
         or "DevBattleResultSignatureHex" not in server_impl
         or "DevModeResultJsonFromReplayFixture(replay_fixture)" not in server_impl
         or "DevReplayRecordBridgeHash(record)" not in server_impl
@@ -604,9 +611,11 @@ def main() -> int:
         or "ReplayRecordBridgeBoundary" not in tests_text
         or "BuildReplayRecord(\"match-001\"" not in tests_text
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
+        or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-425681f95cd69c34" not in tests_text
+        or "sha256:dev-fnv64-c17015ae6005b256" not in tests_text
         or "tampered_stream" not in tests_text
+        or "tampered_loadout" not in tests_text
         or "tampered_settlement" not in tests_text
         or "tampered_fixture_snapshot" not in tests_text
         or "tampered_fixture_player" not in tests_text

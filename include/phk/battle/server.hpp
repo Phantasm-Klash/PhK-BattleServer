@@ -23,8 +23,11 @@ struct BattleSessionRecord {
     std::string session_id;
     std::string ticket_id;
     std::string match_id;
+    std::string user_id;
     std::string player_id;
     std::string mode_id;
+    std::string deck_snapshot_hash;
+    std::string ruleset_version;
     std::uint32_t kcp_conv = 0;
     std::string key_id;
     std::string server_to_client_key_id;

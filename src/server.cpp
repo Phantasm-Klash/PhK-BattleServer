@@ -168,8 +168,11 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     BattleSessionRecord session;
     session.ticket_id = signed_ticket.ticket.ticket_id;
     session.match_id = signed_ticket.ticket.match_id;
+    session.user_id = signed_ticket.ticket.user_id;
     session.player_id = signed_ticket.ticket.player_id;
     session.mode_id = signed_ticket.ticket.mode_id;
+    session.deck_snapshot_hash = signed_ticket.ticket.deck_snapshot_hash;
+    session.ruleset_version = signed_ticket.ticket.ruleset_version;
     session.kcp_conv = DeriveDevKcpConv(session.match_id, session.player_id);
     session.key_id = config_.signing_key_id;
     session.session_id = session.match_id + ":" + session.player_id + ":" + session.ticket_id;
@@ -537,6 +540,19 @@ BuildReplayRecordResult BattleServer::BuildReplayRecord(
     record.owner_user_id = replay_fixture.owner_user_id;
     record.mode_id = replay_fixture.mode_id;
     record.stage_id = std::move(stage_id);
+    for (const auto& item : sessions_by_ticket_) {
+        const BattleSessionRecord& session = item.second;
+        if (session.match_id != match_id) {
+            continue;
+        }
+        ReplayLoadoutBridge loadout;
+        loadout.user_id = session.user_id;
+        loadout.player_id = session.player_id;
+        loadout.stage_id = record.stage_id;
+        loadout.deck_snapshot_hash = session.deck_snapshot_hash;
+        loadout.deck_ruleset_version = session.ruleset_version;
+        record.loadout.push_back(std::move(loadout));
+    }
     record.stream = replay_fixture.replay_summary_record;
     record.settlement = std::move(signed_result.signed_result);
     record.server_authoritative = replay_fixture.server_authoritative;

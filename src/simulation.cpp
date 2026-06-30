@@ -669,6 +669,35 @@ std::string DevReplayFixtureHash(const ReplayFixture& fixture) {
     return out.str();
 }
 
+std::string CanonicalReplayLoadoutBridgePayload(
+    const std::vector<ReplayLoadoutBridge>& loadout
+) {
+    std::ostringstream out;
+    std::vector<ReplayLoadoutBridge> sorted = loadout;
+    std::sort(sorted.begin(), sorted.end(), [](const ReplayLoadoutBridge& left, const ReplayLoadoutBridge& right) {
+        if (left.player_id != right.player_id) {
+            return left.player_id < right.player_id;
+        }
+        return left.user_id < right.user_id;
+    });
+
+    for (const auto& item : sorted) {
+        out << "loadout="
+            << item.user_id << ','
+            << item.player_id << ','
+            << item.character_id << ','
+            << item.stage_id << ','
+            << item.rating_code << ','
+            << item.deck_snapshot_hash << ','
+            << item.deck_ruleset_version << ',';
+        for (const auto& card_id : item.deck_card_ids) {
+            out << card_id << '/';
+        }
+        out << ';';
+    }
+    return out.str();
+}
+
 std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record) {
     std::ostringstream out;
     out << record.version.protocol_version << '|'
@@ -680,6 +709,7 @@ std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record)
         << record.owner_user_id << '|'
         << record.mode_id << '|'
         << record.stage_id << '|'
+        << CanonicalReplayLoadoutBridgePayload(record.loadout) << '|'
         << CanonicalReplayInputStreamSummaryRecord(record.stream) << '|'
         << CanonicalBattleResultPayload(record.settlement.result) << '|'
         << record.settlement.signature_alg << '|'

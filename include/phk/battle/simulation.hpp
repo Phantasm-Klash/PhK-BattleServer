@@ -94,6 +94,17 @@ struct ReplayFixture {
     bool server_authoritative = true;
 };
 
+struct ReplayLoadoutBridge {
+    std::string user_id;
+    std::string player_id;
+    std::string character_id;
+    std::string stage_id;
+    std::string rating_code;
+    std::string deck_snapshot_hash;
+    std::string deck_ruleset_version;
+    std::vector<std::string> deck_card_ids;
+};
+
 struct ReplayRecordBridge {
     VersionStamp version;
     std::string replay_id;
@@ -101,6 +112,7 @@ struct ReplayRecordBridge {
     std::string owner_user_id;
     std::string mode_id;
     std::string stage_id;
+    std::vector<ReplayLoadoutBridge> loadout;
     ReplayInputStreamSummaryRecord stream;
     SignedBattleResult settlement;
     bool server_authoritative = true;
@@ -211,6 +223,9 @@ private:
 );
 [[nodiscard]] std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture);
 [[nodiscard]] std::string DevReplayFixtureHash(const ReplayFixture& fixture);
+[[nodiscard]] std::string CanonicalReplayLoadoutBridgePayload(
+    const std::vector<ReplayLoadoutBridge>& loadout
+);
 [[nodiscard]] std::string CanonicalReplayRecordBridgePayload(const ReplayRecordBridge& record);
 [[nodiscard]] std::string DevReplayRecordBridgeHash(const ReplayRecordBridge& record);
 [[nodiscard]] std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture);

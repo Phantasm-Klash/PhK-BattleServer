@@ -1348,6 +1348,20 @@ bool TestReplayRecordBridgeBoundary() {
     CHECK_EQ(built.replay_record.owner_user_id, std::string("user-alice"));
     CHECK_EQ(built.replay_record.mode_id, std::string("certification"));
     CHECK_EQ(built.replay_record.stage_id, std::string("stage-dev"));
+    CHECK_EQ(built.replay_record.loadout.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(built.replay_record.loadout[0].user_id, std::string("user-alice"));
+    CHECK_EQ(built.replay_record.loadout[0].player_id, std::string("p1"));
+    CHECK_EQ(built.replay_record.loadout[0].stage_id, std::string("stage-dev"));
+    CHECK_EQ(built.replay_record.loadout[0].deck_snapshot_hash, std::string("sha256:deck"));
+    CHECK_EQ(built.replay_record.loadout[0].deck_ruleset_version, std::string(phk::v1::kRulesetVersion));
+    CHECK_TRUE(built.replay_record.loadout[0].character_id.empty());
+    CHECK_TRUE(built.replay_record.loadout[0].rating_code.empty());
+    CHECK_TRUE(built.replay_record.loadout[0].deck_card_ids.empty());
+    CHECK_EQ(built.replay_record.loadout[1].user_id, std::string("user-bob"));
+    CHECK_EQ(built.replay_record.loadout[1].player_id, std::string("p2"));
+    CHECK_EQ(built.replay_record.loadout[1].stage_id, std::string("stage-dev"));
+    CHECK_EQ(built.replay_record.loadout[1].deck_snapshot_hash, std::string("sha256:deck"));
+    CHECK_EQ(built.replay_record.loadout[1].deck_ruleset_version, std::string(phk::v1::kRulesetVersion));
     CHECK_TRUE(built.replay_record.server_authoritative);
     CHECK_EQ(built.replay_record.created_at_ms, config.now_ms);
     CHECK_EQ(built.replay_record.stream.replay_id, built.replay_record.replay_id);
@@ -1377,6 +1391,17 @@ bool TestReplayRecordBridgeBoundary() {
 
     const auto canonical_record = phk::battle::CanonicalReplayRecordBridgePayload(built.replay_record);
     CHECK_TRUE(canonical_record.find("battle-replay:match-001:1|match-001|user-alice|certification|stage-dev|") != std::string::npos);
+    CHECK_TRUE(
+        phk::battle::CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout) ==
+        "loadout=user-alice,p1,,stage-dev,,sha256:deck,ruleset-local-s0,;"
+        "loadout=user-bob,p2,,stage-dev,,sha256:deck,ruleset-local-s0,;"
+    );
+    CHECK_TRUE(
+        canonical_record.find(
+            "loadout=user-alice,p1,,stage-dev,,sha256:deck,ruleset-local-s0,;"
+            "loadout=user-bob,p2,,stage-dev,,sha256:deck,ruleset-local-s0,;|"
+        ) != std::string::npos
+    );
     CHECK_TRUE(canonical_record.find("1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-001:1|") != std::string::npos);
     CHECK_TRUE(canonical_record.find("user-alice|match-001|2|0|fnv64:6b09da7d62e0941e|") != std::string::npos);
     CHECK_TRUE(canonical_record.find("sha256:dev-fnv64-7cd25aafda3bc356|battle-replay:match-001:1|") != std::string::npos);
@@ -1387,12 +1412,15 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-425681f95cd69c34")
+        std::string("sha256:dev-fnv64-c17015ae6005b256")
     );
 
     auto tampered_stream = built.replay_record;
     tampered_stream.stream.final_state_hash = "fnv64:0000000000000000";
     CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_stream) != built.replay_record_hash);
+    auto tampered_loadout = built.replay_record;
+    tampered_loadout.loadout[0].deck_snapshot_hash = "sha256:tampered-deck";
+    CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_loadout) != built.replay_record_hash);
     auto tampered_settlement = built.replay_record;
     tampered_settlement.settlement.result.result_hash = "sha256:dev-fnv64-0000000000000000";
     CHECK_TRUE(phk::battle::DevReplayRecordBridgeHash(tampered_settlement) != built.replay_record_hash);
