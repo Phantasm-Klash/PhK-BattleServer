@@ -3175,7 +3175,7 @@ bool TestModeResultJsonEscapesServerOwnedStrings() {
     transfer.seq = 1;
     transfer.action_id = "action-instance-escaped-transfer";
     transfer.action_type = "transfer_card";
-    transfer.payload_json = R"({"target_player_id":"p2","card_instance_id":"instance\escaped-card-001"})";
+    transfer.payload_json = R"({"target_player_id":"p2","card_instance_id":"instance\\escaped-card-001"})";
     CHECK_TRUE(server.AcceptModeAction(transfer).ok);
 
     for (std::size_t index = 1; index <= 4; ++index) {
@@ -4775,6 +4775,47 @@ bool TestDecodedPayloadHeaderBinding() {
     return true;
 }
 
+bool TestDecodedAdapterAckAheadDoesNotConsumeSeq() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    const auto accept = AcceptDefaultHandshake(server);
+    CHECK_TRUE(accept.ok);
+
+    phk::battle::DecodedBattlePacket packet;
+    packet.encrypted_packet.header.match_id = "match-001";
+    packet.encrypted_packet.header.player_id = "p1";
+    packet.encrypted_packet.header.tick = 1;
+    packet.encrypted_packet.header.seq = 1;
+    packet.encrypted_packet.header.ack = 1;
+    packet.encrypted_packet.header.payload_type = phk::battle::BattlePayloadType::Input;
+    packet.encrypted_packet.header.key_id = accept.client_to_server_key_ref;
+    RefreshDevAeadNonce(packet.encrypted_packet.header);
+    packet.encrypted_packet.ciphertext = {'p', 'b', ':', 'i', 'n', 'p', 'u', 't'};
+    packet.encrypted_packet.auth_tag.assign(16, 0x34);
+    packet.decoded_payload_kind = phk::battle::DecodedBattlePayloadKind::Input;
+    packet.decoded_input = MakeInput("p1", 1, 1, 1u << 3);
+
+    phk::battle::DecodedBattlePacketAdapter adapter(server);
+    const auto ack_ahead = adapter.AcceptDecodedPacket(packet);
+    CHECK_TRUE(!ack_ahead.ok);
+    CHECK_TRUE(!ack_ahead.encrypted_dispatch_accepted);
+    CHECK_EQ(ack_ahead.reason, std::string("encrypted_ack_ahead"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(0));
+
+    auto corrected = packet;
+    corrected.encrypted_packet.header.ack = 0;
+    RefreshDevAeadNonce(corrected.encrypted_packet.header);
+    const auto accepted = adapter.AcceptDecodedPacket(corrected);
+    CHECK_TRUE(accepted.ok);
+    CHECK_TRUE(accepted.encrypted_dispatch_accepted);
+    CHECK_EQ(accepted.dispatch.response_kind, std::string("input"));
+    CHECK_EQ(accepted.decoded.reason, std::string("ok"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
+    return true;
+}
+
 bool TestDecodedBattlePacketAdapterBoundary() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -5306,6 +5347,7 @@ int main() {
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"DecodedPayloadHeaderBinding", TestDecodedPayloadHeaderBinding},
+        {"DecodedAdapterAckAheadDoesNotConsumeSeq", TestDecodedAdapterAckAheadDoesNotConsumeSeq},
 		{"DecodedBattlePacketAdapterBoundary", TestDecodedBattlePacketAdapterBoundary},
 		{"KcpPlaceholder", TestKcpPlaceholder},
 		{"KcpAeadPacketAdapterBoundary", TestKcpAeadPacketAdapterBoundary},

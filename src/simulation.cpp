@@ -225,11 +225,47 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
         return "";
     }
     const auto string_start = value_start + prefix.size();
-    const auto string_end = payload_json.find('"', string_start);
-    if (string_end == std::string_view::npos) {
-        return "";
+    std::string decoded;
+    for (std::size_t index = string_start; index < payload_json.size(); ++index) {
+        const char ch = payload_json[index];
+        if (ch == '"') {
+            return decoded;
+        }
+        if (ch != '\\') {
+            decoded.push_back(ch);
+            continue;
+        }
+        ++index;
+        if (index >= payload_json.size()) {
+            return "";
+        }
+        const char escaped = payload_json[index];
+        switch (escaped) {
+            case '"':
+            case '\\':
+            case '/':
+                decoded.push_back(escaped);
+                break;
+            case 'b':
+                decoded.push_back('\b');
+                break;
+            case 'f':
+                decoded.push_back('\f');
+                break;
+            case 'n':
+                decoded.push_back('\n');
+                break;
+            case 'r':
+                decoded.push_back('\r');
+                break;
+            case 't':
+                decoded.push_back('\t');
+                break;
+            default:
+                return "";
+        }
     }
-    return std::string(payload_json.substr(string_start, string_end - string_start));
+    return "";
 }
 
 std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
