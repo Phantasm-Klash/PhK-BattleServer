@@ -420,6 +420,9 @@ def main() -> int:
         or "transfer_card_cost_unpaid" not in simulation_impl
         or "transfer_card_cooldown_blocked" not in simulation_impl
         or "transferable_cards_" not in simulation_impl
+        or '"boss_result_disposition"' not in simulation_impl
+        or "world_damage_report" not in simulation_impl
+        or "instance_incomplete" not in simulation_impl
         or "pending_transfer_card_authority_by_action_id_" not in simulation_impl
         or 'snapshot.mode_state["last_transfer_authority_owner_player_id"]' not in simulation_impl
         or '"last_transfer_authority_owner_player_id"' not in simulation_impl
@@ -707,6 +710,10 @@ def main() -> int:
         or "transfer_card_cost_unpaid" not in tests_text
         or "transfer_card_cooldown_blocked" not in tests_text
         or "ConfigureTransferableCard" not in tests_text
+        or "boss_result_disposition" not in tests_text
+        or "world_damage_report" not in tests_text
+        or "instance_cleared" not in tests_text
+        or "instance_incomplete" not in tests_text
         or "last_transfer_authority_owner_player_id" not in tests_text
         or "authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1" not in tests_text
         or "action-reconnect-p2" not in tests_text

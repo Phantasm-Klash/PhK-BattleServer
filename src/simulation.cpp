@@ -557,6 +557,13 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_defeated"] = BoolToken(boss_current_hp_ == 0);
         snapshot.mode_state["boss_defeated_tick"] = std::to_string(boss_defeated_tick_);
         snapshot.mode_state["boss_clear_status"] = boss_current_hp_ == 0 ? "cleared" : "running";
+        if (config_.mode_id == "world_boss") {
+            snapshot.mode_state["boss_result_disposition"] = "world_damage_report";
+        } else {
+            snapshot.mode_state["boss_result_disposition"] = boss_current_hp_ == 0 ?
+                "instance_cleared" :
+                "instance_incomplete";
+        }
         for (const auto& item : boss_damage_by_player_) {
             snapshot.mode_state["boss_damage_" + item.first] = std::to_string(item.second);
         }
@@ -967,6 +974,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
     if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_clear_status\":\"" + boss_clear_status->second + "\"";
+    }
+    const auto boss_result_disposition = fixture.final_snapshot.mode_state.find("boss_result_disposition");
+    if (boss_result_disposition != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_result_disposition\":\"" + boss_result_disposition->second + "\"";
     }
     const auto transfer_card_count = fixture.final_snapshot.mode_state.find("transfer_card_count");
     if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {

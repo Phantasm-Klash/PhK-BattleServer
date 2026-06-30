@@ -7,6 +7,7 @@ Status date: 2026-06-30
 - Added an in-memory `TransferableCardState` authority bridge for Boss `transfer_card` mode actions before the full shared card/rules config path lands.
 - `transfer_card` now rejects unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, and blocked cooldowns before the mode action enters the authoritative tick queue or consumes replay/hash state.
 - Accepted transfers freeze the server authority snapshot into mode state, replay trace/hash material, and development mode-result projection so Nakama/Go can later audit why the battle server accepted the handoff.
+- Boss mode result projection now carries `boss_result_disposition`, distinguishing world Boss damage reports from instance Boss cleared/incomplete outcomes without mutating rewards or persistence.
 - The server facade exposes match-bound transferable-card configuration for battle allocation/bootstrap wiring only; it does not persist inventory, rewards, wallets, databases, or Steam-owned state.
 - CTest and `tools/check_battle_server.py` now gate the new transfer-card authority reasons while existing deterministic replay/hash fixtures stay unchanged.
 

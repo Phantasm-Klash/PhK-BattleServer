@@ -1588,6 +1588,7 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_defeated"), std::string("0"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_clear_status"), std::string("running"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_result_disposition"), std::string("world_damage_report"));
 
     CHECK_TRUE(world_simulation.SetPlayerConnected("p2", false).ok);
     auto disconnected_input = p2_shoot;
@@ -1631,6 +1632,7 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated"), std::string("1"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated_tick"), std::string("1"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_result_disposition"), std::string("instance_cleared"));
     CHECK_EQ(instance_simulation.Summary().event_count, static_cast<std::uint64_t>(1));
     CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("boss_defeated|tick=1") != std::string::npos);
 
@@ -1685,6 +1687,7 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_card_instance_id\":\"instance-card-001\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") != std::string::npos);
@@ -1704,6 +1707,19 @@ bool TestBossModeResultProjection() {
     );
     CHECK_TRUE(pvp_mode_result_json.find("boss_") == std::string::npos);
     CHECK_TRUE(pvp_mode_result_json.find("transfer_card_count") == std::string::npos);
+
+    phk::battle::SimulationConfig incomplete_config;
+    incomplete_config.match_id = "match-instance-boss-incomplete-result";
+    incomplete_config.mode_id = "instance_boss";
+    incomplete_config.spawn_period_ticks = 1000;
+    incomplete_config.boss_max_hp = 100;
+    phk::battle::BattleSimulation incomplete_simulation(incomplete_config);
+    CHECK_TRUE(incomplete_simulation.AddPlayer("p1", 0, -60000));
+    const auto incomplete_result_json = phk::battle::DevModeResultJsonFromReplayFixture(
+        incomplete_simulation.BuildReplayFixture("user-boss-incomplete")
+    );
+    CHECK_TRUE(incomplete_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
     return true;
 }
 
