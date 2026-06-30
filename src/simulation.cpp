@@ -289,6 +289,9 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     if (config_.spawn_period_ticks == 0) {
         config_.spawn_period_ticks = 1;
     }
+    if (config_.max_mode_action_payload_bytes == 0) {
+        config_.max_mode_action_payload_bytes = 1;
+    }
     if (IsBossMode(config_.mode_id)) {
         if (!IsAllowedBossFriendlyFirePolicy(config_.boss_friendly_fire_policy)) {
             config_.boss_friendly_fire_policy = "disabled";
@@ -517,6 +520,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
     if (action.action_id.empty() || action.action_type.empty() || action.payload_json.empty()) {
         result.code = InputValidationCode::InvalidModeAction;
         result.reason = "mode_action_missing_fields";
+        return result;
+    }
+    if (action.payload_json.size() > config_.max_mode_action_payload_bytes) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_payload_too_large";
         return result;
     }
     if (!IsAllowedModeActionType(action.action_type)) {

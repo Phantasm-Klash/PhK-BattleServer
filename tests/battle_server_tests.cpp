@@ -1490,6 +1490,64 @@ bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
     return true;
 }
 
+bool TestModeActionPayloadSizeLimit() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-mode-action-size";
+    config.mode_id = "pvp_duel";
+    config.max_input_ahead_ticks = 4;
+    config.max_seq_ahead = 8;
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
+    CHECK_EQ(simulation.Config().max_mode_action_payload_bytes, phk::battle::kDefaultMaxModeActionPayloadBytes);
+
+    auto oversized = MakeModeAction(1);
+    oversized.match_id = config.match_id;
+    oversized.player_id = "p1";
+    oversized.tick = 1;
+    oversized.seq = 1;
+    oversized.action_id = "mode-action-oversized";
+    oversized.action_type = "cast_card";
+    oversized.payload_json =
+        "{\"card_slot\":1,\"padding\":\"" +
+        std::string(phk::battle::kDefaultMaxModeActionPayloadBytes, 'x') +
+        "\"}";
+    const auto oversized_result = simulation.AcceptModeAction(oversized);
+    CHECK_TRUE(!oversized_result.ok);
+    CHECK_EQ(oversized_result.reason, std::string("mode_action_payload_too_large"));
+
+    auto accepted = oversized;
+    accepted.payload_json = "{\"card_slot\":1}";
+    const auto accepted_result = simulation.AcceptModeAction(accepted);
+    CHECK_TRUE(accepted_result.ok);
+    CHECK_EQ(simulation.Tick().mode_state.at("last_mode_action_id"), accepted.action_id);
+
+    phk::battle::SimulationConfig tiny_config;
+    tiny_config.match_id = "match-mode-action-size-tiny";
+    tiny_config.mode_id = "pvp_duel";
+    tiny_config.max_mode_action_payload_bytes = 2;
+    phk::battle::BattleSimulation tiny_simulation(tiny_config);
+    CHECK_TRUE(tiny_simulation.AddPlayer("p1", 0, 0));
+    CHECK_EQ(tiny_simulation.Config().max_mode_action_payload_bytes, static_cast<std::size_t>(2));
+    auto tiny_payload = MakeModeAction(1);
+    tiny_payload.match_id = tiny_config.match_id;
+    tiny_payload.player_id = "p1";
+    tiny_payload.tick = 1;
+    tiny_payload.seq = 1;
+    tiny_payload.action_id = "mode-action-tiny";
+    tiny_payload.action_type = "cast_card";
+    tiny_payload.payload_json = "{}";
+    const auto tiny_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    CHECK_TRUE(!tiny_result.ok);
+    CHECK_EQ(tiny_result.reason, std::string("cast_card_slot_missing"));
+
+    tiny_payload.payload_json = "{\"card_slot\":1}";
+    const auto tiny_oversized_result = tiny_simulation.AcceptModeAction(tiny_payload);
+    CHECK_TRUE(!tiny_oversized_result.ok);
+    CHECK_EQ(tiny_oversized_result.reason, std::string("mode_action_payload_too_large"));
+    return true;
+}
+
 bool TestBossTransferCardValidation() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -4420,6 +4478,7 @@ int main() {
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
         {"ReadyModeActionLifecycleState", TestReadyModeActionLifecycleState},
         {"BattleRoyaleSelectRoundCardPayloadBoundary", TestBattleRoyaleSelectRoundCardPayloadBoundary},
+        {"ModeActionPayloadSizeLimit", TestModeActionPayloadSizeLimit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
