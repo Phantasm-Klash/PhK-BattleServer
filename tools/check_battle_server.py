@@ -339,6 +339,10 @@ def main() -> int:
         or "required_event_stream_hash" not in result_text
         or "required_final_state_hash" not in result_text
         or "required_replay_fixture_hash" not in result_text
+        or "required_final_snapshot_tick" not in result_text
+        or "required_final_snapshot_kind" not in result_text
+        or "required_final_snapshot_state_hash" not in result_text
+        or "required_final_snapshot_event_cursor" not in result_text
         or "required_tick_rate_hz" not in result_text
         or "require_dev_signature_payload_binding" not in result_text
         or "DevBattleResultSignatureHex" not in result_text
@@ -455,6 +459,10 @@ def main() -> int:
         or '"tick_rate_hz"' not in simulation_impl
         or "DevReplayInputStreamSummaryHash(fixture.replay_summary_record)" not in simulation_impl
         or "DevReplayFixtureHash(fixture)" not in simulation_impl
+        or "final_snapshot_tick" not in simulation_impl
+        or "final_snapshot_kind" not in simulation_impl
+        or "final_snapshot_state_hash" not in simulation_impl
+        or "final_snapshot_event_cursor" not in simulation_impl
         or "player.x_milli" not in simulation_impl
         or "bullet.pattern_id" not in simulation_impl
         or "snapshot.mode_state" not in simulation_impl
@@ -529,6 +537,10 @@ def main() -> int:
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
         or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record)" not in server_impl
         or "options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture)" not in server_impl
+        or "options.required_final_snapshot_tick = replay_fixture.final_snapshot.snapshot_tick" not in server_impl
+        or "options.required_final_snapshot_kind = replay_fixture.final_snapshot.snapshot_kind" not in server_impl
+        or "options.required_final_snapshot_state_hash = replay_fixture.final_snapshot.state_hash" not in server_impl
+        or "options.required_final_snapshot_event_cursor = replay_fixture.final_snapshot.event_cursor" not in server_impl
         or "options.require_boss_result_fields = true" not in server_impl
         or "options.required_boss_scope = boss_scope->second" not in server_impl
         or "options.required_boss_completion_policy" not in server_impl
@@ -585,6 +597,10 @@ def main() -> int:
         or "final_state_hash_mismatch" not in result_impl
         or "replay_summary_hash_mismatch" not in result_impl
         or "replay_fixture_hash_mismatch" not in result_impl
+        or "final_snapshot_tick_mismatch" not in result_impl
+        or "final_snapshot_kind_mismatch" not in result_impl
+        or "final_snapshot_state_hash_mismatch" not in result_impl
+        or "final_snapshot_event_cursor_mismatch" not in result_impl
         or "boss_scope_mismatch" not in result_impl
         or "boss_completion_policy_mismatch" not in result_impl
         or "boss_friendly_fire_policy_mismatch" not in result_impl
@@ -714,7 +730,12 @@ def main() -> int:
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
         or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-9f3882bb1310169b" not in tests_text
+        or "sha256:dev-fnv64-c4e0fa7ecf81b6f0" not in tests_text
+        or "final_snapshot_tick_mismatch" not in tests_text
+        or "final_snapshot_kind_mismatch" not in tests_text
+        or "final_snapshot_state_hash_mismatch" not in tests_text
+        or "final_snapshot_event_cursor_mismatch" not in tests_text
+        or '"final_snapshot_kind\\":\\"replay_final\\"' not in tests_text
         or "tampered_stream" not in tests_text
         or "tampered_loadout" not in tests_text
         or "tampered_settlement" not in tests_text

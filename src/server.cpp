@@ -919,6 +919,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_final_state_hash = summary.final_state_hash;
     options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record);
     options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture);
+    options.required_final_snapshot_tick = replay_fixture.final_snapshot.snapshot_tick;
+    options.required_final_snapshot_kind = replay_fixture.final_snapshot.snapshot_kind;
+    options.required_final_snapshot_state_hash = replay_fixture.final_snapshot.state_hash;
+    options.required_final_snapshot_event_cursor = replay_fixture.final_snapshot.event_cursor;
     options.require_replay_counter_fields = true;
     const auto& mode_state = replay_fixture.final_snapshot.mode_state;
     const auto boss_scope = mode_state.find("boss_scope");

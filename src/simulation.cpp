@@ -1003,7 +1003,14 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
         "\",\"replay_fixture_hash\":\"" +
         DevReplayFixtureHash(fixture) +
-        "\"";
+        "\",\"final_snapshot_tick\":" +
+        std::to_string(fixture.final_snapshot.snapshot_tick) +
+        ",\"final_snapshot_kind\":\"" +
+        fixture.final_snapshot.snapshot_kind +
+        "\",\"final_snapshot_state_hash\":\"" +
+        fixture.final_snapshot.state_hash +
+        "\",\"final_snapshot_event_cursor\":" +
+        std::to_string(fixture.final_snapshot.event_cursor);
     const auto boss_scope = fixture.final_snapshot.mode_state.find("boss_scope");
     if (boss_scope != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_scope\":\"" + boss_scope->second + "\"";

@@ -50,11 +50,15 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_mode_action_count = 0;
     std::uint64_t required_input_trace_count = 0;
     std::uint64_t required_event_trace_count = 0;
+    std::uint64_t required_final_snapshot_tick = 0;
+    std::uint64_t required_final_snapshot_event_cursor = 0;
     std::string required_input_stream_hash;
     std::string required_event_stream_hash;
     std::string required_final_state_hash;
     std::string required_replay_summary_hash;
     std::string required_replay_fixture_hash;
+    std::string required_final_snapshot_kind;
+    std::string required_final_snapshot_state_hash;
     std::string required_boss_scope;
     std::string required_boss_completion_policy;
     std::string required_boss_friendly_fire_policy;

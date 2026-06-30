@@ -263,6 +263,38 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "replay_fixture_hash_mismatch");
         return verification;
     }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "final_snapshot_tick", options.required_final_snapshot_tick)) {
+        Fail(verification, "final_snapshot_tick_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "final_snapshot_kind",
+            options.required_final_snapshot_kind
+        )) {
+        Fail(verification, "final_snapshot_kind_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "final_snapshot_state_hash",
+            options.required_final_snapshot_state_hash
+        )) {
+        Fail(verification, "final_snapshot_state_hash_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "final_snapshot_event_cursor",
+            options.required_final_snapshot_event_cursor
+        )) {
+        Fail(verification, "final_snapshot_event_cursor_mismatch");
+        return verification;
+    }
     if (options.require_boss_result_fields &&
         !ContainsJsonStringField(result.mode_result_json, "boss_scope", options.required_boss_scope)) {
         Fail(verification, "boss_scope_mismatch");

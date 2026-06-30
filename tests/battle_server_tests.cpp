@@ -738,6 +738,49 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_replay_fixture_hash_result.ok);
     CHECK_EQ(wrong_replay_fixture_hash_result.reason, std::string("replay_fixture_hash_mismatch"));
 
+    auto wrong_final_snapshot_tick = valid_result;
+    wrong_final_snapshot_tick.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_snapshot_tick\":" + std::to_string(summary.final_tick),
+        "\"final_snapshot_tick\":999"
+    );
+    const auto wrong_final_snapshot_tick_result = server.SubmitBattleResult(wrong_final_snapshot_tick);
+    CHECK_TRUE(!wrong_final_snapshot_tick_result.ok);
+    CHECK_EQ(wrong_final_snapshot_tick_result.reason, std::string("final_snapshot_tick_mismatch"));
+
+    auto wrong_final_snapshot_kind = valid_result;
+    wrong_final_snapshot_kind.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "final_snapshot_kind",
+        "delta"
+    );
+    const auto wrong_final_snapshot_kind_result = server.SubmitBattleResult(wrong_final_snapshot_kind);
+    CHECK_TRUE(!wrong_final_snapshot_kind_result.ok);
+    CHECK_EQ(wrong_final_snapshot_kind_result.reason, std::string("final_snapshot_kind_mismatch"));
+
+    auto wrong_final_snapshot_state_hash = valid_result;
+    wrong_final_snapshot_state_hash.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "final_snapshot_state_hash",
+        "fnv64:0000000000000000"
+    );
+    const auto wrong_final_snapshot_state_hash_result = server.SubmitBattleResult(wrong_final_snapshot_state_hash);
+    CHECK_TRUE(!wrong_final_snapshot_state_hash_result.ok);
+    CHECK_EQ(wrong_final_snapshot_state_hash_result.reason, std::string("final_snapshot_state_hash_mismatch"));
+
+    auto wrong_final_snapshot_event_cursor = valid_result;
+    wrong_final_snapshot_event_cursor.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_snapshot_event_cursor\":" + std::to_string(summary.event_count),
+        "\"final_snapshot_event_cursor\":999"
+    );
+    const auto wrong_final_snapshot_event_cursor_result = server.SubmitBattleResult(wrong_final_snapshot_event_cursor);
+    CHECK_TRUE(!wrong_final_snapshot_event_cursor_result.ok);
+    CHECK_EQ(
+        wrong_final_snapshot_event_cursor_result.reason,
+        std::string("final_snapshot_event_cursor_mismatch")
+    );
+
     auto mutating_projection = valid_result;
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
     const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);
@@ -814,8 +857,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "0d93ab2e417b9a67ee98e425368c5046cf9e1d1c2b9d0625b0a3561320adbc04"
-            "91a88f0a15be71e372adc8010acf27c253b300f7ffdfdda134b839eef4f09380"
+            "e3dbed2bb9f5db1202d6b434c4e52533a5e65f19a41746d0c4e12622af0690"
+            "f15fc7094fe5b303967ec1d058f0a24db721d17b3dcfd46f5440cc4246dac3b975"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -833,7 +876,10 @@ bool TestBuildSignedBattleResultCallback() {
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"replay_summary_hash\":\"sha256:dev-fnv64-e6fb6a98c2e6844d\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-ed53d4a3d1bd4f9b\"}|1782489630000"
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-ed53d4a3d1bd4f9b\","
+            "\"final_snapshot_tick\":1,\"final_snapshot_kind\":\"replay_final\","
+            "\"final_snapshot_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
+            "\"final_snapshot_event_cursor\":0}|1782489630000"
         )
     );
     CHECK_TRUE(
@@ -967,6 +1013,35 @@ bool TestBuildSignedBattleResultCallback() {
             "\"replay_fixture_hash\":\"sha256:dev-fnv64-ed53d4a3d1bd4f9b\""
         ) != std::string::npos
     );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_tick\":" + std::to_string(built.replay_summary.final_tick)
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"final_snapshot_kind\":\"replay_final\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_state_hash\":\"" + built.replay_summary.final_state_hash + "\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"final_snapshot_event_cursor\":" + std::to_string(built.replay_summary.event_count)
+        ) != std::string::npos
+    );
+
+    auto wrong_snapshot_state_hash = built.signed_result;
+    wrong_snapshot_state_hash.result.mode_result_json = ReplaceJsonStringField(
+        built.signed_result.result.mode_result_json,
+        "final_snapshot_state_hash",
+        "fnv64:0000000000000000"
+    );
+    const auto wrong_snapshot_state_hash_result = server.SubmitBattleResult(wrong_snapshot_state_hash);
+    CHECK_TRUE(!wrong_snapshot_state_hash_result.ok);
+    CHECK_EQ(wrong_snapshot_state_hash_result.reason, std::string("final_snapshot_state_hash_mismatch"));
 
     const auto submitted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(submitted.ok);
@@ -2653,7 +2728,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-9f3882bb1310169b")
+        std::string("sha256:dev-fnv64-c4e0fa7ecf81b6f0")
     );
 
     auto tampered_stream = built.replay_record;
