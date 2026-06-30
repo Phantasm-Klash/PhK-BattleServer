@@ -1273,6 +1273,9 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("boss_center_x_milli"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_center_y_milli"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("player_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_min_players"), std::string("4"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_max_players"), std::string("8"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(boss_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(boss_snapshot.players[0].x_milli, 0);
     CHECK_EQ(boss_snapshot.players[0].y_milli, -60000);
@@ -1313,6 +1316,7 @@ bool TestBossModeBulletPattern() {
     CHECK_EQ(world_snapshot.bullets_delta[0].y_milli, 2600);
     CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
 
     phk::battle::SimulationConfig instance_config = world_config;
     instance_config.match_id = "match-instance-boss-pattern";

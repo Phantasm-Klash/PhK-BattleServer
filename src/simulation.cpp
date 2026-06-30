@@ -487,6 +487,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
         snapshot.mode_state["player_fire_target"] = "boss_center";
+        snapshot.mode_state["boss_min_players"] = "4";
+        snapshot.mode_state["boss_max_players"] = "8";
+        snapshot.mode_state["boss_start_ready"] = players_.size() >= 4 && players_.size() <= 8 ? "1" : "0";
         snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
