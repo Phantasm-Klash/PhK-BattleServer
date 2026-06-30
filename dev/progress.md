@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Pending Ready De-duplication Boundary
+
+- `ready` mode actions now reserve a pending-ready slot as soon as they are accepted into the authoritative tick queue.
+- Duplicate ready intents from the same player are rejected with `ready_already_set` even before the first ready action's tick is applied, preventing duplicate replay/event entries for one ready transition.
+- Disconnect clears both applied and pending ready state. This remains room lifecycle authority only and does not write rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Stable Player-Ordered Result Export
 
 - Signed battle result callbacks and development `ReplayRecord` bridge loadouts now collect match sessions in stable `player_id` order instead of ticket-id map order.

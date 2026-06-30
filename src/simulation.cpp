@@ -419,6 +419,7 @@ InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& pl
         player.connected = connected;
         if (!connected) {
             ready_player_ids_.erase(player.player_id);
+            pending_ready_player_ids_.erase(player.player_id);
         }
         AccumulateConnectionEvent(player);
     }
@@ -644,7 +645,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             result.reason = "ready_payload_not_true";
             return result;
         }
-        if (ready_player_ids_.find(action.player_id) != ready_player_ids_.end()) {
+        if (ready_player_ids_.find(action.player_id) != ready_player_ids_.end() ||
+            pending_ready_player_ids_.find(action.player_id) != pending_ready_player_ids_.end()) {
             result.code = InputValidationCode::ReadyAlreadySet;
             result.reason = "ready_already_set";
             return result;
@@ -731,6 +733,9 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
 
     players_[action.player_id].last_seq = action.seq;
     accepted_mode_action_ids_.insert(action.action_id);
+    if (action.action_type == "ready") {
+        pending_ready_player_ids_.insert(action.player_id);
+    }
     if (action.action_type == "transfer_card") {
         const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
         reserved_transfer_card_instance_ids_.insert(card_instance_id);
@@ -1575,6 +1580,7 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
 
 void BattleSimulation::ApplyReadyModeAction(const BattleModeAction& action) {
     ready_player_ids_.insert(action.player_id);
+    pending_ready_player_ids_.erase(action.player_id);
 }
 
 void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& action) {
