@@ -4179,6 +4179,31 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     reconnect_action.tick = 3;
     reconnect_action.action_id = "action-reconnect-p2";
     reconnect_action.action_type = "reconnect";
+
+    auto missing_reconnect_cursor = reconnect_action;
+    missing_reconnect_cursor.action_id = "action-reconnect-p2-missing-cursor";
+    missing_reconnect_cursor.payload_json = "{\"source\":\"client-reconnect\"}";
+    const auto missing_reconnect_cursor_result = server.AcceptModeAction(missing_reconnect_cursor);
+    CHECK_TRUE(!missing_reconnect_cursor_result.ok);
+    CHECK_EQ(missing_reconnect_cursor_result.reason, std::string("reconnect_cursor_missing"));
+
+    auto negative_reconnect_cursor = reconnect_action;
+    negative_reconnect_cursor.action_id = "action-reconnect-p2-negative-cursor";
+    negative_reconnect_cursor.payload_json = "{\"last_seen_event_cursor\":-1}";
+    const auto negative_reconnect_cursor_result = server.AcceptModeAction(negative_reconnect_cursor);
+    CHECK_TRUE(!negative_reconnect_cursor_result.ok);
+    CHECK_EQ(negative_reconnect_cursor_result.reason, std::string("reconnect_cursor_invalid"));
+
+    auto ahead_reconnect_cursor = reconnect_action;
+    ahead_reconnect_cursor.action_id = "action-reconnect-p2-ahead-cursor";
+    ahead_reconnect_cursor.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(server.MatchReplaySummary("match-001").event_count + 1) + "}";
+    const auto ahead_reconnect_cursor_result = server.AcceptModeAction(ahead_reconnect_cursor);
+    CHECK_TRUE(!ahead_reconnect_cursor_result.ok);
+    CHECK_EQ(ahead_reconnect_cursor_result.reason, std::string("reconnect_cursor_ahead"));
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
     reconnect_action.payload_json = "{\"last_seen_event_cursor\":" + std::to_string(mode_action_summary.event_count) + "}";
     const auto reconnect_action_result = server.AcceptModeAction(reconnect_action);
     CHECK_TRUE(reconnect_action_result.ok);
