@@ -1714,6 +1714,21 @@ bool TestBossTransferCardValidation() {
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
 
+    phk::battle::TransferableCardState invalid_audit_card;
+    invalid_audit_card.card_instance_id = "boss-card;tampered:p1>p2";
+    invalid_audit_card.owner_player_id = "p1";
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", invalid_audit_card));
+
+    auto invalid_audit_transfer = MakeModeAction(1);
+    invalid_audit_transfer.tick = 1;
+    invalid_audit_transfer.action_id = "action-boss-transfer-card-invalid-audit";
+    invalid_audit_transfer.action_type = "transfer_card";
+    invalid_audit_transfer.payload_json =
+        "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card;tampered:p1>p2\"}";
+    const auto invalid_audit_result = server.AcceptModeAction(invalid_audit_transfer);
+    CHECK_TRUE(!invalid_audit_result.ok);
+    CHECK_EQ(invalid_audit_result.reason, std::string("transfer_card_instance_id_invalid"));
+
     const auto unauthorized = server.AcceptModeAction(transfer);
     CHECK_TRUE(!unauthorized.ok);
     CHECK_EQ(unauthorized.reason, std::string("transfer_card_not_authorized"));
@@ -3171,7 +3186,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     return true;
 }
 
-bool TestModeResultJsonEscapesServerOwnedStrings() {
+bool TestTransferCardAuditIdsRejectEscapedStrings() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489645000;
     phk::battle::BattleServer server(config);
@@ -3207,7 +3222,7 @@ bool TestModeResultJsonEscapesServerOwnedStrings() {
     phk::battle::TransferableCardState transfer_card;
     transfer_card.card_instance_id = "instance\\escaped-card-001";
     transfer_card.owner_player_id = "p1";
-    CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", transfer_card));
 
     auto transfer = MakeModeAction(1);
     transfer.match_id = "match-001";
@@ -3217,36 +3232,9 @@ bool TestModeResultJsonEscapesServerOwnedStrings() {
     transfer.action_id = "action-instance-escaped-transfer";
     transfer.action_type = "transfer_card";
     transfer.payload_json = R"({"target_player_id":"p2","card_instance_id":"instance\\escaped-card-001"})";
-    CHECK_TRUE(server.AcceptModeAction(transfer).ok);
-
-    for (std::size_t index = 1; index <= 4; ++index) {
-        auto ready = MakeModeAction(index + 10);
-        ready.match_id = "match-001";
-        ready.player_id = "p" + std::to_string(index);
-        ready.tick = 1;
-        ready.seq = index == 1 ? 2 : 1;
-        ready.action_id = "instance-escape-ready-" + std::to_string(index);
-        ready.action_type = "ready";
-        ready.payload_json = "{\"ready\":true}";
-        CHECK_TRUE(server.AcceptModeAction(ready).ok);
-    }
-    CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_ready_to_start"), std::string("1"));
-
-    const auto built = server.BuildSignedBattleResult("match-001");
-    CHECK_TRUE(built.ok);
-    CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find(
-            R"("last_transfer_card_instance_id":"instance\\escaped-card-001")"
-        ) != std::string::npos
-    );
-    CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find(
-            R"("transfer_card_edges_material":"instance\\escaped-card-001:p1>p2:p1:1:1:1;")"
-        ) != std::string::npos
-    );
-    const auto accepted = server.SubmitBattleResult(built.signed_result);
-    CHECK_TRUE(accepted.ok);
-    CHECK_EQ(accepted.reason, std::string("ok"));
+    const auto escaped_result = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!escaped_result.ok);
+    CHECK_EQ(escaped_result.reason, std::string("transfer_card_instance_id_invalid"));
     return true;
 }
 
@@ -5415,7 +5403,7 @@ int main() {
         {"BossModeResultProjection", TestBossModeResultProjection},
         {"InstanceBossResultStateMutualExclusion", TestInstanceBossResultStateMutualExclusion},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
-        {"ModeResultJsonEscapesServerOwnedStrings", TestModeResultJsonEscapesServerOwnedStrings},
+        {"TransferCardAuditIdsRejectEscapedStrings", TestTransferCardAuditIdsRejectEscapedStrings},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
