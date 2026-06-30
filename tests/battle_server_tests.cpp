@@ -3175,7 +3175,7 @@ bool TestModeResultJsonEscapesServerOwnedStrings() {
     transfer.seq = 1;
     transfer.action_id = "action-instance-escaped-transfer";
     transfer.action_type = "transfer_card";
-    transfer.payload_json = R"({"target_player_id":"p2","card_instance_id":"instance\escaped-card-001"})";
+    transfer.payload_json = R"({"target_player_id":"p2","card_instance_id":"instance\\escaped-card-001"})";
     CHECK_TRUE(server.AcceptModeAction(transfer).ok);
 
     for (std::size_t index = 1; index <= 4; ++index) {

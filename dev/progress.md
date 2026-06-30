@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Mode Action JSON String Decode Boundary
+
+- Development mode-action JSON string extraction now decodes standard JSON escapes for string intent fields before validating Boss `transfer_card` authority.
+- The Boss transfer escape regression now uses valid JSON input with an escaped backslash, then verifies the server-owned `mode_result_json` re-escapes the same card instance id for result submission.
+- This remains in-memory intent validation and replay/result audit material only. It does not persist cards, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Mode Result JSON Escape Boundary
 
 - Development `mode_result_json` now JSON-escapes server-owned string fields before building replay/result callback material.
