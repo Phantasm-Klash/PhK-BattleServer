@@ -271,14 +271,28 @@ bool TestProtocolManifest() {
     CHECK_TRUE(phk::v1::HasMessageField("BattleInput", "direction_bits"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleModeAction", "client_result_authoritative"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleSnapshot", "mode_state"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "player_ids"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "reward_projection_json"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "mode_result_json"));
     CHECK_TRUE(phk::v1::HasMessageField("SignedBattleTicket", "signature"));
     CHECK_TRUE(phk::v1::HasMessageField("SignedBattleResult", "signature"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResultSubmitRequest", "signed_result"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResultSubmitRequest", "replay_summary"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResultSubmitResponse", "settlement_key"));
+    CHECK_TRUE(phk::v1::HasMessageField("BattleResultSubmitResponse", "accepted"));
     CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "final_state_hash"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayInputStreamSummary", "final_tick"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "stream"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "settlement"));
+    CHECK_TRUE(phk::v1::HasMessageField("ReplayRecord", "server_authoritative"));
     CHECK_TRUE(phk::v1::HasMessageField("BattleResult", "result_hash"));
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleHandshakeHello") >= 5);
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleHandshakeAccept") >= 10);
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleInput") >= 10);
     CHECK_TRUE(phk::v1::MessageFieldCount("BattleResult") >= 9);
+    CHECK_TRUE(phk::v1::MessageFieldCount("BattleResultSubmitRequest") >= 2);
+    CHECK_TRUE(phk::v1::MessageFieldCount("ReplayInputStreamSummary") >= 10);
+    CHECK_TRUE(phk::v1::MessageFieldCount("ReplayRecord") >= 10);
     return true;
 }
 

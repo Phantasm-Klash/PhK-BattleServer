@@ -50,6 +50,8 @@ REQUIRED_CPP_MANIFEST_FIELDS = {
     "BattleEvent": ["match_id", "tick", "cursor", "type", "server_authoritative"],
     "BattleResult": ["match_id", "mode_id", "result_hash", "replay_id", "reward_projection_json", "mode_result_json"],
     "SignedBattleResult": ["result", "signature_alg", "signature", "key_id"],
+    "BattleResultSubmitRequest": ["signed_result", "replay_summary"],
+    "BattleResultSubmitResponse": ["match_id", "settlement_key", "accepted", "error"],
     "ReplayInputStreamSummary": [
         "replay_id",
         "owner_user_id",
@@ -61,6 +63,7 @@ REQUIRED_CPP_MANIFEST_FIELDS = {
         "final_state_hash",
         "final_tick",
     ],
+    "ReplayRecord": ["replay_id", "match_id", "owner_user_id", "stream", "settlement", "server_authoritative"],
 }
 
 
@@ -187,6 +190,10 @@ def check_protocol_descriptor() -> bool:
         "BattleInput",
         "BattleResult",
         "SignedBattleResult",
+        "BattleResultSubmitRequest",
+        "BattleResultSubmitResponse",
+        "ReplayInputStreamSummary",
+        "ReplayRecord",
     ]:
         if message_name not in messages:
             print(f"descriptor missing {message_name}", file=sys.stderr)
@@ -215,9 +222,27 @@ def check_protocol_descriptor() -> bool:
         ("BattleHandshakeAccept", "server_signature", "SignedBlob", 10, False),
         ("BattleModeAction", "payload_json", "bytes", 8, False),
         ("BattleModeAction", "client_result_authoritative", "bool", 9, False),
+        ("BattleResult", "player_ids", "string", 6, True),
         ("BattleResult", "reward_projection_json", "bytes", 7, False),
         ("BattleResult", "mode_result_json", "bytes", 8, False),
         ("SignedBattleResult", "signature", "bytes", 4, False),
+        ("BattleResultSubmitRequest", "signed_result", "SignedBattleResult", 1, False),
+        ("BattleResultSubmitRequest", "replay_summary", "ReplayInputStreamSummary", 2, False),
+        ("BattleResultSubmitResponse", "settlement_key", "string", 3, False),
+        ("BattleResultSubmitResponse", "accepted", "bool", 4, False),
+        ("BattleResultSubmitResponse", "error", "ErrorStatus", 5, False),
+        ("ReplayInputStreamSummary", "replay_id", "string", 2, False),
+        ("ReplayInputStreamSummary", "match_id", "string", 3, False),
+        ("ReplayInputStreamSummary", "owner_user_id", "string", 4, False),
+        ("ReplayInputStreamSummary", "input_count", "uint64", 5, False),
+        ("ReplayInputStreamSummary", "event_count", "uint64", 6, False),
+        ("ReplayInputStreamSummary", "input_stream_hash", "string", 7, False),
+        ("ReplayInputStreamSummary", "event_stream_hash", "string", 8, False),
+        ("ReplayInputStreamSummary", "final_state_hash", "string", 9, False),
+        ("ReplayInputStreamSummary", "final_tick", "uint64", 10, False),
+        ("ReplayRecord", "stream", "ReplayInputStreamSummary", 8, False),
+        ("ReplayRecord", "settlement", "SignedBattleResult", 9, False),
+        ("ReplayRecord", "server_authoritative", "bool", 10, False),
     ]
     for message_name, field_name, field_type, field_number, repeated in required_field_shapes:
         if not check_descriptor_field_shape(
