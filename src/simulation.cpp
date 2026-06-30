@@ -73,10 +73,54 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+bool IsBattleRoyaleMode(std::string_view mode_id) {
+    return mode_id == "battle_royale";
+}
+
 bool IsAllowedBossFriendlyFirePolicy(std::string_view policy) {
     return policy == "disabled" ||
         policy == "player_bullets_only" ||
         policy == "all_friendly_fire";
+}
+
+std::string LowerAscii(std::string_view value) {
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lowered;
+}
+
+bool ContainsClientAuthoredAuthorityField(std::string_view payload_json) {
+    const std::string lowered = LowerAscii(payload_json);
+    for (const std::string_view needle : {
+        "x_milli",
+        "y_milli",
+        "position",
+        "damage",
+        "boss_hp",
+        "boss_current_hp",
+        "boss_damage",
+        "score",
+        "rank",
+        "reward",
+        "inventory",
+        "wallet",
+        "currency",
+        "grant",
+        "item_id",
+        "balance",
+        "database",
+        "steam_inventory",
+        "result_hash",
+        "battle_result",
+        "settlement",
+    }) {
+        if (lowered.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
@@ -139,6 +183,36 @@ std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::str
         return false;
     }
     return std::nullopt;
+}
+
+std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return std::nullopt;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    bool negative = false;
+    if (token_start < payload_json.size() && payload_json[token_start] == '-') {
+        negative = true;
+        ++token_start;
+    }
+    if (token_start >= payload_json.size() ||
+        !std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
+        return std::nullopt;
+    }
+
+    std::int64_t value = 0;
+    while (token_start < payload_json.size() &&
+        std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
+        value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
+        ++token_start;
+    }
+    return negative ? -value : value;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -446,6 +520,42 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_client_result_forbidden";
         return result;
     }
+    if (ContainsClientAuthoredAuthorityField(action.payload_json)) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "mode_action_authority_field_forbidden";
+        return result;
+    }
+    if (action.action_type == "cast_card") {
+        const auto card_slot = ExtractJsonIntField(action.payload_json, "card_slot");
+        if (!card_slot.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "cast_card_slot_missing";
+            return result;
+        }
+        if (card_slot.value() < 0 || card_slot.value() > 7) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "cast_card_slot_invalid";
+            return result;
+        }
+    }
+    if (action.action_type == "select_round_card") {
+        if (!IsBattleRoyaleMode(config_.mode_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_mode_unsupported";
+            return result;
+        }
+        const auto candidate_index = ExtractJsonIntField(action.payload_json, "candidate_index");
+        if (!candidate_index.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_candidate_missing";
+            return result;
+        }
+        if (candidate_index.value() < 0 || candidate_index.value() > 2) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_candidate_invalid";
+            return result;
+        }
+    }
     if (action.action_type == "ready") {
         const auto ready = ExtractJsonBoolField(action.payload_json, "ready");
         if (!ready.has_value()) {
@@ -665,6 +775,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     }
     if (transfer_card_count_ > 0) {
         snapshot.mode_state["transfer_card_count"] = std::to_string(transfer_card_count_);
+        snapshot.mode_state["transfer_card_edges_material"] = TransferCardAuditMaterial();
         snapshot.mode_state["last_transfer_card_instance_id"] = last_transfer_card_instance_id_;
         snapshot.mode_state["last_transfer_from_player_id"] = last_transfer_from_player_id_;
         snapshot.mode_state["last_transfer_to_player_id"] = last_transfer_to_player_id_;
@@ -843,6 +954,13 @@ std::string BattleSimulation::CanonicalStateHash() const {
             hash = HashAppend(hash, item.first);
             hash = HashAppend(hash, item.second.first);
             hash = HashAppend(hash, item.second.second);
+            const auto authority_it = transferred_card_authority_by_card_instance_id_.find(item.first);
+            if (authority_it != transferred_card_authority_by_card_instance_id_.end()) {
+                hash = HashAppend(hash, authority_it->second.owner_player_id);
+                hash = HashAppend(hash, authority_it->second.mode_allowed ? 1u : 0u);
+                hash = HashAppend(hash, authority_it->second.cost_paid ? 1u : 0u);
+                hash = HashAppend(hash, authority_it->second.cooldown_ready ? 1u : 0u);
+            }
         }
     }
     if (IsBossMode(config_.mode_id)) {
@@ -1169,6 +1287,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {
         json += ",\"transfer_card_count\":" + transfer_card_count->second;
     }
+    const auto transfer_card_edges_material = fixture.final_snapshot.mode_state.find("transfer_card_edges_material");
+    if (transfer_card_edges_material != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"transfer_card_edges_material\":\"" + transfer_card_edges_material->second + "\"";
+    }
     const auto last_transfer_card_instance_id = fixture.final_snapshot.mode_state.find("last_transfer_card_instance_id");
     if (last_transfer_card_instance_id != fixture.final_snapshot.mode_state.end()) {
         json += ",\"last_transfer_card_instance_id\":\"" + last_transfer_card_instance_id->second + "\"";
@@ -1337,9 +1459,30 @@ void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& actio
     const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
     if (authority_it != pending_transfer_card_authority_by_action_id_.end()) {
         last_transfer_card_authority_ = authority_it->second;
+        transferred_card_authority_by_card_instance_id_[card_instance_id] = authority_it->second;
         pending_transfer_card_authority_by_action_id_.erase(authority_it);
     }
     ++transfer_card_count_;
+}
+
+std::string BattleSimulation::TransferCardAuditMaterial() const {
+    std::ostringstream out;
+    for (const auto& item : transferred_card_edges_) {
+        const auto authority_it = transferred_card_authority_by_card_instance_id_.find(item.first);
+        out << item.first << ':'
+            << item.second.first << '>'
+            << item.second.second << ':';
+        if (authority_it != transferred_card_authority_by_card_instance_id_.end()) {
+            out << authority_it->second.owner_player_id << ':'
+                << BoolToken(authority_it->second.mode_allowed) << ':'
+                << BoolToken(authority_it->second.cost_paid) << ':'
+                << BoolToken(authority_it->second.cooldown_ready);
+        } else {
+            out << "missing:0:0:0";
+        }
+        out << ';';
+    }
+    return out.str();
 }
 
 void BattleSimulation::SpawnBulletsForTick() {

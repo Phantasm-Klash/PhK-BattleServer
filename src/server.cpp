@@ -975,6 +975,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     if (transfer_card_count != mode_state.end()) {
         options.require_transfer_result_fields = true;
         options.required_transfer_card_count = std::stoull(transfer_card_count->second);
+        options.required_transfer_card_edges_material = mode_state.at("transfer_card_edges_material");
         options.required_last_transfer_card_instance_id = mode_state.at("last_transfer_card_instance_id");
         options.required_last_transfer_from_player_id = mode_state.at("last_transfer_from_player_id");
         options.required_last_transfer_to_player_id = mode_state.at("last_transfer_to_player_id");

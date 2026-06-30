@@ -280,6 +280,11 @@ bool TestProtocolManifest() {
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Reconnect), 7);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Result), 8);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::ModeAction), 9);
+    CHECK_EQ(std::string(phk::v1::kBattleModeActionActionType), std::string("select_round_card"));
+    CHECK_EQ(
+        std::string(phk::v1::kBattleModeActionPayloadJson),
+        std::string("{\"card_id\":\"focus_lens\",\"round_index\":0}")
+    );
     CHECK_TRUE(phk::v1::HasMessageField("BattleTicket", "ruleset_version"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "seq"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "nonce"));
@@ -1101,8 +1106,8 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq = phk::v1::kBattl
     action.tick = phk::v1::kBattleModeActionTick;
     action.seq = seq;
     action.action_id = std::string(phk::v1::kBattleModeActionActionId);
-    action.action_type = std::string(phk::v1::kBattleModeActionActionType);
-    action.payload_json = std::string(phk::v1::kBattleModeActionPayloadJson);
+    action.action_type = "cast_card";
+    action.payload_json = "{\"card_slot\":1}";
     action.client_result_authoritative = false;
     return action;
 }
@@ -1175,6 +1180,40 @@ bool TestSimulationDeterminism() {
     const auto far_action_result = first.AcceptModeAction(far_action);
     CHECK_TRUE(!far_action_result.ok);
     CHECK_EQ(far_action_result.reason, std::string("mode_action_tick_too_far_ahead"));
+
+    auto cast_card_missing_slot = MakeModeAction(3);
+    cast_card_missing_slot.tick = 2;
+    cast_card_missing_slot.action_id = "action-cast-missing-slot";
+    cast_card_missing_slot.action_type = "cast_card";
+    cast_card_missing_slot.payload_json = "{\"card_id\":\"focus_lens\"}";
+    const auto cast_card_missing_slot_result = first.AcceptModeAction(cast_card_missing_slot);
+    CHECK_TRUE(!cast_card_missing_slot_result.ok);
+    CHECK_EQ(cast_card_missing_slot_result.reason, std::string("cast_card_slot_missing"));
+
+    auto cast_card_bad_slot = cast_card_missing_slot;
+    cast_card_bad_slot.payload_json = "{\"card_slot\":8}";
+    const auto cast_card_bad_slot_result = first.AcceptModeAction(cast_card_bad_slot);
+    CHECK_TRUE(!cast_card_bad_slot_result.ok);
+    CHECK_EQ(cast_card_bad_slot_result.reason, std::string("cast_card_slot_invalid"));
+
+    auto cast_card_forged_damage = cast_card_missing_slot;
+    cast_card_forged_damage.payload_json = "{\"card_slot\":1,\"damage\":999,\"boss_hp\":0}";
+    const auto cast_card_forged_damage_result = first.AcceptModeAction(cast_card_forged_damage);
+    CHECK_TRUE(!cast_card_forged_damage_result.ok);
+    CHECK_EQ(cast_card_forged_damage_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    auto cast_card = cast_card_missing_slot;
+    cast_card.payload_json = "{\"card_slot\":1}";
+    CHECK_TRUE(first.ValidateModeAction(cast_card).ok);
+
+    auto select_round_non_br = MakeModeAction(3);
+    select_round_non_br.tick = 2;
+    select_round_non_br.action_id = "action-select-round-non-br";
+    select_round_non_br.action_type = "select_round_card";
+    select_round_non_br.payload_json = "{\"candidate_index\":1}";
+    const auto select_round_non_br_result = first.AcceptModeAction(select_round_non_br);
+    CHECK_TRUE(!select_round_non_br_result.ok);
+    CHECK_EQ(select_round_non_br_result.reason, std::string("select_round_card_mode_unsupported"));
 
     auto transfer_missing = MakeModeAction(3);
     transfer_missing.tick = 2;
@@ -1258,6 +1297,10 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(transfer.seq));
     CHECK_EQ(first_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        first_snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-001:p1>p2:p1:1:1:1;")
+    );
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-001"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
@@ -1389,6 +1432,52 @@ bool TestReadyModeActionLifecycleState() {
     return true;
 }
 
+bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-br";
+    config.mode_id = "battle_royale";
+    config.max_input_ahead_ticks = 4;
+    config.max_seq_ahead = 8;
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
+
+    auto missing_candidate = MakeModeAction(1);
+    missing_candidate.match_id = config.match_id;
+    missing_candidate.player_id = "p1";
+    missing_candidate.tick = 1;
+    missing_candidate.seq = 1;
+    missing_candidate.action_id = "select-round-missing";
+    missing_candidate.action_type = "select_round_card";
+    missing_candidate.payload_json = "{\"choice\":1}";
+    const auto missing_candidate_result = simulation.AcceptModeAction(missing_candidate);
+    CHECK_TRUE(!missing_candidate_result.ok);
+    CHECK_EQ(missing_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
+    auto invalid_candidate = missing_candidate;
+    invalid_candidate.payload_json = "{\"candidate_index\":3}";
+    const auto invalid_candidate_result = simulation.AcceptModeAction(invalid_candidate);
+    CHECK_TRUE(!invalid_candidate_result.ok);
+    CHECK_EQ(invalid_candidate_result.reason, std::string("select_round_card_candidate_invalid"));
+
+    auto forged_candidate = missing_candidate;
+    forged_candidate.payload_json = "{\"candidate_index\":1,\"reward\":\"grant\"}";
+    const auto forged_candidate_result = simulation.AcceptModeAction(forged_candidate);
+    CHECK_TRUE(!forged_candidate_result.ok);
+    CHECK_EQ(forged_candidate_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    auto accepted_candidate = missing_candidate;
+    accepted_candidate.payload_json = "{\"candidate_index\":1}";
+    const auto accepted_candidate_result = simulation.AcceptModeAction(accepted_candidate);
+    CHECK_TRUE(accepted_candidate_result.ok);
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
+    const auto snapshot = simulation.Tick();
+    CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("select_round_card"));
+    CHECK_EQ(simulation.Summary().last_mode_action_id, accepted_candidate.action_id);
+    return true;
+}
+
 bool TestBossTransferCardValidation() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -1492,6 +1581,10 @@ bool TestBossTransferCardValidation() {
     const auto snapshot = server.TickMatch("match-001");
     CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-disconnected:p1>p2:p1:1:1:1;")
+    );
     CHECK_EQ(snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-disconnected"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
@@ -1949,6 +2042,10 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(
+        mode_result_json.find("\"transfer_card_edges_material\":\"instance-card-001:p1>p2:p1:1:1:1;\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(mode_result_json.find("\"last_transfer_card_instance_id\":\"instance-card-001\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_mode_allowed\":1") != std::string::npos);
@@ -2019,9 +2116,13 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     phk::battle::TransferableCardState transfer_card;
     transfer_card.card_instance_id = "instance-result-card-001";
     transfer_card.owner_player_id = "p1";
+    phk::battle::TransferableCardState transfer_card_2;
+    transfer_card_2.card_instance_id = "instance-result-card-002";
+    transfer_card_2.owner_player_id = "p2";
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
     CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card_2));
 
     auto transfer = MakeModeAction(5);
     transfer.match_id = "match-001";
@@ -2033,6 +2134,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-result-card-001\"}";
     CHECK_TRUE(server.AcceptModeAction(transfer).ok);
 
+    auto transfer_2 = MakeModeAction(6);
+    transfer_2.match_id = "match-001";
+    transfer_2.player_id = "p2";
+    transfer_2.tick = 1;
+    transfer_2.seq = 2;
+    transfer_2.action_id = "action-instance-result-transfer-2";
+    transfer_2.action_type = "transfer_card";
+    transfer_2.payload_json = "{\"target_player_id\":\"p3\",\"card_instance_id\":\"instance-result-card-002\"}";
+    CHECK_TRUE(server.AcceptModeAction(transfer_2).ok);
+
     for (std::size_t index = 1; index <= 4; ++index) {
         auto ready = MakeModeAction(index + 1);
         ready.match_id = "match-001";
@@ -2043,6 +2154,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         ready.action_type = "ready";
         ready.payload_json = "{\"ready\":true}";
         if (index == 1) {
+            ready.seq = 3;
+        } else if (index == 2) {
             ready.seq = 3;
         }
         CHECK_TRUE(server.AcceptModeAction(ready).ok);
@@ -2094,22 +2207,28 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":2") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"last_transfer_card_instance_id\":\"instance-result-card-001\""
+            "\"transfer_card_edges_material\":\"instance-result-card-001:p1>p2:p1:1:1:1;"
+            "instance-result-card-002:p2>p3:p2:1:1:1;\""
         ) != std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") !=
+        built.signed_result.result.mode_result_json.find(
+            "\"last_transfer_card_instance_id\":\"instance-result-card-002\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p2\"") !=
         std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") !=
+        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p3\"") !=
         std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") !=
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p2\"") !=
         std::string::npos
     );
     CHECK_TRUE(
@@ -2360,12 +2479,22 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_transfer_count = built.signed_result;
     wrong_transfer_count.result.mode_result_json = ReplaceFirst(
         wrong_transfer_count.result.mode_result_json,
-        "\"transfer_card_count\":1",
-        "\"transfer_card_count\":2"
+        "\"transfer_card_count\":2",
+        "\"transfer_card_count\":3"
     );
     const auto wrong_transfer_count_result = server.SubmitBattleResult(wrong_transfer_count);
     CHECK_TRUE(!wrong_transfer_count_result.ok);
     CHECK_EQ(wrong_transfer_count_result.reason, std::string("transfer_card_count_mismatch"));
+
+    auto wrong_transfer_edges = built.signed_result;
+    wrong_transfer_edges.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_edges.result.mode_result_json,
+        "transfer_card_edges_material",
+        "instance-result-card-001:p1>p2:p1:1:1:1;instance-result-card-002:p2>p4:p2:1:1:1;"
+    );
+    const auto wrong_transfer_edges_result = server.SubmitBattleResult(wrong_transfer_edges);
+    CHECK_TRUE(!wrong_transfer_edges_result.ok);
+    CHECK_EQ(wrong_transfer_edges_result.reason, std::string("transfer_card_edges_mismatch"));
 
     auto wrong_transfer_instance = built.signed_result;
     wrong_transfer_instance.result.mode_result_json = ReplaceJsonStringField(
@@ -2381,7 +2510,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_from.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_from.result.mode_result_json,
         "last_transfer_from_player_id",
-        "p2"
+        "p1"
     );
     const auto wrong_transfer_from_result = server.SubmitBattleResult(wrong_transfer_from);
     CHECK_TRUE(!wrong_transfer_from_result.ok);
@@ -2391,7 +2520,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_to.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_to.result.mode_result_json,
         "last_transfer_to_player_id",
-        "p3"
+        "p4"
     );
     const auto wrong_transfer_to_result = server.SubmitBattleResult(wrong_transfer_to);
     CHECK_TRUE(!wrong_transfer_to_result.ok);
@@ -2401,7 +2530,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_owner.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_owner.result.mode_result_json,
         "last_transfer_authority_owner_player_id",
-        "p2"
+        "p1"
     );
     const auto wrong_transfer_owner_result = server.SubmitBattleResult(wrong_transfer_owner);
     CHECK_TRUE(!wrong_transfer_owner_result.ok);
@@ -4158,6 +4287,7 @@ int main() {
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
         {"ReadyModeActionLifecycleState", TestReadyModeActionLifecycleState},
+        {"BattleRoyaleSelectRoundCardPayloadBoundary", TestBattleRoyaleSelectRoundCardPayloadBoundary},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},

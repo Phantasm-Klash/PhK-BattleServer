@@ -2,11 +2,29 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Battle Royale Select-Round Payload Boundary
+
+- `select_round_card` mode actions are now battle-royale-only and require an integer `candidate_index` in the server-generated three-choice range 0-2 before they can enter the authoritative tick queue.
+- Payloads that omit the candidate, pick an out-of-range candidate, target the wrong mode, or smuggle reward/settlement authority fields are rejected before replay/hash state changes.
+- This is intent validation only. Candidate generation, card ownership, rewards, inventory, wallet, Steam state, and business database state remain outside the C++ battle server.
+
 ## 2026-06-30 Boss Transfer Mode Scope Boundary
 
 - `transfer_card` mode actions are now Boss-only. Non-Boss matches reject transfer attempts as `transfer_card_mode_unsupported` before transfer-card authority state can be configured or consumed.
 - Existing Boss transfer authority checks still cover unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, cooldown blocks, duplicate transfer attempts, replay trace material, and result projection binding.
 - This remains in-memory battle authority only. The C++ battle server still does not persist cards, inventory, rewards, wallet, Steam state, or business database state.
+
+## 2026-06-30 Boss Transfer Aggregate Audit Boundary
+
+- Boss snapshots and development result projection now carry deterministic `transfer_card_edges_material` for every accepted in-match transfer, not only the last transfer.
+- The aggregate binds card instance id, from/to player ids, and frozen server authority flags into the final replay snapshot, canonical state hash, signed-result `mode_result_json`, and result verifier options.
+- `BattleResultVerifier` rejects tampered aggregate transfer material with `transfer_card_edges_mismatch`, while existing last-transfer fields remain for compatibility. This is replay/result audit material only and does not persist inventory, rewards, wallet, Steam state, or business database state.
+
+## 2026-06-30 Mode Action Authority Payload Boundary
+
+- `cast_card` mode actions now require a server-validated integer `card_slot` intent in the 0-7 range before they can enter the authoritative tick queue.
+- All mode-action payloads now reject obvious client-authored authority fields such as position, damage, Boss HP, score, rank, reward, inventory, wallet, database, Steam inventory, result hash, or settlement material.
+- This keeps mode actions as player intent only; effects, Boss damage, result hashes, replay material, and settlement remain server-owned.
 
 ## 2026-06-30 Boss Layout Count Result Binding
 
