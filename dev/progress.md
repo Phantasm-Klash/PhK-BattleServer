@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Transfer Mode Scope Boundary
+
+- `transfer_card` mode actions are now Boss-only. Non-Boss matches reject transfer attempts as `transfer_card_mode_unsupported` before transfer-card authority state can be configured or consumed.
+- Existing Boss transfer authority checks still cover unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, cooldown blocks, duplicate transfer attempts, replay trace material, and result projection binding.
+- This remains in-memory battle authority only. The C++ battle server still does not persist cards, inventory, rewards, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Layout Count Result Binding
 
 - Boss snapshots and development result projection now carry `boss_layout_player_count`, binding the server-selected Boss ring layout size alongside registered player count and per-player spawn slots.

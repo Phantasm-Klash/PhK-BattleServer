@@ -1110,7 +1110,7 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq = phk::v1::kBattl
 bool TestSimulationDeterminism() {
     phk::battle::SimulationConfig config;
     config.match_id = "match-001";
-    config.mode_id = "certification";
+    config.mode_id = "world_boss";
     config.match_seed = 12345;
     config.spawn_period_ticks = 2;
     phk::battle::BattleSimulation first(config);
@@ -1224,7 +1224,7 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
     CHECK_EQ(first_snapshot.players.size(), static_cast<std::size_t>(2));
     CHECK_TRUE(first_snapshot.bullets_delta.size() >= 4);
-    CHECK_EQ(first_snapshot.mode_state.at("mode_id"), std::string("certification"));
+    CHECK_EQ(first_snapshot.mode_state.at("mode_id"), std::string("world_boss"));
     CHECK_EQ(first_snapshot.mode_state.at("ruleset_version"), std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(first_snapshot.state_hash, second_snapshot.state_hash);
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
@@ -1392,9 +1392,39 @@ bool TestReadyModeActionLifecycleState() {
 bool TestBossTransferCardValidation() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
+    phk::battle::BattleServer non_boss_server(config);
+    CHECK_TRUE(non_boss_server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(non_boss_server.RegisterTicket(MakeTicketForBob()).ok);
+
+    phk::battle::TransferableCardState non_boss_card;
+    non_boss_card.card_instance_id = "non-boss-card";
+    non_boss_card.owner_player_id = "p1";
+    CHECK_TRUE(!non_boss_server.ConfigureTransferableCard("match-001", non_boss_card));
+
+    auto non_boss_transfer = MakeModeAction(1);
+    non_boss_transfer.tick = 1;
+    non_boss_transfer.action_id = "action-non-boss-transfer-card";
+    non_boss_transfer.action_type = "transfer_card";
+    non_boss_transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"non-boss-card\"}";
+    const auto non_boss_result = non_boss_server.AcceptModeAction(non_boss_transfer);
+    CHECK_TRUE(!non_boss_result.ok);
+    CHECK_EQ(non_boss_result.reason, std::string("transfer_card_mode_unsupported"));
+
     phk::battle::BattleServer server(config);
-    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
-    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-1",
+        "user-boss-transfer-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899bb01"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-2",
+        "user-boss-transfer-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899bb02"
+    )).ok);
 
     auto disconnected = server.SetPlayerConnected("match-001", "p2", false);
     CHECK_TRUE(disconnected.ok);
