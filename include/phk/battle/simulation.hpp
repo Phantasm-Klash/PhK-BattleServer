@@ -207,6 +207,7 @@ private:
     bool has_last_mode_action_ = false;
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
+    std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
     std::vector<BulletState> bullets_;

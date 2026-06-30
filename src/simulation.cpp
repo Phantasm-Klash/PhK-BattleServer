@@ -67,6 +67,20 @@ bool IsReconnectModeAction(std::string_view action_type) {
     return action_type == "reconnect";
 }
 
+std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return "";
+    }
+    const auto string_start = value_start + prefix.size();
+    const auto string_end = payload_json.find('"', string_start);
+    if (string_end == std::string_view::npos) {
+        return "";
+    }
+    return std::string(payload_json.substr(string_start, string_end - string_start));
+}
+
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
     std::ostringstream out;
     out << snapshot.match_id << '|'
@@ -342,6 +356,36 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_client_result_forbidden";
         return result;
     }
+    if (action.action_type == "transfer_card") {
+        const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
+        const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
+        if (target_player_id.empty() || card_instance_id.empty()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_payload_missing_fields";
+            return result;
+        }
+        if (target_player_id == action.player_id) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_self_forbidden";
+            return result;
+        }
+        const auto target_it = players_.find(target_player_id);
+        if (target_it == players_.end()) {
+            result.code = InputValidationCode::PlayerUnknown;
+            result.reason = "transfer_card_target_unknown";
+            return result;
+        }
+        if (!target_it->second.connected) {
+            result.code = InputValidationCode::PlayerDisconnected;
+            result.reason = "transfer_card_target_disconnected";
+            return result;
+        }
+        if (reserved_transfer_card_instance_ids_.find(card_instance_id) != reserved_transfer_card_instance_ids_.end()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_duplicate";
+            return result;
+        }
+    }
 
     result.ok = true;
     result.code = InputValidationCode::Ok;
@@ -356,6 +400,11 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     }
 
     players_[action.player_id].last_seq = action.seq;
+    if (action.action_type == "transfer_card") {
+        reserved_transfer_card_instance_ids_.insert(
+            ExtractJsonStringField(action.payload_json, "card_instance_id")
+        );
+    }
     pending_mode_actions_by_tick_[action.tick].push_back(action);
     return result;
 }

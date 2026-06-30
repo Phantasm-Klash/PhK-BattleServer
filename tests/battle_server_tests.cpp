@@ -1036,6 +1036,39 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!far_action_result.ok);
     CHECK_EQ(far_action_result.reason, std::string("mode_action_tick_too_far_ahead"));
 
+    auto transfer_missing = MakeModeAction(3);
+    transfer_missing.tick = 2;
+    transfer_missing.action_id = "action-transfer-missing";
+    transfer_missing.action_type = "transfer_card";
+    transfer_missing.payload_json = "{\"target_player_id\":\"p2\"}";
+    const auto transfer_missing_result = first.AcceptModeAction(transfer_missing);
+    CHECK_TRUE(!transfer_missing_result.ok);
+    CHECK_EQ(transfer_missing_result.reason, std::string("transfer_card_payload_missing_fields"));
+
+    auto transfer_self = transfer_missing;
+    transfer_self.payload_json = "{\"target_player_id\":\"p1\",\"card_instance_id\":\"card-self\"}";
+    const auto transfer_self_result = first.AcceptModeAction(transfer_self);
+    CHECK_TRUE(!transfer_self_result.ok);
+    CHECK_EQ(transfer_self_result.reason, std::string("transfer_card_self_forbidden"));
+
+    auto transfer_unknown = transfer_missing;
+    transfer_unknown.payload_json = "{\"target_player_id\":\"p3\",\"card_instance_id\":\"card-unknown\"}";
+    const auto transfer_unknown_result = first.AcceptModeAction(transfer_unknown);
+    CHECK_TRUE(!transfer_unknown_result.ok);
+    CHECK_EQ(transfer_unknown_result.reason, std::string("transfer_card_target_unknown"));
+
+    auto transfer = transfer_missing;
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-001\"}";
+    CHECK_TRUE(first.AcceptModeAction(transfer).ok);
+    CHECK_TRUE(second.AcceptModeAction(transfer).ok);
+
+    auto transfer_duplicate = transfer;
+    transfer_duplicate.seq = 4;
+    transfer_duplicate.action_id = "action-transfer-duplicate";
+    const auto transfer_duplicate_result = first.AcceptModeAction(transfer_duplicate);
+    CHECK_TRUE(!transfer_duplicate_result.ok);
+    CHECK_EQ(transfer_duplicate_result.reason, std::string("transfer_card_duplicate"));
+
     phk::battle::BattleSnapshot first_snapshot;
     phk::battle::BattleSnapshot second_snapshot;
     for (int i = 0; i < 3; ++i) {
@@ -1055,32 +1088,33 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().fallback_input_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.Summary().neutral_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(4));
-    CHECK_EQ(first.Summary().mode_action_count, static_cast<std::uint64_t>(1));
-    CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
-    CHECK_EQ(first.Summary().last_mode_action_id, action.action_id);
-    CHECK_EQ(first.Summary().last_mode_action_type, action.action_type);
+    CHECK_EQ(first.Summary().mode_action_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(3));
+    CHECK_EQ(first.Summary().last_mode_action_id, transfer.action_id);
+    CHECK_EQ(first.Summary().last_mode_action_type, transfer.action_type);
     CHECK_EQ(first.Summary().last_mode_action_player_id, action.player_id);
     CHECK_EQ(first.Summary().last_mode_action_tick, action.tick);
-    CHECK_EQ(first.Summary().last_mode_action_seq, action.seq);
+    CHECK_EQ(first.Summary().last_mode_action_seq, transfer.seq);
     CHECK_EQ(first.Summary().last_mode_action_id, second.Summary().last_mode_action_id);
     CHECK_TRUE(first.Summary().input_trace == second.Summary().input_trace);
     CHECK_TRUE(first.Summary().event_trace == second.Summary().event_trace);
     CHECK_EQ(first.Summary().input_trace.size(), static_cast<std::size_t>(6));
-    CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(3));
     CHECK_TRUE(first.Summary().input_trace[0].find("input|p1|tick=1|seq=1") != std::string::npos);
     CHECK_TRUE(first.Summary().input_trace[2].find("fallback|held|p1|tick=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
-    CHECK_TRUE(first.Summary().event_trace[1].find("bullet_spawn|tick=2") != std::string::npos);
-    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), action.action_id);
-    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), action.action_type);
+    CHECK_TRUE(first.Summary().event_trace[1].find("mode_action|p1|tick=2|seq=3") != std::string::npos);
+    CHECK_TRUE(first.Summary().event_trace[2].find("bullet_spawn|tick=2") != std::string::npos);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), transfer.action_id);
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), transfer.action_type);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
-    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(action.seq));
+    CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(transfer.seq));
     CHECK_EQ(first_snapshot.mode_state.at("accepted_input_count"), std::string("2"));
     CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
     CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("held_input_fallback_count"), std::string("4"));
-    CHECK_EQ(first_snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(first_snapshot.mode_state.at("mode_action_count"), std::string("2"));
     return true;
 }
 
@@ -1128,6 +1162,47 @@ bool TestFallbackInputReplayAudit() {
     CHECK_EQ(held_snapshot.mode_state.at("held_input_fallback_count"), std::string("1"));
     CHECK_TRUE(simulation.Summary().input_stream_hash.rfind("fnv64:", 0) == 0);
     CHECK_EQ(simulation.Summary().final_state_hash, held_snapshot.state_hash);
+    return true;
+}
+
+bool TestBossTransferCardValidation() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+
+    auto disconnected = server.SetPlayerConnected("match-001", "p2", false);
+    CHECK_TRUE(disconnected.ok);
+
+    auto transfer = MakeModeAction(1);
+    transfer.tick = 1;
+    transfer.action_id = "action-boss-transfer-card";
+    transfer.action_type = "transfer_card";
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-disconnected\"}";
+    const auto disconnected_result = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!disconnected_result.ok);
+    CHECK_EQ(disconnected_result.reason, std::string("transfer_card_target_disconnected"));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+    const auto accepted = server.AcceptModeAction(transfer);
+    CHECK_TRUE(accepted.ok);
+    const auto duplicate = server.AcceptModeAction(transfer);
+    CHECK_TRUE(!duplicate.ok);
+    CHECK_EQ(duplicate.reason, std::string("seq_replay"));
+
+    auto duplicate_card = transfer;
+    duplicate_card.seq = 2;
+    duplicate_card.action_id = "action-boss-transfer-card-duplicate";
+    const auto duplicate_card_result = server.AcceptModeAction(duplicate_card);
+    CHECK_TRUE(!duplicate_card_result.ok);
+    CHECK_EQ(duplicate_card_result.reason, std::string("transfer_card_duplicate"));
+
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+    const auto snapshot = server.TickMatch("match-001");
+    CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("transfer_card"));
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("type=transfer_card") != std::string::npos);
     return true;
 }
 
@@ -2580,6 +2655,7 @@ int main() {
 		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
+		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
