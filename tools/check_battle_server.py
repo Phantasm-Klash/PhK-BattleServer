@@ -496,6 +496,9 @@ def main() -> int:
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
     if (
         "match_mode_ruleset_mismatch" not in server_impl
+        or "boss_config_already_pending" not in server_impl
+        or "pending_boss_configs_before = pending_boss_config_by_match_.size()" not in server_impl
+        or "pending_boss_configs_after = pending_boss_config_by_match_.size()" not in server_impl
         or "SessionExistsForPlayer" not in server_impl
         or "static_cast<std::uint32_t>(kBossModeMaxPlayers)" not in server_impl
         or "BattleServer::IsPlayerConnected" not in server_impl
@@ -611,7 +614,7 @@ def main() -> int:
         or "replay_summary_hash" not in server_impl
         or "replay_fixture_hash" not in server_impl
     ):
-        print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, transfer-card config facade, or registered-player authority guards", file=sys.stderr)
+        print("server implementation missing mode/ruleset, Boss pending config guard, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, transfer-card config facade, or registered-player authority guards", file=sys.stderr)
         return 1
 
     server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
@@ -621,6 +624,8 @@ def main() -> int:
         or "active_matches_before" not in server_header
         or "active_sessions_after" not in server_header
         or "active_matches_after" not in server_header
+        or "pending_boss_configs_before" not in server_header
+        or "pending_boss_configs_after" not in server_header
         or "match_session_count_before" not in server_header
         or "match_session_count_after" not in server_header
         or "created_match" not in server_header
@@ -628,7 +633,7 @@ def main() -> int:
         or "input_stream_hash" not in server_header
         or "event_stream_hash" not in server_header
     ):
-        print("server facade result structs missing decoded dispatch marker or structured retire audit fields", file=sys.stderr)
+        print("server facade result structs missing decoded dispatch marker or structured lifecycle/retire audit fields", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
@@ -714,8 +719,13 @@ def main() -> int:
     ):
         print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
         return 1
-    if "nonce_mismatch_result" not in tests_text or "RefreshDevAeadNonce" not in tests_text:
-        print("protocol tests missing header-bound development nonce mismatch coverage", file=sys.stderr)
+    if (
+        "nonce_mismatch_result" not in tests_text
+        or "RefreshDevAeadNonce" not in tests_text
+        or "boss_config_already_pending" not in tests_text
+        or "pending_boss_configs_before" not in tests_text
+    ):
+        print("protocol/server tests missing header-bound development nonce or Boss pending-config lifecycle coverage", file=sys.stderr)
         return 1
 
     kcp_text = (ROOT / "include" / "phk" / "battle" / "kcp_endpoint.hpp").read_text(encoding="utf-8")

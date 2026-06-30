@@ -1879,7 +1879,28 @@ bool TestBossMatchPreconfiguration() {
     boss_config.boss_phase_id = "phase-enrage";
     boss_config.boss_max_hp = 4242;
     boss_config.boss_friendly_fire_policy = "client_authored_damage";
-    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+    const auto configured = server.ConfigureBossMatch(boss_config);
+    CHECK_TRUE(configured.ok);
+    CHECK_EQ(configured.reason, std::string("ok"));
+    CHECK_EQ(configured.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(configured.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(configured.pending_boss_configs_before, static_cast<std::size_t>(0));
+    CHECK_EQ(configured.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(configured.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(configured.pending_boss_configs_after, static_cast<std::size_t>(1));
+
+    auto duplicate_pending_config = boss_config;
+    duplicate_pending_config.boss_instance_id = "world-boss-client-overwrite";
+    duplicate_pending_config.boss_max_hp = 999999;
+    const auto duplicate_pending = server.ConfigureBossMatch(duplicate_pending_config);
+    CHECK_TRUE(!duplicate_pending.ok);
+    CHECK_EQ(duplicate_pending.reason, std::string("boss_config_already_pending"));
+    CHECK_EQ(duplicate_pending.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(duplicate_pending.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(duplicate_pending.pending_boss_configs_before, static_cast<std::size_t>(1));
+    CHECK_EQ(duplicate_pending.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(duplicate_pending.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(duplicate_pending.pending_boss_configs_after, static_cast<std::size_t>(1));
 
     const auto wrong_mode = server.RegisterTicket(MakeModeTicket(
         "ticket-boss-preconfig-wrong-mode",

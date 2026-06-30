@@ -324,25 +324,38 @@ std::size_t BattleServer::ActiveMatchCount() const {
 
 ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_config) {
     ConfigureBossMatchResult result;
+    result.active_sessions_before = sessions_by_ticket_.size();
+    result.active_matches_before = simulations_by_match_.size();
+    result.pending_boss_configs_before = pending_boss_config_by_match_.size();
+    auto finish = [this, &result]() -> ConfigureBossMatchResult {
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
+        result.pending_boss_configs_after = pending_boss_config_by_match_.size();
+        return result;
+    };
     if (boss_config.match_id.empty()) {
         result.reason = "match_id_missing";
-        return result;
+        return finish();
     }
     if (!IsBossMode(boss_config.mode_id)) {
         result.reason = "boss_mode_required";
-        return result;
+        return finish();
     }
     if (simulations_by_match_.find(boss_config.match_id) != simulations_by_match_.end()) {
         result.reason = "match_already_created";
-        return result;
+        return finish();
     }
     if (result_hash_by_match_.find(boss_config.match_id) != result_hash_by_match_.end()) {
         result.reason = "match_retired";
-        return result;
+        return finish();
     }
     if (cancelled_match_ids_.find(boss_config.match_id) != cancelled_match_ids_.end()) {
         result.reason = "match_cancelled";
-        return result;
+        return finish();
+    }
+    if (pending_boss_config_by_match_.find(boss_config.match_id) != pending_boss_config_by_match_.end()) {
+        result.reason = "boss_config_already_pending";
+        return finish();
     }
     if (!IsAllowedBossFriendlyFirePolicy(boss_config.boss_friendly_fire_policy)) {
         boss_config.boss_friendly_fire_policy = "disabled";
@@ -354,7 +367,7 @@ ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_c
     pending_boss_config_by_match_[boss_config.match_id] = std::move(boss_config);
     result.ok = true;
     result.reason = "ok";
-    return result;
+    return finish();
 }
 
 RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& signed_ticket) {
