@@ -444,6 +444,10 @@ BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& 
         return rejected;
     }
     const auto ticket_it = sessions_by_ticket_.find(hello.battle_ticket.ticket.ticket_id);
+    if (result_hash_by_match_.find(hello.battle_ticket.ticket.match_id) != result_hash_by_match_.end()) {
+        rejected.reason = ticket_it == sessions_by_ticket_.end() ? "match_retired" : "match_settled";
+        return rejected;
+    }
     if (ticket_it == sessions_by_ticket_.end()) {
         rejected.reason = "ticket_not_registered";
         return rejected;
