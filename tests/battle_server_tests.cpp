@@ -1911,15 +1911,21 @@ bool TestBossMatchPreconfiguration() {
     ));
     CHECK_TRUE(!wrong_mode.ok);
     CHECK_EQ(wrong_mode.reason, std::string("boss_config_mode_mismatch"));
+    CHECK_EQ(wrong_mode.pending_boss_configs_before, static_cast<std::size_t>(1));
+    CHECK_EQ(wrong_mode.pending_boss_configs_after, static_cast<std::size_t>(1));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
 
-    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+    const auto first_boss_ticket = server.RegisterTicket(MakeModeTicket(
         "ticket-boss-preconfig-1",
         "user-boss-preconfig-1",
         "p1",
         "world_boss",
         "00112233445566778899ab02"
-    )).ok);
+    ));
+    CHECK_TRUE(first_boss_ticket.ok);
+    CHECK_TRUE(first_boss_ticket.created_match);
+    CHECK_EQ(first_boss_ticket.pending_boss_configs_before, static_cast<std::size_t>(1));
+    CHECK_EQ(first_boss_ticket.pending_boss_configs_after, static_cast<std::size_t>(0));
     const auto snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(snapshot.mode_state.at("boss_instance_id"), std::string("world-boss-season-042"));
     CHECK_EQ(snapshot.mode_state.at("boss_season_id"), std::string("season-beta"));

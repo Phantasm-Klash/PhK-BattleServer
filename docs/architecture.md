@@ -33,7 +33,7 @@ Status: v0.1 skeleton.
 - A battle ticket is bound to `match_id`, `player_id`, `mode_id`, `battle_server_id`, endpoint, deck snapshot hash, ruleset version, nonce, and expiry.
 - A match simulation freezes the first registered ticket's `mode_id` and `ruleset_version`; later tickets for the same match must match both.
 - Match session count cannot exceed the configured battle-server `max_players`; Boss modes additionally clamp join capacity to the protocol-planned 4-8 player range even if a local server config is accidentally wider.
-- `RegisterTicket` returns structured create/join status including active session/match counts before and after registration, per-match session counts, and whether the ticket created a new match simulation, so allocation callers can log compact room lifecycle state without persisting battle data.
+- `RegisterTicket` returns structured create/join status including active session/match counts, pending Boss config counts, per-match session counts, and whether the ticket created a new match simulation, so allocation callers can log compact room lifecycle state without persisting battle data.
 - Reused ticket ids are rejected by the server facade.
 - Handshake acceptance re-verifies the ticket structure/expiry and requires the ticket to be registered in the server facade.
 - Handshake hello messages must provide non-empty client key/random material and at least one supported ChaCha20-Poly1305-compatible AEAD label.
