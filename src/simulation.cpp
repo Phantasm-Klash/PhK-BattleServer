@@ -417,6 +417,9 @@ InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& pl
     PlayerState& player = player_it->second;
     if (player.connected != connected) {
         player.connected = connected;
+        if (connected) {
+            pending_reconnect_player_ids_.erase(player.player_id);
+        }
         if (!connected) {
             ready_player_ids_.erase(player.player_id);
             pending_ready_player_ids_.erase(player.player_id);
@@ -607,6 +610,12 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_authority_field_forbidden";
         return result;
     }
+    if (IsReconnectModeAction(action.action_type) &&
+        pending_reconnect_player_ids_.find(action.player_id) != pending_reconnect_player_ids_.end()) {
+        result.code = InputValidationCode::InvalidModeAction;
+        result.reason = "reconnect_already_pending";
+        return result;
+    }
     if (action.action_type == "cast_card") {
         const auto card_slot = ExtractJsonIntField(action.payload_json, "card_slot");
         if (!card_slot.has_value()) {
@@ -740,6 +749,9 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     accepted_mode_action_ids_.insert(action.action_id);
     if (action.action_type == "ready") {
         pending_ready_player_ids_.insert(action.player_id);
+    }
+    if (IsReconnectModeAction(action.action_type)) {
+        pending_reconnect_player_ids_.insert(action.player_id);
     }
     if (action.action_type == "transfer_card") {
         const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
@@ -1566,6 +1578,7 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
     });
     for (const auto& action : actions) {
         if (IsReconnectModeAction(action.action_type)) {
+            pending_reconnect_player_ids_.erase(action.player_id);
             auto player_it = players_.find(action.player_id);
             if (player_it != players_.end() && !player_it->second.connected) {
                 player_it->second.connected = true;
