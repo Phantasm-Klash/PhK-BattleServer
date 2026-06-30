@@ -41,11 +41,51 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
     return next == ',' || next == '}';
 }
 
+std::string JsonEscape(std::string_view value) {
+    std::ostringstream out;
+    for (const unsigned char ch : value) {
+        switch (ch) {
+            case '"':
+                out << "\\\"";
+                break;
+            case '\\':
+                out << "\\\\";
+                break;
+            case '\b':
+                out << "\\b";
+                break;
+            case '\f':
+                out << "\\f";
+                break;
+            case '\n':
+                out << "\\n";
+                break;
+            case '\r':
+                out << "\\r";
+                break;
+            case '\t':
+                out << "\\t";
+                break;
+            default:
+                if (ch < 0x20) {
+                    out << "\\u"
+                        << std::hex << std::setw(4) << std::setfill('0')
+                        << static_cast<int>(ch)
+                        << std::dec << std::setfill(' ');
+                } else {
+                    out << static_cast<char>(ch);
+                }
+                break;
+        }
+    }
+    return out.str();
+}
+
 bool ContainsJsonStringField(const std::string& json, std::string_view field_name, const std::string& expected) {
     if (expected.empty()) {
         return true;
     }
-    const std::string needle = "\"" + std::string(field_name) + "\":\"" + expected + "\"";
+    const std::string needle = "\"" + std::string(field_name) + "\":\"" + JsonEscape(expected) + "\"";
     const std::size_t offset = json.find(needle);
     if (offset == std::string::npos) {
         return false;

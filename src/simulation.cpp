@@ -46,6 +46,50 @@ std::string BoolToken(bool value) {
     return value ? "1" : "0";
 }
 
+std::string JsonEscape(std::string_view value) {
+    std::ostringstream out;
+    for (const unsigned char ch : value) {
+        switch (ch) {
+            case '"':
+                out << "\\\"";
+                break;
+            case '\\':
+                out << "\\\\";
+                break;
+            case '\b':
+                out << "\\b";
+                break;
+            case '\f':
+                out << "\\f";
+                break;
+            case '\n':
+                out << "\\n";
+                break;
+            case '\r':
+                out << "\\r";
+                break;
+            case '\t':
+                out << "\\t";
+                break;
+            default:
+                if (ch < 0x20) {
+                    out << "\\u"
+                        << std::hex << std::setw(4) << std::setfill('0')
+                        << static_cast<int>(ch)
+                        << std::dec << std::setfill(' ');
+                } else {
+                    out << static_cast<char>(ch);
+                }
+                break;
+        }
+    }
+    return out.str();
+}
+
+std::string JsonString(std::string_view value) {
+    return "\"" + JsonEscape(value) + "\"";
+}
+
 std::int32_t ClampMilli(std::int32_t value, std::int32_t min_value, std::int32_t max_value) {
     return std::max(min_value, std::min(value, max_value));
 }
@@ -1293,47 +1337,47 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         std::to_string(summary.input_trace.size()) +
         ",\"event_trace_count\":" +
         std::to_string(summary.event_trace.size()) +
-        ",\"input_stream_hash\":\"" +
-        summary.input_stream_hash +
-        "\",\"event_stream_hash\":\"" +
-        summary.event_stream_hash +
-        "\",\"final_state_hash\":\"" +
-        summary.final_state_hash +
-        "\",\"replay_summary_hash\":\"" +
-        DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
-        "\",\"replay_fixture_hash\":\"" +
-        DevReplayFixtureHash(fixture) +
-        "\",\"final_snapshot_tick\":" +
+        ",\"input_stream_hash\":" +
+        JsonString(summary.input_stream_hash) +
+        ",\"event_stream_hash\":" +
+        JsonString(summary.event_stream_hash) +
+        ",\"final_state_hash\":" +
+        JsonString(summary.final_state_hash) +
+        ",\"replay_summary_hash\":" +
+        JsonString(DevReplayInputStreamSummaryHash(fixture.replay_summary_record)) +
+        ",\"replay_fixture_hash\":" +
+        JsonString(DevReplayFixtureHash(fixture)) +
+        ",\"final_snapshot_tick\":" +
         std::to_string(fixture.final_snapshot.snapshot_tick) +
-        ",\"final_snapshot_kind\":\"" +
-        fixture.final_snapshot.snapshot_kind +
-        "\",\"final_snapshot_state_hash\":\"" +
-        fixture.final_snapshot.state_hash +
-        "\",\"final_snapshot_event_cursor\":" +
+        ",\"final_snapshot_kind\":" +
+        JsonString(fixture.final_snapshot.snapshot_kind) +
+        ",\"final_snapshot_state_hash\":" +
+        JsonString(fixture.final_snapshot.state_hash) +
+        ",\"final_snapshot_event_cursor\":" +
         std::to_string(fixture.final_snapshot.event_cursor);
     const auto boss_scope = fixture.final_snapshot.mode_state.find("boss_scope");
     if (boss_scope != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_scope\":\"" + boss_scope->second + "\"";
+        json += ",\"boss_scope\":" + JsonString(boss_scope->second);
     }
     const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
     if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+        json += ",\"boss_completion_policy\":" + JsonString(boss_completion_policy->second);
     }
     const auto boss_instance_id = fixture.final_snapshot.mode_state.find("boss_instance_id");
     if (boss_instance_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_instance_id\":\"" + boss_instance_id->second + "\"";
+        json += ",\"boss_instance_id\":" + JsonString(boss_instance_id->second);
     }
     const auto boss_season_id = fixture.final_snapshot.mode_state.find("boss_season_id");
     if (boss_season_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_season_id\":\"" + boss_season_id->second + "\"";
+        json += ",\"boss_season_id\":" + JsonString(boss_season_id->second);
     }
     const auto boss_phase_id = fixture.final_snapshot.mode_state.find("boss_phase_id");
     if (boss_phase_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_phase_id\":\"" + boss_phase_id->second + "\"";
+        json += ",\"boss_phase_id\":" + JsonString(boss_phase_id->second);
     }
     const auto boss_friendly_fire_policy = fixture.final_snapshot.mode_state.find("boss_friendly_fire_policy");
     if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_friendly_fire_policy\":\"" + boss_friendly_fire_policy->second + "\"";
+        json += ",\"boss_friendly_fire_policy\":" + JsonString(boss_friendly_fire_policy->second);
     }
     const auto boss_min_players = fixture.final_snapshot.mode_state.find("boss_min_players");
     if (boss_min_players != fixture.final_snapshot.mode_state.end()) {
@@ -1373,7 +1417,7 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     }
     const auto boss_lifecycle_state = fixture.final_snapshot.mode_state.find("boss_lifecycle_state");
     if (boss_lifecycle_state != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_lifecycle_state\":\"" + boss_lifecycle_state->second + "\"";
+        json += ",\"boss_lifecycle_state\":" + JsonString(boss_lifecycle_state->second);
     }
     const auto connected_player_count = fixture.final_snapshot.mode_state.find("connected_player_count");
     if (boss_scope != fixture.final_snapshot.mode_state.end() &&
@@ -1406,13 +1450,13 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
             "boss_player_" + player_id + "_spawn_slot"
         );
         if (player_spawn_slot != fixture.final_snapshot.mode_state.end()) {
-            json += ",\"boss_player_" + player_id + "_spawn_slot\":\"" + player_spawn_slot->second + "\"";
+            json += ",\"boss_player_" + player_id + "_spawn_slot\":" + JsonString(player_spawn_slot->second);
         }
         const auto player_fire_target = fixture.final_snapshot.mode_state.find(
             "boss_player_" + player_id + "_fire_target"
         );
         if (player_fire_target != fixture.final_snapshot.mode_state.end()) {
-            json += ",\"boss_player_" + player_id + "_fire_target\":\"" + player_fire_target->second + "\"";
+            json += ",\"boss_player_" + player_id + "_fire_target\":" + JsonString(player_fire_target->second);
         }
     }
     const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
@@ -1425,11 +1469,11 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     }
     const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
     if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_clear_status\":\"" + boss_clear_status->second + "\"";
+        json += ",\"boss_clear_status\":" + JsonString(boss_clear_status->second);
     }
     const auto boss_result_disposition = fixture.final_snapshot.mode_state.find("boss_result_disposition");
     if (boss_result_disposition != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_result_disposition\":\"" + boss_result_disposition->second + "\"";
+        json += ",\"boss_result_disposition\":" + JsonString(boss_result_disposition->second);
     }
     const auto boss_instance_surviving_player_count =
         fixture.final_snapshot.mode_state.find("boss_instance_surviving_player_count");
@@ -1442,7 +1486,7 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     }
     const auto boss_instance_result_state = fixture.final_snapshot.mode_state.find("boss_instance_result_state");
     if (boss_instance_result_state != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"boss_instance_result_state\":\"" + boss_instance_result_state->second + "\"";
+        json += ",\"boss_instance_result_state\":" + JsonString(boss_instance_result_state->second);
     }
     const auto transfer_card_count = fixture.final_snapshot.mode_state.find("transfer_card_count");
     if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {
@@ -1450,15 +1494,15 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     }
     const auto transfer_card_edges_material = fixture.final_snapshot.mode_state.find("transfer_card_edges_material");
     if (transfer_card_edges_material != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"transfer_card_edges_material\":\"" + transfer_card_edges_material->second + "\"";
+        json += ",\"transfer_card_edges_material\":" + JsonString(transfer_card_edges_material->second);
     }
     const auto last_transfer_card_instance_id = fixture.final_snapshot.mode_state.find("last_transfer_card_instance_id");
     if (last_transfer_card_instance_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"last_transfer_card_instance_id\":\"" + last_transfer_card_instance_id->second + "\"";
+        json += ",\"last_transfer_card_instance_id\":" + JsonString(last_transfer_card_instance_id->second);
     }
     const auto last_transfer_authority_owner = fixture.final_snapshot.mode_state.find("last_transfer_authority_owner_player_id");
     if (last_transfer_authority_owner != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"last_transfer_authority_owner_player_id\":\"" + last_transfer_authority_owner->second + "\"";
+        json += ",\"last_transfer_authority_owner_player_id\":" + JsonString(last_transfer_authority_owner->second);
     }
     const auto last_transfer_authority_mode_allowed = fixture.final_snapshot.mode_state.find("last_transfer_authority_mode_allowed");
     if (last_transfer_authority_mode_allowed != fixture.final_snapshot.mode_state.end()) {
@@ -1474,11 +1518,11 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     }
     const auto last_transfer_from_player_id = fixture.final_snapshot.mode_state.find("last_transfer_from_player_id");
     if (last_transfer_from_player_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"last_transfer_from_player_id\":\"" + last_transfer_from_player_id->second + "\"";
+        json += ",\"last_transfer_from_player_id\":" + JsonString(last_transfer_from_player_id->second);
     }
     const auto last_transfer_to_player_id = fixture.final_snapshot.mode_state.find("last_transfer_to_player_id");
     if (last_transfer_to_player_id != fixture.final_snapshot.mode_state.end()) {
-        json += ",\"last_transfer_to_player_id\":\"" + last_transfer_to_player_id->second + "\"";
+        json += ",\"last_transfer_to_player_id\":" + JsonString(last_transfer_to_player_id->second);
     }
     json += "}";
     return json;

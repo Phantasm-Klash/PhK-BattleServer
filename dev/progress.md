@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Mode Result JSON Escape Boundary
+
+- Development `mode_result_json` now JSON-escapes server-owned string fields before building replay/result callback material.
+- `BattleResultVerifier` matches expected string fields through the same escape rule, so replay-bound Boss/transfer projection accepts escaped server data but still rejects tampered values.
+- CTest covers a Boss transfer card instance containing a backslash through `BuildSignedBattleResult` and `SubmitBattleResult`. This remains result-audit material only and does not write inventory, rewards, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Pending Config Retirement Audit
 
 - `RetireMatchResult` now reports pending Boss config counts before and after settled-match cleanup, matching configure, ticket registration, and cancellation lifecycle result fields.
