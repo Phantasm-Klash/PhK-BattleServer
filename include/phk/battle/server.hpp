@@ -81,6 +81,7 @@ struct DecodedBattlePacket {
 struct DecodedBattlePacketResult {
 	bool ok = false;
 	std::string reason;
+	bool encrypted_dispatch_accepted = false;
 	DispatchResult dispatch;
 	InputValidationResult decoded;
 };

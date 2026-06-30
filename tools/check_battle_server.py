@@ -443,6 +443,7 @@ def main() -> int:
         or "ReconnectSnapshot" not in server_impl
         or "DispatchEncrypted" not in server_impl
         or "DecodedBattlePacketAdapter::AcceptDecodedPacket" not in server_impl
+        or "result.encrypted_dispatch_accepted = true" not in server_impl
         or "server_.DispatchEncrypted(packet.encrypted_packet)" not in server_impl
         or "decoded_packet_input_missing" not in server_impl
         or "decoded_packet_mode_action_missing" not in server_impl
@@ -492,6 +493,11 @@ def main() -> int:
         or "replay_fixture_hash" not in server_impl
     ):
         print("server implementation missing mode/ruleset, capacity, handshake, encrypted session, decoded packet adapter, decoded header/payload binding, client-to-server encrypted payload, encrypted tick/event-cursor window, fallback/mode-action-bound signed-result/replay-record callback, or registered-player authority guards", file=sys.stderr)
+        return 1
+
+    server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
+    if "encrypted_dispatch_accepted" not in server_header:
+        print("decoded packet result missing encrypted dispatch acceptance marker", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
@@ -644,6 +650,9 @@ def main() -> int:
         or "DecodedPayloadHeaderBinding" not in tests_text
         or "DecodedBattlePacketAdapterBoundary" not in tests_text
         or "DecodedBattlePacketAdapter adapter(server)" not in tests_text
+        or "encrypted_dispatch_accepted" not in tests_text
+        or "no_handshake_adapter" not in tests_text
+        or "handshake_required" not in tests_text
         or "decoded_packet_input_missing" not in tests_text
         or "decoded_packet_mode_action_missing" not in tests_text
         or "decoded_packet_payload_type_unsupported" not in tests_text

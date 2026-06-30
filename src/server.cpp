@@ -641,6 +641,7 @@ DecodedBattlePacketResult DecodedBattlePacketAdapter::AcceptDecodedPacket(
     if (!result.dispatch.ok) {
         return result;
     }
+    result.encrypted_dispatch_accepted = true;
 
     if (packet.encrypted_packet.header.payload_type == BattlePayloadType::Input) {
         if (packet.decoded_payload_kind != DecodedBattlePayloadKind::Input) {

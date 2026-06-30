@@ -2103,6 +2103,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
 
     const auto accepted_input = adapter.AcceptDecodedPacket(input_packet);
     CHECK_TRUE(accepted_input.ok);
+    CHECK_TRUE(accepted_input.encrypted_dispatch_accepted);
     CHECK_EQ(accepted_input.dispatch.response_kind, std::string("input"));
     CHECK_EQ(accepted_input.decoded.reason, std::string("ok"));
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
@@ -2115,6 +2116,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     const auto missing_decoded_input_result = adapter.AcceptDecodedPacket(missing_decoded_input);
     CHECK_TRUE(!missing_decoded_input_result.ok);
     CHECK_TRUE(missing_decoded_input_result.dispatch.ok);
+    CHECK_TRUE(missing_decoded_input_result.encrypted_dispatch_accepted);
     CHECK_EQ(missing_decoded_input_result.reason, std::string("decoded_packet_input_missing"));
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
 
@@ -2129,6 +2131,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     const auto wrong_payload_result = adapter.AcceptDecodedPacket(wrong_payload);
     CHECK_TRUE(!wrong_payload_result.ok);
     CHECK_TRUE(wrong_payload_result.dispatch.ok);
+    CHECK_TRUE(wrong_payload_result.encrypted_dispatch_accepted);
     CHECK_EQ(wrong_payload_result.reason, std::string("decoded_input_header_mismatch"));
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(1));
 
@@ -2142,6 +2145,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     p2_input.decoded_input = MakeInput("p2", 1, 2, 1u << 2);
     const auto accepted_p2_input = adapter.AcceptDecodedPacket(p2_input);
     CHECK_TRUE(accepted_p2_input.ok);
+    CHECK_TRUE(accepted_p2_input.encrypted_dispatch_accepted);
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
 
@@ -2161,6 +2165,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     action_packet.decoded_mode_action.tick = 2;
     const auto accepted_action = adapter.AcceptDecodedPacket(action_packet);
     CHECK_TRUE(accepted_action.ok);
+    CHECK_TRUE(accepted_action.encrypted_dispatch_accepted);
     CHECK_EQ(accepted_action.dispatch.response_kind, std::string("mode_action"));
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
 
@@ -2171,6 +2176,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     const auto missing_decoded_action_result = adapter.AcceptDecodedPacket(missing_decoded_action);
     CHECK_TRUE(!missing_decoded_action_result.ok);
     CHECK_TRUE(missing_decoded_action_result.dispatch.ok);
+    CHECK_TRUE(missing_decoded_action_result.encrypted_dispatch_accepted);
     CHECK_EQ(missing_decoded_action_result.reason, std::string("decoded_packet_mode_action_missing"));
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
 
@@ -2186,6 +2192,7 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     const auto ping_decode_result = adapter.AcceptDecodedPacket(ping_packet);
     CHECK_TRUE(!ping_decode_result.ok);
     CHECK_TRUE(ping_decode_result.dispatch.ok);
+    CHECK_TRUE(ping_decode_result.encrypted_dispatch_accepted);
     CHECK_EQ(ping_decode_result.reason, std::string("decoded_packet_payload_type_unsupported"));
 
     auto invalid_dispatch = input_packet;
@@ -2199,8 +2206,22 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     const auto invalid_dispatch_result = adapter.AcceptDecodedPacket(invalid_dispatch);
     CHECK_TRUE(!invalid_dispatch_result.ok);
     CHECK_TRUE(!invalid_dispatch_result.dispatch.ok);
+    CHECK_TRUE(!invalid_dispatch_result.encrypted_dispatch_accepted);
     CHECK_EQ(invalid_dispatch_result.reason, std::string("session_key_mismatch"));
     CHECK_EQ(server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(2));
+
+    phk::battle::BattleServer no_handshake_server(config);
+    CHECK_TRUE(no_handshake_server.RegisterTicket(MakeTicket()).ok);
+    phk::battle::DecodedBattlePacketAdapter no_handshake_adapter(no_handshake_server);
+    auto no_handshake_packet = input_packet;
+    no_handshake_packet.encrypted_packet.header.key_id = config.signing_key_id;
+    RefreshDevAeadNonce(no_handshake_packet.encrypted_packet.header);
+    const auto no_handshake_result = no_handshake_adapter.AcceptDecodedPacket(no_handshake_packet);
+    CHECK_TRUE(!no_handshake_result.ok);
+    CHECK_TRUE(!no_handshake_result.dispatch.ok);
+    CHECK_TRUE(!no_handshake_result.encrypted_dispatch_accepted);
+    CHECK_EQ(no_handshake_result.reason, std::string("handshake_required"));
+    CHECK_EQ(no_handshake_server.MatchReplaySummary("match-001").input_count, static_cast<std::uint64_t>(0));
 
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 2, 5, 1u << 2)).ok);
     const auto action_snapshot = server.TickMatch("match-001");

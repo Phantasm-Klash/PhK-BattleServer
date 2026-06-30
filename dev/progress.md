@@ -2,6 +2,12 @@
 
 Status date: 2026-06-29
 
+## 2026-06-30 Decoded Encrypted-Dispatch Marker
+
+- `DecodedBattlePacketResult` now exposes `encrypted_dispatch_accepted` so tests and future protobuf decode wiring can distinguish encrypted session/nonce/tick acceptance from decoded payload acceptance.
+- `DecodedBattlePacketAdapter` sets the marker only after `BattleServer::DispatchEncrypted` succeeds; missing handshake, bad session key, stale tick, or other encrypted-path failures still short-circuit before decoded input or mode-action handoff.
+- CTest and `tools/check_battle_server.py` now gate the marker, accepted-dispatch/missing-payload cases, and a no-handshake decoded packet rejection that preserves simulation replay counters.
+
 ## 2026-06-30 Replay Record Bridge Boundary
 
 - Added `ReplayRecordBridge` and `BattleServer::BuildReplayRecord` as a dependency-light `ReplayRecord` protobuf replacement target before generated C++ bindings land.
