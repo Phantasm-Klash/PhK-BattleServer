@@ -1188,6 +1188,15 @@ bool TestSimulationDeterminism() {
         std::string("input_mode_action_id_too_large")
     );
 
+    auto unsafe_input_mode_action_id = MakeInput("p1", 1, 1, 0);
+    unsafe_input_mode_action_id.mode_action_id = "mode-action\\escaped";
+    const auto unsafe_input_mode_action_id_result = first.AcceptInput(unsafe_input_mode_action_id);
+    CHECK_TRUE(!unsafe_input_mode_action_id_result.ok);
+    CHECK_EQ(
+        unsafe_input_mode_action_id_result.reason,
+        std::string("input_mode_action_id_invalid")
+    );
+
     const auto accepted = first.AcceptInput(MakeInput("p1", 1, 1, 1u << 3));
     CHECK_TRUE(accepted.ok);
     const auto duplicate_tick = first.AcceptInput(MakeInput("p1", 1, 2, 1u << 0));
@@ -1584,6 +1593,12 @@ bool TestModeActionPayloadSizeLimit() {
     const auto oversized_action_id_result = simulation.AcceptModeAction(oversized_action_id);
     CHECK_TRUE(!oversized_action_id_result.ok);
     CHECK_EQ(oversized_action_id_result.reason, std::string("mode_action_id_too_large"));
+
+    auto unsafe_action_id = oversized_action_id;
+    unsafe_action_id.action_id = "mode-action\nescaped";
+    const auto unsafe_action_id_result = simulation.AcceptModeAction(unsafe_action_id);
+    CHECK_TRUE(!unsafe_action_id_result.ok);
+    CHECK_EQ(unsafe_action_id_result.reason, std::string("mode_action_id_invalid"));
 
     auto oversized_action_type = oversized_action_id;
     oversized_action_type.action_id = "mode-action-type-oversized";
