@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Ticket Pending Config Lifecycle Audit
+
+- `RegisterTicketResult` now reports pending Boss config counts before and after ticket registration, matching the existing active session/match lifecycle counters.
+- A wrong-mode Boss ticket keeps the pending config untouched, while the first valid Boss ticket consumes it when creating the simulation; CTest covers both structured count transitions.
+- This remains in-memory allocation lifecycle audit material only. It does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Pending Config Idempotency Boundary
 
 - `ConfigureBossMatch` now treats a pre-created Boss match config as a one-shot allocation contract before the first battle ticket creates the simulation.

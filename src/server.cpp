@@ -374,6 +374,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     RegisterTicketResult result;
     result.active_sessions_before = sessions_by_ticket_.size();
     result.active_matches_before = simulations_by_match_.size();
+    result.pending_boss_configs_before = pending_boss_config_by_match_.size();
     for (const auto& item : sessions_by_ticket_) {
         if (item.second.match_id == signed_ticket.ticket.match_id) {
             ++result.match_session_count_before;
@@ -382,6 +383,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     auto finish = [this, &result]() -> RegisterTicketResult {
         result.active_sessions_after = sessions_by_ticket_.size();
         result.active_matches_after = simulations_by_match_.size();
+        result.pending_boss_configs_after = pending_boss_config_by_match_.size();
         result.match_session_count_after = 0;
         for (const auto& item : sessions_by_ticket_) {
             if (item.second.match_id == result.session.match_id || result.session.match_id.empty()) {

@@ -72,8 +72,10 @@ struct RegisterTicketResult {
 	VerificationResult verification;
 	std::size_t active_sessions_before = 0;
 	std::size_t active_matches_before = 0;
+	std::size_t pending_boss_configs_before = 0;
 	std::size_t active_sessions_after = 0;
 	std::size_t active_matches_after = 0;
+	std::size_t pending_boss_configs_after = 0;
 	std::size_t match_session_count_before = 0;
 	std::size_t match_session_count_after = 0;
 	bool created_match = false;
