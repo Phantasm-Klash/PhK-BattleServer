@@ -1326,6 +1326,8 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("boss_min_players"), std::string("4"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_max_players"), std::string("8"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_player_count"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(boss_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(boss_snapshot.players[0].x_milli, 0);
     CHECK_EQ(boss_snapshot.players[0].y_milli, -60000);
@@ -1377,6 +1379,7 @@ bool TestBossModeCapacityGuard() {
     const auto snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(8));
     CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(snapshot.mode_state.at("boss_max_players"), std::string("8"));
 
     phk::battle::BattleServer pvp_server(config);
@@ -1411,18 +1414,63 @@ bool TestBossStartReadinessTracksConnectedPlayers() {
         )).ok);
     }
     CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("boss_ready_to_start"), std::string("0"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("3"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", true).ok);
     const auto reconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("4"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("0"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(reconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    return true;
+}
+
+bool TestBossReadyToStartRequiresAllReadyPlayers() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-boss-all-ready-" + std::to_string(index),
+            "user-boss-all-ready-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "instance_boss",
+            "00112233445566778899ee0" + std::to_string(index)
+        )).ok);
+    }
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "boss-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+
+    const auto ready_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
+    CHECK_EQ(ready_snapshot.mode_state.at("all_players_ready"), std::string("1"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
+    const auto disconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_player_count"), std::string("3"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     return true;
 }
 
@@ -3112,6 +3160,7 @@ int main() {
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
+        {"BossReadyToStartRequiresAllReadyPlayers", TestBossReadyToStartRequiresAllReadyPlayers},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
