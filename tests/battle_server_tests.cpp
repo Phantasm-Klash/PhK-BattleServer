@@ -1127,6 +1127,7 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("mode_action|p1|tick=2|seq=3") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("|card=boss-card-001|from=p1|to=p2") != std::string::npos);
+    CHECK_TRUE(first.Summary().event_trace[1].find("|authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[2].find("bullet_spawn|tick=2") != std::string::npos);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), transfer.action_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), transfer.action_type);
@@ -1137,6 +1138,10 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-001"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_owner_player_id"), std::string("p1"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_mode_allowed"), std::string("1"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_cost_paid"), std::string("1"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_cooldown_ready"), std::string("1"));
     CHECK_EQ(first_snapshot.mode_state.at("accepted_input_count"), std::string("2"));
     CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
     CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
@@ -1318,9 +1323,14 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-disconnected"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_authority_owner_player_id"), std::string("p1"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_authority_mode_allowed"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_authority_cost_paid"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_authority_cooldown_ready"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("transfer_card"));
     CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("type=transfer_card") != std::string::npos);
     CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("|card=boss-card-disconnected|from=p1|to=p2") != std::string::npos);
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("|authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1") != std::string::npos);
     return true;
 }
 
@@ -1677,6 +1687,10 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_card_instance_id\":\"instance-card-001\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_mode_allowed\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_cost_paid\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_cooldown_ready\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") != std::string::npos);
 

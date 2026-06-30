@@ -455,9 +455,9 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
 
     players_[action.player_id].last_seq = action.seq;
     if (action.action_type == "transfer_card") {
-        reserved_transfer_card_instance_ids_.insert(
-            ExtractJsonStringField(action.payload_json, "card_instance_id")
-        );
+        const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
+        reserved_transfer_card_instance_ids_.insert(card_instance_id);
+        pending_transfer_card_authority_by_action_id_[action.action_id] = transferable_cards_.at(card_instance_id);
     }
     pending_mode_actions_by_tick_[action.tick].push_back(action);
     return result;
@@ -566,6 +566,10 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["last_transfer_card_instance_id"] = last_transfer_card_instance_id_;
         snapshot.mode_state["last_transfer_from_player_id"] = last_transfer_from_player_id_;
         snapshot.mode_state["last_transfer_to_player_id"] = last_transfer_to_player_id_;
+        snapshot.mode_state["last_transfer_authority_owner_player_id"] = last_transfer_card_authority_.owner_player_id;
+        snapshot.mode_state["last_transfer_authority_mode_allowed"] = BoolToken(last_transfer_card_authority_.mode_allowed);
+        snapshot.mode_state["last_transfer_authority_cost_paid"] = BoolToken(last_transfer_card_authority_.cost_paid);
+        snapshot.mode_state["last_transfer_authority_cooldown_ready"] = BoolToken(last_transfer_card_authority_.cooldown_ready);
     }
     if (has_last_mode_action_) {
         snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
@@ -726,6 +730,10 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppend(hash, last_transfer_card_instance_id_);
         hash = HashAppend(hash, last_transfer_from_player_id_);
         hash = HashAppend(hash, last_transfer_to_player_id_);
+        hash = HashAppend(hash, last_transfer_card_authority_.owner_player_id);
+        hash = HashAppend(hash, last_transfer_card_authority_.mode_allowed ? 1u : 0u);
+        hash = HashAppend(hash, last_transfer_card_authority_.cost_paid ? 1u : 0u);
+        hash = HashAppend(hash, last_transfer_card_authority_.cooldown_ready ? 1u : 0u);
         for (const auto& item : transferred_card_edges_) {
             hash = HashAppend(hash, item.first);
             hash = HashAppend(hash, item.second.first);
@@ -968,6 +976,22 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (last_transfer_card_instance_id != fixture.final_snapshot.mode_state.end()) {
         json += ",\"last_transfer_card_instance_id\":\"" + last_transfer_card_instance_id->second + "\"";
     }
+    const auto last_transfer_authority_owner = fixture.final_snapshot.mode_state.find("last_transfer_authority_owner_player_id");
+    if (last_transfer_authority_owner != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_owner_player_id\":\"" + last_transfer_authority_owner->second + "\"";
+    }
+    const auto last_transfer_authority_mode_allowed = fixture.final_snapshot.mode_state.find("last_transfer_authority_mode_allowed");
+    if (last_transfer_authority_mode_allowed != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_mode_allowed\":" + last_transfer_authority_mode_allowed->second;
+    }
+    const auto last_transfer_authority_cost_paid = fixture.final_snapshot.mode_state.find("last_transfer_authority_cost_paid");
+    if (last_transfer_authority_cost_paid != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_cost_paid\":" + last_transfer_authority_cost_paid->second;
+    }
+    const auto last_transfer_authority_cooldown_ready = fixture.final_snapshot.mode_state.find("last_transfer_authority_cooldown_ready");
+    if (last_transfer_authority_cooldown_ready != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"last_transfer_authority_cooldown_ready\":" + last_transfer_authority_cooldown_ready->second;
+    }
     const auto last_transfer_from_player_id = fixture.final_snapshot.mode_state.find("last_transfer_from_player_id");
     if (last_transfer_from_player_id != fixture.final_snapshot.mode_state.end()) {
         json += ",\"last_transfer_from_player_id\":\"" + last_transfer_from_player_id->second + "\"";
@@ -1112,6 +1136,11 @@ void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& actio
     last_transfer_card_instance_id_ = card_instance_id;
     last_transfer_from_player_id_ = action.player_id;
     last_transfer_to_player_id_ = target_player_id;
+    const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
+    if (authority_it != pending_transfer_card_authority_by_action_id_.end()) {
+        last_transfer_card_authority_ = authority_it->second;
+        pending_transfer_card_authority_by_action_id_.erase(authority_it);
+    }
     ++transfer_card_count_;
 }
 
@@ -1253,6 +1282,10 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
         event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_instance_id_);
         event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_from_player_id_);
         event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_to_player_id_);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.owner_player_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.mode_allowed ? 1u : 0u);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.cost_paid ? 1u : 0u);
+        event_stream_hash_ = HashAppend(event_stream_hash_, last_transfer_card_authority_.cooldown_ready ? 1u : 0u);
         event_stream_hash_ = HashAppend(event_stream_hash_, transfer_card_count_);
     }
     std::string trace =
@@ -1264,7 +1297,11 @@ void BattleSimulation::AccumulateAcceptedModeAction(const BattleModeAction& acti
     if (action.action_type == "transfer_card") {
         trace += "|card=" + last_transfer_card_instance_id_ +
             "|from=" + last_transfer_from_player_id_ +
-            "|to=" + last_transfer_to_player_id_;
+            "|to=" + last_transfer_to_player_id_ +
+            "|authority_owner=" + last_transfer_card_authority_.owner_player_id +
+            "|mode_allowed=" + BoolToken(last_transfer_card_authority_.mode_allowed) +
+            "|cost_paid=" + BoolToken(last_transfer_card_authority_.cost_paid) +
+            "|cooldown_ready=" + BoolToken(last_transfer_card_authority_.cooldown_ready);
     }
     event_trace_.push_back(std::move(trace));
     ++mode_action_count_;

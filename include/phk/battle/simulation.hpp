@@ -229,11 +229,13 @@ private:
     std::set<std::string> ready_player_ids_;
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::map<std::string, TransferableCardState> transferable_cards_;
+    std::map<std::string, TransferableCardState> pending_transfer_card_authority_by_action_id_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;
     std::string last_transfer_card_instance_id_;
     std::string last_transfer_from_player_id_;
     std::string last_transfer_to_player_id_;
+    TransferableCardState last_transfer_card_authority_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
     std::vector<BulletState> bullets_;
