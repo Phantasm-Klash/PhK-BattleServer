@@ -47,6 +47,7 @@ Status date: 2026-06-30
 
 - Once a signed battle result is accepted, the server facade now freezes that match until `RetireMatch` clears it.
 - Post-settlement input, mode actions, reconnect-style decoded actions, connection-state mutation, transferable-card configuration, encrypted dispatch, and tick advancement are rejected or held with `match_settled`, preserving the signed replay/hash material.
+- CTest and `tools/check_battle_server.py` now explicitly gate decoded input, decoded mode action, and decoded reconnect entrypoints against the same settled-match freeze.
 - Read-only snapshot and replay summary access remain available before retirement for business-server audit; retired matches still reject new tickets as `match_retired`.
 
 ## 2026-06-30 Boss Max HP Result Binding
