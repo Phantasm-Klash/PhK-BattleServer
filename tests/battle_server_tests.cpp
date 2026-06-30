@@ -3837,6 +3837,18 @@ bool TestReplayFixtureBoundary() {
     auto tampered_summary = fixture.summary;
     tampered_summary.input_trace[0] += "|tampered";
     CHECK_TRUE(ExpectedDevResultHash(tampered_summary) != fixture.result_hash);
+    auto tampered_summary_mode = fixture.summary;
+    tampered_summary_mode.mode_id = "battle_royale";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary_mode) != fixture.result_hash);
+    auto tampered_summary_ruleset = fixture.summary;
+    tampered_summary_ruleset.ruleset_version = "ruleset-other";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary_ruleset) != fixture.result_hash);
+    auto tampered_summary_event_trace = fixture.summary;
+    tampered_summary_event_trace.event_trace.back() += "|tampered";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary_event_trace) != fixture.result_hash);
+    auto tampered_summary_fallback = fixture.summary;
+    tampered_summary_fallback.fallback_input_count += 1;
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary_fallback) != fixture.result_hash);
     CHECK_EQ(fixture.final_snapshot.snapshot_kind, std::string("replay_final"));
     CHECK_EQ(fixture.final_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
     CHECK_EQ(fixture.final_snapshot.state_hash, fixture.summary.final_state_hash);
