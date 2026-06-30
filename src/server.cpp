@@ -385,6 +385,14 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         result.session.match_id = signed_ticket.ticket.match_id;
         return finish();
     }
+    const auto existing_simulation_it = simulations_by_match_.find(signed_ticket.ticket.match_id);
+    if (existing_simulation_it != simulations_by_match_.end() &&
+        IsBossMode(existing_simulation_it->second.Config().mode_id) &&
+        BossMatchReadyForResult(existing_simulation_it->second)) {
+        result.reason = "boss_roster_locked";
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
+    }
 
     BattleSessionRecord session;
     session.ticket_id = signed_ticket.ticket.ticket_id;
