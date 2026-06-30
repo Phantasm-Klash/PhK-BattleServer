@@ -49,6 +49,7 @@ struct KcpAeadAdapterResult {
 struct KcpAeadAdapterStats {
     std::uint64_t accepted_datagrams = 0;
     std::uint64_t rejected_datagrams = 0;
+    std::uint64_t malformed_datagrams = 0;
     std::uint64_t remote_endpoint_mismatches = 0;
     std::uint64_t remote_endpoint_rebinds = 0;
     std::uint64_t bound_sessions = 0;

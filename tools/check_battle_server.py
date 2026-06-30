@@ -562,6 +562,7 @@ def main() -> int:
         or "KcpAeadAdapterStats" not in kcp_text
         or "accepted_datagrams" not in kcp_text
         or "rejected_datagrams" not in kcp_text
+        or "malformed_datagrams" not in kcp_text
         or "remote_endpoint_mismatches" not in kcp_text
         or "remote_endpoint_rebinds" not in kcp_text
         or "bound_sessions" not in kcp_text
@@ -572,6 +573,9 @@ def main() -> int:
         or "server_.DispatchEncrypted(packet)" not in kcp_impl
         or "stats_.accepted_datagrams" not in kcp_impl
         or "stats_.rejected_datagrams" not in kcp_impl
+        or "stats_.malformed_datagrams" not in kcp_impl
+        or "remote_endpoint_missing" not in kcp_impl
+        or "datagram_payload_missing" not in kcp_impl
         or "stats_.remote_endpoint_mismatches" not in kcp_impl
         or "stats_.remote_endpoint_rebinds" not in kcp_impl
         or "remote_endpoint_mismatch" not in kcp_impl
@@ -668,6 +672,9 @@ def main() -> int:
         or "last_mode_action_type" not in tests_text
         or "adapter.Stats().accepted_datagrams" not in tests_text
         or "adapter.Stats().rejected_datagrams" not in tests_text
+        or "adapter.Stats().malformed_datagrams" not in tests_text
+        or "remote_endpoint_missing" not in tests_text
+        or "datagram_payload_missing" not in tests_text
         or "adapter.Stats().remote_endpoint_mismatches" not in tests_text
         or "adapter.Stats().remote_endpoint_rebinds" not in tests_text
         or "adapter.Stats().bound_sessions" not in tests_text

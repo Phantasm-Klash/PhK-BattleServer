@@ -8,6 +8,12 @@ Status date: 2026-06-29
 - `DecodedBattlePacketAdapter` sets the marker only after `BattleServer::DispatchEncrypted` succeeds; missing handshake, bad session key, stale tick, or other encrypted-path failures still short-circuit before decoded input or mode-action handoff.
 - CTest and `tools/check_battle_server.py` now gate the marker, accepted-dispatch/missing-payload cases, and a no-handshake decoded packet rejection that preserves simulation replay counters.
 
+## 2026-06-30 KCP Datagram Shape Boundary
+
+- The development KCP/AEAD adapter now rejects datagrams with missing remote endpoint identity or empty UDP/KCP payload before calling the battle server encrypted dispatcher.
+- Rejected malformed transport frames increment `malformed_datagrams`, do not bind a session endpoint, do not consume dispatcher seq/nonce state, and do not reach the placeholder KCP endpoint.
+- CTest and `tools/check_battle_server.py` now gate the malformed datagram counters and rejection reasons while the real KCP event loop and AEAD decrypt path remain pending.
+
 ## 2026-06-30 Replay Record Bridge Boundary
 
 - Added `ReplayRecordBridge` and `BattleServer::BuildReplayRecord` as a dependency-light `ReplayRecord` protobuf replacement target before generated C++ bindings land.

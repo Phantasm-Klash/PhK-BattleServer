@@ -44,6 +44,23 @@ KcpAeadAdapterResult KcpAeadPacketAdapter::ProcessEncryptedDatagram(
     const UdpDatagram& datagram
 ) {
     KcpAeadAdapterResult result;
+    if (datagram.remote_endpoint.empty()) {
+        stats_.rejected_datagrams += 1;
+        stats_.malformed_datagrams += 1;
+        result.reason = "remote_endpoint_missing";
+        result.dispatch.payload_type = packet.header.payload_type;
+        result.dispatch.reason = result.reason;
+        return result;
+    }
+    if (datagram.payload.empty()) {
+        stats_.rejected_datagrams += 1;
+        stats_.malformed_datagrams += 1;
+        result.reason = "datagram_payload_missing";
+        result.dispatch.payload_type = packet.header.payload_type;
+        result.dispatch.reason = result.reason;
+        return result;
+    }
+
     const bool remote_rebind_allowed = packet.header.payload_type == BattlePayloadType::Reconnect;
     if (!remote_rebind_allowed &&
         (packet.header.payload_type == BattlePayloadType::Input ||
