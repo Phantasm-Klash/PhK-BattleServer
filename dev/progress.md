@@ -5,7 +5,8 @@ Status date: 2026-06-30
 ## 2026-06-30 Boss Start Readiness Result Binding
 
 - Boss development result projection now carries the server-owned start boundary fields: `boss_min_players`, `boss_max_players`, `boss_start_ready`, `boss_ready_player_count`, and `boss_ready_to_start`.
-- `BattleServer::SubmitBattleResult` binds these fields back to the final replay snapshot, and `BattleResultVerifier` rejects forged Boss readiness/capacity result material with dedicated mismatch reasons.
+- Boss result projection also carries final `connected_player_count` and `disconnected_player_count`, so the business server can audit whether settlement came from the same connected-room state the C++ simulation used.
+- `BattleServer::SubmitBattleResult` binds these fields back to the final replay snapshot, and `BattleResultVerifier` rejects forged Boss readiness/capacity/connection-count result material with dedicated mismatch reasons.
 - This is audit/settlement context for Nakama/Go only; the C++ battle server still does not persist Boss HP, rewards, inventory, wallet, or business database state.
 
 ## 2026-06-30 Settled Match Freeze Boundary

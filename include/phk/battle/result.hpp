@@ -73,6 +73,8 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_boss_start_ready = 0;
     std::uint64_t required_boss_ready_player_count = 0;
     std::uint64_t required_boss_ready_to_start = 0;
+    std::uint64_t required_connected_player_count = 0;
+    std::uint64_t required_disconnected_player_count = 0;
     std::uint64_t required_transfer_card_count = 0;
     std::uint64_t required_last_transfer_authority_mode_allowed = 0;
     std::uint64_t required_last_transfer_authority_cost_paid = 0;

@@ -307,6 +307,24 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "connected_player_count",
+            options.required_connected_player_count
+        )) {
+        Fail(verification, "connected_player_count_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "disconnected_player_count",
+            options.required_disconnected_player_count
+        )) {
+        Fail(verification, "disconnected_player_count_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_max_hp", options.required_boss_max_hp)) {
         Fail(verification, "boss_max_hp_mismatch");
         return verification;

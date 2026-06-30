@@ -1028,6 +1028,16 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_ready_to_start != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_ready_to_start\":" + boss_ready_to_start->second;
     }
+    const auto connected_player_count = fixture.final_snapshot.mode_state.find("connected_player_count");
+    if (boss_scope != fixture.final_snapshot.mode_state.end() &&
+        connected_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"connected_player_count\":" + connected_player_count->second;
+    }
+    const auto disconnected_player_count = fixture.final_snapshot.mode_state.find("disconnected_player_count");
+    if (boss_scope != fixture.final_snapshot.mode_state.end() &&
+        disconnected_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"disconnected_player_count\":" + disconnected_player_count->second;
+    }
     const auto boss_max_hp = fixture.final_snapshot.mode_state.find("boss_max_hp");
     if (boss_max_hp != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_max_hp\":" + boss_max_hp->second;
