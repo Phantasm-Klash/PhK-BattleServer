@@ -2,6 +2,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 
 #include "phk/battle/handshake.hpp"
 #include "phk/battle/protocol.hpp"
@@ -134,7 +135,10 @@ private:
 		const BattlePacketHeader& header
 	) const;
 	[[nodiscard]] std::uint64_t DeriveMatchSeed(const std::string& match_id) const;
-	[[nodiscard]] std::int32_t InitialPlayerX(std::size_t player_index) const;
+	[[nodiscard]] std::pair<std::int32_t, std::int32_t> InitialPlayerPosition(
+		const std::string& mode_id,
+		std::size_t player_index
+	) const;
 
 	BattleServerConfig config_;
 	TicketVerifier ticket_verifier_;

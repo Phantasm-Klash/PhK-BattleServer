@@ -67,6 +67,10 @@ bool IsReconnectModeAction(std::string_view action_type) {
     return action_type == "reconnect";
 }
 
+bool IsBossMode(std::string_view mode_id) {
+    return mode_id == "world_boss" || mode_id == "instance_boss";
+}
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
     const std::string prefix = "\"" + std::string(field_name) + "\":\"";
     const auto value_start = payload_json.find(prefix);
@@ -468,6 +472,12 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     }
     snapshot.mode_state["connected_player_count"] = std::to_string(connected_player_count);
     snapshot.mode_state["disconnected_player_count"] = std::to_string(players_.size() - connected_player_count);
+    if (IsBossMode(config_.mode_id)) {
+        snapshot.mode_state["battle_layout"] = "boss_center_ring";
+        snapshot.mode_state["boss_center_x_milli"] = "0";
+        snapshot.mode_state["boss_center_y_milli"] = "0";
+        snapshot.mode_state["player_fire_target"] = "boss_center";
+    }
     if (has_last_mode_action_) {
         snapshot.mode_state["last_mode_action_id"] = last_mode_action_.action_id;
         snapshot.mode_state["last_mode_action_type"] = last_mode_action_.action_type;

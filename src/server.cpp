@@ -1,5 +1,6 @@
 #include "phk/battle/server.hpp"
 
+#include <array>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -63,6 +64,10 @@ bool IsClientToServerEncryptedPayload(BattlePayloadType payload_type) {
 bool IsSupportedNegotiatedAead(const std::string& selected_aead) {
     return selected_aead == "CHACHA20_POLY1305" ||
         selected_aead == "XCHACHA20_POLY1305";
+}
+
+bool IsBossMode(const std::string& mode_id) {
+    return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
 InputValidationResult UnknownPlayerResult() {
@@ -319,11 +324,11 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         result.reason = "match_mode_ruleset_mismatch";
         return result;
     }
-    simulation_it->second.AddPlayer(
-        session.player_id,
-        InitialPlayerX(simulation_it->second.PlayerCount()),
-        0
+    const auto initial_position = InitialPlayerPosition(
+        session.mode_id,
+        simulation_it->second.PlayerCount()
     );
+    simulation_it->second.AddPlayer(session.player_id, initial_position.first, initial_position.second);
 
     result.ok = true;
     result.reason = "ok";
@@ -913,14 +918,32 @@ std::uint64_t BattleServer::DeriveMatchSeed(const std::string& match_id) const {
     return seed;
 }
 
-std::int32_t BattleServer::InitialPlayerX(std::size_t player_index) const {
+std::pair<std::int32_t, std::int32_t> BattleServer::InitialPlayerPosition(
+    const std::string& mode_id,
+    std::size_t player_index
+) const {
+    if (IsBossMode(mode_id)) {
+        constexpr std::int32_t kBossSpawnRadiusMilli = 60000;
+        constexpr std::array<std::pair<std::int32_t, std::int32_t>, 8> kBossSpawnPoints = {{
+            {0, -kBossSpawnRadiusMilli},
+            {kBossSpawnRadiusMilli, 0},
+            {0, kBossSpawnRadiusMilli},
+            {-kBossSpawnRadiusMilli, 0},
+            {42426, -42426},
+            {42426, 42426},
+            {-42426, 42426},
+            {-42426, -42426},
+        }};
+        return kBossSpawnPoints[player_index % kBossSpawnPoints.size()];
+    }
+
     if (player_index == 0) {
-        return -20000;
+        return {-20000, 0};
     }
     if (player_index == 1) {
-        return 20000;
+        return {20000, 0};
     }
-    return static_cast<std::int32_t>(player_index) * 10000 - 30000;
+    return {static_cast<std::int32_t>(player_index) * 10000 - 30000, 0};
 }
 
 }  // namespace phk::battle

@@ -126,6 +126,23 @@ phk::battle::SignedBattleTicket MakeTicketForBob() {
 	return ticket;
 }
 
+phk::battle::SignedBattleTicket MakeModeTicket(
+    std::string ticket_id,
+    std::string user_id,
+    std::string player_id,
+    std::string mode_id,
+    std::string nonce_hex
+) {
+    auto ticket = MakeTicket();
+    ticket.ticket.ticket_id = std::move(ticket_id);
+    ticket.ticket.user_id = std::move(user_id);
+    ticket.ticket.player_id = std::move(player_id);
+    ticket.ticket.mode_id = std::move(mode_id);
+    ticket.ticket.ticket_nonce_hex = std::move(nonce_hex);
+    ticket.ticket.business_session_id = "session-ref:" + ticket.ticket.user_id;
+    return ticket;
+}
+
 phk::battle::BattleInput MakeInput(
     const std::string& player_id,
     std::uint64_t tick,
@@ -1203,6 +1220,68 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("transfer_card"));
     CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("type=transfer_card") != std::string::npos);
+    return true;
+}
+
+bool TestBossModeSpawnLayout() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-1",
+        "user-boss-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899aa01"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-2",
+        "user-boss-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899aa02"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-3",
+        "user-boss-3",
+        "p3",
+        "world_boss",
+        "00112233445566778899aa03"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-4",
+        "user-boss-4",
+        "p4",
+        "world_boss",
+        "00112233445566778899aa04"
+    )).ok);
+
+    const auto boss_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(boss_snapshot.mode_state.at("mode_id"), std::string("world_boss"));
+    CHECK_EQ(boss_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_center_x_milli"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_center_y_milli"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("player_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.players.size(), static_cast<std::size_t>(4));
+    CHECK_EQ(boss_snapshot.players[0].x_milli, 0);
+    CHECK_EQ(boss_snapshot.players[0].y_milli, -60000);
+    CHECK_EQ(boss_snapshot.players[1].x_milli, 60000);
+    CHECK_EQ(boss_snapshot.players[1].y_milli, 0);
+    CHECK_EQ(boss_snapshot.players[2].x_milli, 0);
+    CHECK_EQ(boss_snapshot.players[2].y_milli, 60000);
+    CHECK_EQ(boss_snapshot.players[3].x_milli, -60000);
+    CHECK_EQ(boss_snapshot.players[3].y_milli, 0);
+
+    phk::battle::BattleServer pvp_server(config);
+    CHECK_TRUE(pvp_server.RegisterTicket(MakeTicket()).ok);
+    CHECK_TRUE(pvp_server.RegisterTicket(MakeTicketForBob()).ok);
+    const auto pvp_snapshot = pvp_server.MatchSnapshot("match-001");
+    CHECK_TRUE(pvp_snapshot.mode_state.find("battle_layout") == pvp_snapshot.mode_state.end());
+    CHECK_EQ(pvp_snapshot.players[0].x_milli, -20000);
+    CHECK_EQ(pvp_snapshot.players[0].y_milli, 0);
+    CHECK_EQ(pvp_snapshot.players[1].x_milli, 20000);
+    CHECK_EQ(pvp_snapshot.players[1].y_milli, 0);
     return true;
 }
 
@@ -2656,6 +2735,7 @@ int main() {
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
+		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
