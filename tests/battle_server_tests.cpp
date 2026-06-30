@@ -1379,6 +1379,14 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_player_count"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_spawn_slot"), std::string("north"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p1_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p2_spawn_slot"), std::string("east"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p2_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p3_spawn_slot"), std::string("south"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p3_fire_target"), std::string("boss_center"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p4_spawn_slot"), std::string("west"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_player_p4_fire_target"), std::string("boss_center"));
     CHECK_EQ(boss_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(boss_snapshot.players[0].x_milli, 0);
     CHECK_EQ(boss_snapshot.players[0].y_milli, -60000);
@@ -1394,6 +1402,8 @@ bool TestBossModeSpawnLayout() {
     CHECK_TRUE(pvp_server.RegisterTicket(MakeTicketForBob()).ok);
     const auto pvp_snapshot = pvp_server.MatchSnapshot("match-001");
     CHECK_TRUE(pvp_snapshot.mode_state.find("battle_layout") == pvp_snapshot.mode_state.end());
+    CHECK_TRUE(pvp_snapshot.mode_state.find("boss_player_p1_spawn_slot") == pvp_snapshot.mode_state.end());
+    CHECK_TRUE(pvp_snapshot.mode_state.find("boss_player_p1_fire_target") == pvp_snapshot.mode_state.end());
     CHECK_EQ(pvp_snapshot.players[0].x_milli, -20000);
     CHECK_EQ(pvp_snapshot.players[0].y_milli, 0);
     CHECK_EQ(pvp_snapshot.players[1].x_milli, 20000);
