@@ -853,6 +853,9 @@ def main() -> int:
         or "last_transfer_authority_owner_player_id" not in tests_text
         or "authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1" not in tests_text
         or "action-reconnect-p2" not in tests_text
+        or "decoded_input_after_settle" not in tests_text
+        or "decoded_action_after_settle" not in tests_text
+        or "decoded_reconnect_after_settle" not in tests_text
         or "last_mode_action_type" not in tests_text
         or "adapter.Stats().accepted_datagrams" not in tests_text
         or "adapter.Stats().rejected_datagrams" not in tests_text
@@ -866,7 +869,7 @@ def main() -> int:
         or "ping_ack_ahead" not in tests_text
         or "endpoint.Stats().datagrams_in, static_cast<std::uint64_t>(0)" not in tests_text
     ):
-        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, transfer-card authority coverage, handshake-bound encrypted session coverage, decoded header/payload binding coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
+        print("battle server tests missing payload enum pinning, pinned 60Hz replay/result fingerprints, transfer-card authority coverage, settled decoded-entrypoint freeze coverage, handshake-bound encrypted session coverage, decoded header/payload binding coverage, or KCP/AEAD remote rebinding coverage", file=sys.stderr)
         return 1
 
     if args.build:

@@ -2574,6 +2574,54 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_TRUE(!encrypted_dispatch_after_settle.ok);
     CHECK_EQ(encrypted_dispatch_after_settle.reason, std::string("match_settled"));
 
+    phk::battle::BattlePacketHeader decoded_input_header;
+    decoded_input_header.match_id = "match-001";
+    decoded_input_header.player_id = "p1";
+    decoded_input_header.tick = 2;
+    decoded_input_header.seq = 2;
+    decoded_input_header.payload_type = phk::battle::BattlePayloadType::Input;
+    decoded_input_header.key_id = "client-to-server-after-settle";
+    const auto decoded_input_after_settle = server.AcceptDecodedInput(
+        decoded_input_header,
+        MakeInput("p1", 2, 2, 1u << 3)
+    );
+    CHECK_TRUE(!decoded_input_after_settle.ok);
+    CHECK_EQ(decoded_input_after_settle.reason, std::string("match_settled"));
+
+    phk::battle::BattlePacketHeader decoded_action_header;
+    decoded_action_header.match_id = "match-001";
+    decoded_action_header.player_id = "p1";
+    decoded_action_header.tick = 2;
+    decoded_action_header.seq = 2;
+    decoded_action_header.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    decoded_action_header.key_id = "client-to-server-after-settle";
+    const auto decoded_action_after_settle = server.AcceptDecodedModeAction(
+        decoded_action_header,
+        ready_after_settle
+    );
+    CHECK_TRUE(!decoded_action_after_settle.ok);
+    CHECK_EQ(decoded_action_after_settle.reason, std::string("match_settled"));
+
+    phk::battle::BattlePacketHeader decoded_reconnect_header;
+    decoded_reconnect_header.match_id = "match-001";
+    decoded_reconnect_header.player_id = "p1";
+    decoded_reconnect_header.tick = 2;
+    decoded_reconnect_header.seq = 2;
+    decoded_reconnect_header.ack = settled_summary.event_count;
+    decoded_reconnect_header.payload_type = phk::battle::BattlePayloadType::Reconnect;
+    decoded_reconnect_header.key_id = "client-to-server-after-settle";
+    auto reconnect_after_settle = ready_after_settle;
+    reconnect_after_settle.action_id = "reconnect-after-settle";
+    reconnect_after_settle.action_type = "reconnect";
+    reconnect_after_settle.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(settled_summary.event_count) + "}";
+    const auto decoded_reconnect_after_settle = server.AcceptDecodedReconnectModeAction(
+        decoded_reconnect_header,
+        reconnect_after_settle
+    );
+    CHECK_TRUE(!decoded_reconnect_after_settle.ok);
+    CHECK_EQ(decoded_reconnect_after_settle.reason, std::string("match_settled"));
+
     const auto tick_after_settle = server.TickMatch("match-001");
     CHECK_EQ(tick_after_settle.snapshot_kind, std::string("match_settled"));
     CHECK_EQ(tick_after_settle.snapshot_tick, settled_summary.final_tick);
