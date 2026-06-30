@@ -484,6 +484,25 @@ DispatchResult BattleServer::Dispatch(
     const BattlePacketHeader& header,
     const std::vector<std::uint8_t>& plaintext_payload
 ) {
+    DispatchResult result;
+    result.payload_type = header.payload_type;
+    if (!header.match_id.empty()) {
+        const auto simulation_it = simulations_by_match_.find(header.match_id);
+        const bool has_result = result_hash_by_match_.find(header.match_id) != result_hash_by_match_.end();
+        if (simulation_it == simulations_by_match_.end()) {
+            result.reason = has_result ? "match_retired" : "match_unknown";
+            return result;
+        }
+        if (has_result) {
+            result.reason = "match_settled";
+            return result;
+        }
+        if (!header.player_id.empty() &&
+            !SessionExistsForPlayer(sessions_by_ticket_, header.match_id, header.player_id)) {
+            result.reason = "player_unknown";
+            return result;
+        }
+    }
     return dispatcher_.Dispatch(header, plaintext_payload);
 }
 
