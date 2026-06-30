@@ -73,6 +73,10 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+bool IsBattleRoyaleMode(std::string_view mode_id) {
+    return mode_id == "battle_royale";
+}
+
 bool IsAllowedBossFriendlyFirePolicy(std::string_view policy) {
     return policy == "disabled" ||
         policy == "player_bullets_only" ||
@@ -531,6 +535,24 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         if (card_slot.value() < 0 || card_slot.value() > 7) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "cast_card_slot_invalid";
+            return result;
+        }
+    }
+    if (action.action_type == "select_round_card") {
+        if (!IsBattleRoyaleMode(config_.mode_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_mode_unsupported";
+            return result;
+        }
+        const auto candidate_index = ExtractJsonIntField(action.payload_json, "candidate_index");
+        if (!candidate_index.has_value()) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_candidate_missing";
+            return result;
+        }
+        if (candidate_index.value() < 0 || candidate_index.value() > 2) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "select_round_card_candidate_invalid";
             return result;
         }
     }

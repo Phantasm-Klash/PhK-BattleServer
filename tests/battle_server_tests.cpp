@@ -280,6 +280,11 @@ bool TestProtocolManifest() {
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Reconnect), 7);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Result), 8);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::ModeAction), 9);
+    CHECK_EQ(std::string(phk::v1::kBattleModeActionActionType), std::string("select_round_card"));
+    CHECK_EQ(
+        std::string(phk::v1::kBattleModeActionPayloadJson),
+        std::string("{\"card_id\":\"focus_lens\",\"round_index\":0}")
+    );
     CHECK_TRUE(phk::v1::HasMessageField("BattleTicket", "ruleset_version"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "seq"));
     CHECK_TRUE(phk::v1::HasMessageField("BattlePacketHeader", "nonce"));
@@ -1101,8 +1106,8 @@ phk::battle::BattleModeAction MakeModeAction(std::uint64_t seq = phk::v1::kBattl
     action.tick = phk::v1::kBattleModeActionTick;
     action.seq = seq;
     action.action_id = std::string(phk::v1::kBattleModeActionActionId);
-    action.action_type = std::string(phk::v1::kBattleModeActionActionType);
-    action.payload_json = std::string(phk::v1::kBattleModeActionPayloadJson);
+    action.action_type = "cast_card";
+    action.payload_json = "{\"card_slot\":1}";
     action.client_result_authoritative = false;
     return action;
 }
@@ -1200,6 +1205,15 @@ bool TestSimulationDeterminism() {
     auto cast_card = cast_card_missing_slot;
     cast_card.payload_json = "{\"card_slot\":1}";
     CHECK_TRUE(first.ValidateModeAction(cast_card).ok);
+
+    auto select_round_non_br = MakeModeAction(3);
+    select_round_non_br.tick = 2;
+    select_round_non_br.action_id = "action-select-round-non-br";
+    select_round_non_br.action_type = "select_round_card";
+    select_round_non_br.payload_json = "{\"candidate_index\":1}";
+    const auto select_round_non_br_result = first.AcceptModeAction(select_round_non_br);
+    CHECK_TRUE(!select_round_non_br_result.ok);
+    CHECK_EQ(select_round_non_br_result.reason, std::string("select_round_card_mode_unsupported"));
 
     auto transfer_missing = MakeModeAction(3);
     transfer_missing.tick = 2;
@@ -1415,6 +1429,52 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("ready_player_count"), std::string("1"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+    return true;
+}
+
+bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-br";
+    config.mode_id = "battle_royale";
+    config.max_input_ahead_ticks = 4;
+    config.max_seq_ahead = 8;
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
+
+    auto missing_candidate = MakeModeAction(1);
+    missing_candidate.match_id = config.match_id;
+    missing_candidate.player_id = "p1";
+    missing_candidate.tick = 1;
+    missing_candidate.seq = 1;
+    missing_candidate.action_id = "select-round-missing";
+    missing_candidate.action_type = "select_round_card";
+    missing_candidate.payload_json = "{\"choice\":1}";
+    const auto missing_candidate_result = simulation.AcceptModeAction(missing_candidate);
+    CHECK_TRUE(!missing_candidate_result.ok);
+    CHECK_EQ(missing_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
+    auto invalid_candidate = missing_candidate;
+    invalid_candidate.payload_json = "{\"candidate_index\":3}";
+    const auto invalid_candidate_result = simulation.AcceptModeAction(invalid_candidate);
+    CHECK_TRUE(!invalid_candidate_result.ok);
+    CHECK_EQ(invalid_candidate_result.reason, std::string("select_round_card_candidate_invalid"));
+
+    auto forged_candidate = missing_candidate;
+    forged_candidate.payload_json = "{\"candidate_index\":1,\"reward\":\"grant\"}";
+    const auto forged_candidate_result = simulation.AcceptModeAction(forged_candidate);
+    CHECK_TRUE(!forged_candidate_result.ok);
+    CHECK_EQ(forged_candidate_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    auto accepted_candidate = missing_candidate;
+    accepted_candidate.payload_json = "{\"candidate_index\":1}";
+    const auto accepted_candidate_result = simulation.AcceptModeAction(accepted_candidate);
+    CHECK_TRUE(accepted_candidate_result.ok);
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
+    const auto snapshot = simulation.Tick();
+    CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("select_round_card"));
+    CHECK_EQ(simulation.Summary().last_mode_action_id, accepted_candidate.action_id);
     return true;
 }
 
@@ -4227,6 +4287,7 @@ int main() {
 		{"SimulationDeterminism", TestSimulationDeterminism},
 		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
         {"ReadyModeActionLifecycleState", TestReadyModeActionLifecycleState},
+        {"BattleRoyaleSelectRoundCardPayloadBoundary", TestBattleRoyaleSelectRoundCardPayloadBoundary},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},

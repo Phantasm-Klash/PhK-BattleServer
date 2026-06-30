@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Battle Royale Select-Round Payload Boundary
+
+- `select_round_card` mode actions are now battle-royale-only and require an integer `candidate_index` in the server-generated three-choice range 0-2 before they can enter the authoritative tick queue.
+- Payloads that omit the candidate, pick an out-of-range candidate, target the wrong mode, or smuggle reward/settlement authority fields are rejected before replay/hash state changes.
+- This is intent validation only. Candidate generation, card ownership, rewards, inventory, wallet, Steam state, and business database state remain outside the C++ battle server.
+
 ## 2026-06-30 Boss Transfer Mode Scope Boundary
 
 - `transfer_card` mode actions are now Boss-only. Non-Boss matches reject transfer attempts as `transfer_card_mode_unsupported` before transfer-card authority state can be configured or consumed.
