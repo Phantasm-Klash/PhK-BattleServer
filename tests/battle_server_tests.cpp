@@ -1859,6 +1859,95 @@ bool TestBossModeSpawnLayout() {
     return true;
 }
 
+bool TestBossMatchPreconfiguration() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+
+    phk::battle::BossMatchConfig pvp_config;
+    pvp_config.match_id = "match-001";
+    pvp_config.mode_id = "pvp_duel";
+    const auto non_boss = server.ConfigureBossMatch(pvp_config);
+    CHECK_TRUE(!non_boss.ok);
+    CHECK_EQ(non_boss.reason, std::string("boss_mode_required"));
+
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-001";
+    boss_config.mode_id = "world_boss";
+    boss_config.boss_instance_id = "world-boss-season-042";
+    boss_config.boss_season_id = "season-beta";
+    boss_config.boss_phase_id = "phase-enrage";
+    boss_config.boss_max_hp = 4242;
+    boss_config.boss_friendly_fire_policy = "client_authored_damage";
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+
+    const auto wrong_mode = server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-preconfig-wrong-mode",
+        "user-boss-preconfig-wrong-mode",
+        "p1",
+        "instance_boss",
+        "00112233445566778899ab01"
+    ));
+    CHECK_TRUE(!wrong_mode.ok);
+    CHECK_EQ(wrong_mode.reason, std::string("boss_config_mode_mismatch"));
+    CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
+
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-preconfig-1",
+        "user-boss-preconfig-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899ab02"
+    )).ok);
+    const auto snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot.mode_state.at("boss_instance_id"), std::string("world-boss-season-042"));
+    CHECK_EQ(snapshot.mode_state.at("boss_season_id"), std::string("season-beta"));
+    CHECK_EQ(snapshot.mode_state.at("boss_phase_id"), std::string("phase-enrage"));
+    CHECK_EQ(snapshot.mode_state.at("boss_max_hp"), std::string("4242"));
+    CHECK_EQ(snapshot.mode_state.at("boss_current_hp"), std::string("4242"));
+    CHECK_EQ(snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("disabled"));
+
+    const auto duplicate_config = server.ConfigureBossMatch(boss_config);
+    CHECK_TRUE(!duplicate_config.ok);
+    CHECK_EQ(duplicate_config.reason, std::string("match_already_created"));
+
+    for (std::size_t index = 2; index <= 4; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-boss-preconfig-" + std::to_string(index),
+            "user-boss-preconfig-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            "00112233445566778899ab0" + std::to_string(index + 1)
+        )).ok);
+    }
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "boss-preconfig-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+    CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_ready_to_start"), std::string("1"));
+    const auto built = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built.ok);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_instance_id\":\"world-boss-season-042\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":4242") != std::string::npos);
+    CHECK_TRUE(server.SubmitBattleResult(built.signed_result).ok);
+    CHECK_TRUE(server.RetireMatch("match-001").ok);
+
+    const auto retired_config = server.ConfigureBossMatch(boss_config);
+    CHECK_TRUE(!retired_config.ok);
+    CHECK_EQ(retired_config.reason, std::string("match_retired"));
+    return true;
+}
+
 bool TestBossModeCapacityGuard() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -4949,6 +5038,7 @@ int main() {
         {"ModeActionPayloadSizeLimit", TestModeActionPayloadSizeLimit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
+        {"BossMatchPreconfiguration", TestBossMatchPreconfiguration},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
         {"BossSimulationRejectsNinthPlayer", TestBossSimulationRejectsNinthPlayer},
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},

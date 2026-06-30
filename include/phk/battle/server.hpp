@@ -21,6 +21,21 @@ struct BattleServerConfig {
     std::uint32_t max_players = 8;
 };
 
+struct BossMatchConfig {
+    std::string match_id;
+    std::string mode_id;
+    std::string boss_instance_id;
+    std::string boss_season_id;
+    std::string boss_phase_id;
+    std::uint64_t boss_max_hp = 1000;
+    std::string boss_friendly_fire_policy = "disabled";
+};
+
+struct ConfigureBossMatchResult {
+    bool ok = false;
+    std::string reason;
+};
+
 struct BattleSessionRecord {
     std::string session_id;
     std::string ticket_id;
@@ -125,9 +140,10 @@ public:
 	explicit BattleServer(BattleServerConfig config);
 
     [[nodiscard]] const BattleServerConfig& Config() const;
-    [[nodiscard]] std::size_t ActiveSessionCount() const;
+	[[nodiscard]] std::size_t ActiveSessionCount() const;
     [[nodiscard]] std::size_t ActiveMatchCount() const;
 
+    ConfigureBossMatchResult ConfigureBossMatch(BossMatchConfig boss_config);
 	RegisterTicketResult RegisterTicket(const SignedBattleTicket& signed_ticket);
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello);
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);
@@ -181,6 +197,7 @@ private:
 	BattleDispatcher dispatcher_;
 	std::map<std::string, BattleSessionRecord> sessions_by_ticket_;
 	std::map<std::string, BattleSimulation> simulations_by_match_;
+    std::map<std::string, BossMatchConfig> pending_boss_config_by_match_;
 	std::map<std::string, std::string> result_hash_by_match_;
 	std::set<std::string> boss_roster_locked_match_ids_;
 };
