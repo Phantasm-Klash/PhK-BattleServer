@@ -620,6 +620,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_min_players"] = "4";
         snapshot.mode_state["boss_max_players"] = "8";
         snapshot.mode_state["boss_registered_player_count"] = std::to_string(players_.size());
+        snapshot.mode_state["boss_layout_player_count"] = std::to_string(players_.size());
         snapshot.mode_state["boss_ready_player_count"] = std::to_string(ready_connected_player_count);
         snapshot.mode_state["boss_all_registered_connected"] = BoolToken(boss_all_registered_connected);
         snapshot.mode_state["boss_all_registered_ready"] = BoolToken(boss_all_registered_ready);
@@ -1075,6 +1076,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_registered_player_count = fixture.final_snapshot.mode_state.find("boss_registered_player_count");
     if (boss_registered_player_count != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_registered_player_count\":" + boss_registered_player_count->second;
+    }
+    const auto boss_layout_player_count = fixture.final_snapshot.mode_state.find("boss_layout_player_count");
+    if (boss_layout_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_layout_player_count\":" + boss_layout_player_count->second;
     }
     const auto boss_start_ready = fixture.final_snapshot.mode_state.find("boss_start_ready");
     if (boss_start_ready != fixture.final_snapshot.mode_state.end()) {

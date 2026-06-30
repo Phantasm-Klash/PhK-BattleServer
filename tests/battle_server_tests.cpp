@@ -1519,6 +1519,7 @@ bool TestBossModeSpawnLayout() {
     CHECK_EQ(boss_snapshot.mode_state.at("boss_min_players"), std::string("4"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_max_players"), std::string("8"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
+    CHECK_EQ(boss_snapshot.mode_state.at("boss_layout_player_count"), std::string("4"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_ready_player_count"), std::string("0"));
     CHECK_EQ(boss_snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
@@ -1585,6 +1586,7 @@ bool TestBossModeCapacityGuard() {
     const auto snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(8));
     CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("8"));
+    CHECK_EQ(snapshot.mode_state.at("boss_layout_player_count"), std::string("8"));
     CHECK_EQ(snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_all_registered_connected"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
@@ -2012,6 +2014,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_registered_player_count\":4") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_layout_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_connected\":1") != std::string::npos);
@@ -2118,6 +2121,19 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_EQ(
         wrong_registered_player_count_result.reason,
         std::string("boss_registered_player_count_mismatch")
+    );
+
+    auto wrong_layout_player_count = built.signed_result;
+    wrong_layout_player_count.result.mode_result_json = ReplaceFirst(
+        wrong_layout_player_count.result.mode_result_json,
+        "\"boss_layout_player_count\":4",
+        "\"boss_layout_player_count\":8"
+    );
+    const auto wrong_layout_player_count_result = server.SubmitBattleResult(wrong_layout_player_count);
+    CHECK_TRUE(!wrong_layout_player_count_result.ok);
+    CHECK_EQ(
+        wrong_layout_player_count_result.reason,
+        std::string("boss_layout_player_count_mismatch")
     );
 
     auto wrong_start_ready = built.signed_result;

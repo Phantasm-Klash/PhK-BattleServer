@@ -364,6 +364,15 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_layout_player_count",
+            options.required_boss_layout_player_count
+        )) {
+        Fail(verification, "boss_layout_player_count_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_start_ready", options.required_boss_start_ready)) {
         Fail(verification, "boss_start_ready_mismatch");
         return verification;
