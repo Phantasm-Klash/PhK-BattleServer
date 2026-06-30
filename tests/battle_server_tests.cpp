@@ -1121,12 +1121,17 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first.Summary().input_trace[2].find("fallback|held|p1|tick=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("mode_action|p1|tick=2|seq=3") != std::string::npos);
+    CHECK_TRUE(first.Summary().event_trace[1].find("|card=boss-card-001|from=p1|to=p2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[2].find("bullet_spawn|tick=2") != std::string::npos);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), transfer.action_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), transfer.action_type);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(transfer.seq));
+    CHECK_EQ(first_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-001"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
+    CHECK_EQ(first_snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
     CHECK_EQ(first_snapshot.mode_state.at("accepted_input_count"), std::string("2"));
     CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
     CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
@@ -1218,8 +1223,13 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
     const auto snapshot = server.TickMatch("match-001");
     CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-disconnected"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
+    CHECK_EQ(snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
     CHECK_EQ(snapshot.mode_state.at("last_mode_action_type"), std::string("transfer_card"));
     CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("type=transfer_card") != std::string::npos);
+    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace.back().find("|card=boss-card-disconnected|from=p1|to=p2") != std::string::npos);
     return true;
 }
 
@@ -1419,8 +1429,16 @@ bool TestBossModeResultProjection() {
     auto p2_shoot = MakeInput("p2", 1, 1, 0);
     p2_shoot.match_id = instance_config.match_id;
     p2_shoot.shoot = true;
+    auto transfer = MakeModeAction(1);
+    transfer.match_id = instance_config.match_id;
+    transfer.tick = 1;
+    transfer.seq = 2;
+    transfer.action_id = "action-instance-transfer";
+    transfer.action_type = "transfer_card";
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-card-001\"}";
     CHECK_TRUE(simulation.AcceptInput(p1_shoot).ok);
     CHECK_TRUE(simulation.AcceptInput(p2_shoot).ok);
+    CHECK_TRUE(simulation.AcceptModeAction(transfer).ok);
     CHECK_EQ(simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
 
     const auto fixture = simulation.BuildReplayFixture("user-boss");
@@ -1432,6 +1450,10 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_card_instance_id\":\"instance-card-001\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") != std::string::npos);
 
     phk::battle::SimulationConfig pvp_config;
     pvp_config.match_id = "match-pvp-result";
@@ -1442,6 +1464,7 @@ bool TestBossModeResultProjection() {
         pvp_simulation.BuildReplayFixture("user-pvp")
     );
     CHECK_TRUE(pvp_mode_result_json.find("boss_") == std::string::npos);
+    CHECK_TRUE(pvp_mode_result_json.find("transfer_card_count") == std::string::npos);
     return true;
 }
 

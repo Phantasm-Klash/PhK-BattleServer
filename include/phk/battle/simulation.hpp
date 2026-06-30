@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "phk/battle/protocol.hpp"
@@ -188,6 +189,7 @@ private:
     void ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyBossDamageForInput(const PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyModeActionsForTick(std::uint64_t tick);
+    void ApplyTransferCardModeAction(const BattleModeAction& action);
     void SpawnBulletsForTick();
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
@@ -210,11 +212,16 @@ private:
     std::uint64_t boss_current_hp_ = 0;
     std::uint64_t boss_damage_total_ = 0;
     std::uint64_t boss_defeated_tick_ = 0;
+    std::uint64_t transfer_card_count_ = 0;
     bool has_last_mode_action_ = false;
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
+    std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;
+    std::string last_transfer_card_instance_id_;
+    std::string last_transfer_from_player_id_;
+    std::string last_transfer_to_player_id_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
     std::vector<BulletState> bullets_;
