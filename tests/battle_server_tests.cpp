@@ -1413,6 +1413,17 @@ bool TestReadyModeActionLifecycleState() {
     const auto p1_ready_snapshot = simulation.Tick();
     CHECK_EQ(p1_ready_snapshot.mode_state.at("ready_player_count"), std::string("1"));
     CHECK_EQ(p1_ready_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(1));
+
+    auto duplicate_p1_ready = p1_ready;
+    duplicate_p1_ready.tick = 2;
+    duplicate_p1_ready.seq = 2;
+    duplicate_p1_ready.action_id = "ready-p1-duplicate";
+    const auto duplicate_p1_ready_result = simulation.AcceptModeAction(duplicate_p1_ready);
+    CHECK_TRUE(!duplicate_p1_ready_result.ok);
+    CHECK_EQ(duplicate_p1_ready_result.reason, std::string("ready_already_set"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("1"));
 
     auto p2_ready = p1_ready;
     p2_ready.player_id = "p2";
@@ -3343,6 +3354,11 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     action.seq = 2;
     const auto mode_action = server.AcceptModeAction(action);
     CHECK_TRUE(mode_action.ok);
+    auto duplicate_action_id = action;
+    duplicate_action_id.seq = 3;
+    const auto duplicate_action_id_result = server.AcceptModeAction(duplicate_action_id);
+    CHECK_TRUE(!duplicate_action_id_result.ok);
+    CHECK_EQ(duplicate_action_id_result.reason, std::string("mode_action_duplicate"));
     const auto queued_mode_action_summary = server.MatchReplaySummary("match-001");
     CHECK_EQ(queued_mode_action_summary.event_count, replay_summary.event_count);
     CHECK_EQ(queued_mode_action_summary.event_stream_hash, replay_summary.event_stream_hash);

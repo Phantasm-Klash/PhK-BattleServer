@@ -35,6 +35,8 @@ enum class InputValidationCode {
     PlayerDisconnected,
     SeqTooFarAhead,
     EventCursorAhead,
+    DuplicateModeAction,
+    ReadyAlreadySet,
 };
 
 struct InputValidationResult {
@@ -238,6 +240,7 @@ private:
     std::map<std::string, std::uint64_t> boss_damage_by_player_;
     std::map<std::string, TransferableCardState> transferable_cards_;
     std::map<std::string, TransferableCardState> pending_transfer_card_authority_by_action_id_;
+    std::set<std::string> accepted_mode_action_ids_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;
     std::map<std::string, TransferableCardState> transferred_card_authority_by_card_instance_id_;

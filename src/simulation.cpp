@@ -585,6 +585,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             result.reason = "ready_payload_not_true";
             return result;
         }
+        if (ready_player_ids_.find(action.player_id) != ready_player_ids_.end()) {
+            result.code = InputValidationCode::ReadyAlreadySet;
+            result.reason = "ready_already_set";
+            return result;
+        }
     }
     if (action.action_type == "transfer_card") {
         if (!IsBossMode(config_.mode_id)) {
@@ -647,6 +652,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             return result;
         }
     }
+    if (accepted_mode_action_ids_.find(action.action_id) != accepted_mode_action_ids_.end()) {
+        result.code = InputValidationCode::DuplicateModeAction;
+        result.reason = "mode_action_duplicate";
+        return result;
+    }
 
     result.ok = true;
     result.code = InputValidationCode::Ok;
@@ -661,6 +671,7 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     }
 
     players_[action.player_id].last_seq = action.seq;
+    accepted_mode_action_ids_.insert(action.action_id);
     if (action.action_type == "transfer_card") {
         const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
         reserved_transfer_card_instance_ids_.insert(card_instance_id);
@@ -1740,6 +1751,10 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "seq_too_far_ahead";
         case InputValidationCode::EventCursorAhead:
             return "event_cursor_ahead";
+        case InputValidationCode::DuplicateModeAction:
+            return "mode_action_duplicate";
+        case InputValidationCode::ReadyAlreadySet:
+            return "ready_already_set";
     }
     return "unknown";
 }
