@@ -6,6 +6,7 @@ Status date: 2026-06-30
 
 - `BattleServer::SubmitBattleResult` now binds Boss settlement projection fields back to the server-owned final replay snapshot before accepting a signed result callback.
 - `BattleResultVerifier` rejects tampered Boss scope, completion policy, current HP, damage total, defeated flag, clear status, and result disposition fields with dedicated mismatch reasons.
+- Development `mode_result_json` also carries per-player `boss_damage_<player_id>` contribution fields from the authoritative final snapshot for business-side audit visibility.
 - CTest and `tools/check_battle_server.py` now gate these Boss result projection checks. The C++ battle server still emits projection-only settlement material and does not write inventory, rewards, wallets, or database state.
 
 ## 2026-06-30 Boss Transfer Card Authority Boundary

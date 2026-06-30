@@ -421,6 +421,7 @@ def main() -> int:
         or "transfer_card_cooldown_blocked" not in simulation_impl
         or "transferable_cards_" not in simulation_impl
         or '"boss_result_disposition"' not in simulation_impl
+        or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
         or "pending_transfer_card_authority_by_action_id_" not in simulation_impl
@@ -730,6 +731,8 @@ def main() -> int:
         or "boss_scope_mismatch" not in tests_text
         or "boss_current_hp_mismatch" not in tests_text
         or "boss_damage_total_mismatch" not in tests_text
+        or '\\"boss_damage_p1\\":10' not in tests_text
+        or '\\"boss_damage_p2\\":10' not in tests_text
         or "boss_defeated_mismatch" not in tests_text
         or "boss_clear_status_mismatch" not in tests_text
         or "boss_result_disposition_mismatch" not in tests_text
