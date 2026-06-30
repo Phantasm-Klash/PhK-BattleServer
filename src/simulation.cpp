@@ -1008,6 +1008,26 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_friendly_fire_policy\":\"" + boss_friendly_fire_policy->second + "\"";
     }
+    const auto boss_min_players = fixture.final_snapshot.mode_state.find("boss_min_players");
+    if (boss_min_players != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_min_players\":" + boss_min_players->second;
+    }
+    const auto boss_max_players = fixture.final_snapshot.mode_state.find("boss_max_players");
+    if (boss_max_players != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_max_players\":" + boss_max_players->second;
+    }
+    const auto boss_start_ready = fixture.final_snapshot.mode_state.find("boss_start_ready");
+    if (boss_start_ready != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_start_ready\":" + boss_start_ready->second;
+    }
+    const auto boss_ready_player_count = fixture.final_snapshot.mode_state.find("boss_ready_player_count");
+    if (boss_ready_player_count != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_ready_player_count\":" + boss_ready_player_count->second;
+    }
+    const auto boss_ready_to_start = fixture.final_snapshot.mode_state.find("boss_ready_to_start");
+    if (boss_ready_to_start != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_ready_to_start\":" + boss_ready_to_start->second;
+    }
     const auto boss_max_hp = fixture.final_snapshot.mode_state.find("boss_max_hp");
     if (boss_max_hp != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_max_hp\":" + boss_max_hp->second;

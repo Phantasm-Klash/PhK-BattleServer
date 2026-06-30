@@ -1733,6 +1733,11 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_start_ready\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
@@ -1835,6 +1840,11 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         built.signed_result.result.mode_result_json.find("\"boss_friendly_fire_policy\":\"disabled\"") !=
         std::string::npos
     );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
@@ -1896,6 +1906,46 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_friendly_fire_result = server.SubmitBattleResult(wrong_friendly_fire);
     CHECK_TRUE(!wrong_friendly_fire_result.ok);
     CHECK_EQ(wrong_friendly_fire_result.reason, std::string("boss_friendly_fire_policy_mismatch"));
+
+    auto wrong_min_players = built.signed_result;
+    wrong_min_players.result.mode_result_json = ReplaceFirst(
+        wrong_min_players.result.mode_result_json,
+        "\"boss_min_players\":4",
+        "\"boss_min_players\":1"
+    );
+    const auto wrong_min_players_result = server.SubmitBattleResult(wrong_min_players);
+    CHECK_TRUE(!wrong_min_players_result.ok);
+    CHECK_EQ(wrong_min_players_result.reason, std::string("boss_min_players_mismatch"));
+
+    auto wrong_start_ready = built.signed_result;
+    wrong_start_ready.result.mode_result_json = ReplaceFirst(
+        wrong_start_ready.result.mode_result_json,
+        "\"boss_start_ready\":1",
+        "\"boss_start_ready\":0"
+    );
+    const auto wrong_start_ready_result = server.SubmitBattleResult(wrong_start_ready);
+    CHECK_TRUE(!wrong_start_ready_result.ok);
+    CHECK_EQ(wrong_start_ready_result.reason, std::string("boss_start_ready_mismatch"));
+
+    auto wrong_ready_count = built.signed_result;
+    wrong_ready_count.result.mode_result_json = ReplaceFirst(
+        wrong_ready_count.result.mode_result_json,
+        "\"boss_ready_player_count\":0",
+        "\"boss_ready_player_count\":4"
+    );
+    const auto wrong_ready_count_result = server.SubmitBattleResult(wrong_ready_count);
+    CHECK_TRUE(!wrong_ready_count_result.ok);
+    CHECK_EQ(wrong_ready_count_result.reason, std::string("boss_ready_player_count_mismatch"));
+
+    auto wrong_ready_to_start = built.signed_result;
+    wrong_ready_to_start.result.mode_result_json = ReplaceFirst(
+        wrong_ready_to_start.result.mode_result_json,
+        "\"boss_ready_to_start\":0",
+        "\"boss_ready_to_start\":1"
+    );
+    const auto wrong_ready_to_start_result = server.SubmitBattleResult(wrong_ready_to_start);
+    CHECK_TRUE(!wrong_ready_to_start_result.ok);
+    CHECK_EQ(wrong_ready_to_start_result.reason, std::string("boss_ready_to_start_mismatch"));
 
     auto wrong_max_hp = built.signed_result;
     wrong_max_hp.result.mode_result_json = ReplaceFirst(

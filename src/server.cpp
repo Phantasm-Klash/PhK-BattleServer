@@ -837,6 +837,11 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_scope = boss_scope->second;
         options.required_boss_completion_policy = mode_state.at("boss_completion_policy");
         options.required_boss_friendly_fire_policy = mode_state.at("boss_friendly_fire_policy");
+        options.required_boss_min_players = std::stoull(mode_state.at("boss_min_players"));
+        options.required_boss_max_players = std::stoull(mode_state.at("boss_max_players"));
+        options.required_boss_start_ready = std::stoull(mode_state.at("boss_start_ready"));
+        options.required_boss_ready_player_count = std::stoull(mode_state.at("boss_ready_player_count"));
+        options.required_boss_ready_to_start = std::stoull(mode_state.at("boss_ready_to_start"));
         options.required_boss_max_hp = std::stoull(mode_state.at("boss_max_hp"));
         options.required_boss_current_hp = std::stoull(mode_state.at("boss_current_hp"));
         options.required_boss_damage_total = std::stoull(mode_state.at("boss_damage_total"));
