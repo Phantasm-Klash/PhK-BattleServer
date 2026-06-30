@@ -19,6 +19,7 @@ inline constexpr std::size_t kDefaultMaxModeActionIdBytes = 128;
 inline constexpr std::size_t kDefaultMaxModeActionTypeBytes = 64;
 inline constexpr std::size_t kDefaultMaxModeActionPayloadBytes = 4096;
 inline constexpr std::size_t kDefaultMaxBossIdentityBytes = 128;
+inline constexpr std::size_t kBossModeMinPlayers = 4;
 inline constexpr std::size_t kBossModeMaxPlayers = 8;
 
 enum class InputValidationCode {
