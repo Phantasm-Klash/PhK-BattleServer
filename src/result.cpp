@@ -500,6 +500,15 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_transfer_result_fields &&
         !ContainsJsonStringField(
             result.mode_result_json,
+            "transfer_card_edges_material",
+            options.required_transfer_card_edges_material
+        )) {
+        Fail(verification, "transfer_card_edges_mismatch");
+        return verification;
+    }
+    if (options.require_transfer_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
             "last_transfer_card_instance_id",
             options.required_last_transfer_card_instance_id
         )) {

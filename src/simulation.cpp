@@ -665,6 +665,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     }
     if (transfer_card_count_ > 0) {
         snapshot.mode_state["transfer_card_count"] = std::to_string(transfer_card_count_);
+        snapshot.mode_state["transfer_card_edges_material"] = TransferCardAuditMaterial();
         snapshot.mode_state["last_transfer_card_instance_id"] = last_transfer_card_instance_id_;
         snapshot.mode_state["last_transfer_from_player_id"] = last_transfer_from_player_id_;
         snapshot.mode_state["last_transfer_to_player_id"] = last_transfer_to_player_id_;
@@ -843,6 +844,13 @@ std::string BattleSimulation::CanonicalStateHash() const {
             hash = HashAppend(hash, item.first);
             hash = HashAppend(hash, item.second.first);
             hash = HashAppend(hash, item.second.second);
+            const auto authority_it = transferred_card_authority_by_card_instance_id_.find(item.first);
+            if (authority_it != transferred_card_authority_by_card_instance_id_.end()) {
+                hash = HashAppend(hash, authority_it->second.owner_player_id);
+                hash = HashAppend(hash, authority_it->second.mode_allowed ? 1u : 0u);
+                hash = HashAppend(hash, authority_it->second.cost_paid ? 1u : 0u);
+                hash = HashAppend(hash, authority_it->second.cooldown_ready ? 1u : 0u);
+            }
         }
     }
     if (IsBossMode(config_.mode_id)) {
@@ -1169,6 +1177,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (transfer_card_count != fixture.final_snapshot.mode_state.end()) {
         json += ",\"transfer_card_count\":" + transfer_card_count->second;
     }
+    const auto transfer_card_edges_material = fixture.final_snapshot.mode_state.find("transfer_card_edges_material");
+    if (transfer_card_edges_material != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"transfer_card_edges_material\":\"" + transfer_card_edges_material->second + "\"";
+    }
     const auto last_transfer_card_instance_id = fixture.final_snapshot.mode_state.find("last_transfer_card_instance_id");
     if (last_transfer_card_instance_id != fixture.final_snapshot.mode_state.end()) {
         json += ",\"last_transfer_card_instance_id\":\"" + last_transfer_card_instance_id->second + "\"";
@@ -1337,9 +1349,30 @@ void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& actio
     const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
     if (authority_it != pending_transfer_card_authority_by_action_id_.end()) {
         last_transfer_card_authority_ = authority_it->second;
+        transferred_card_authority_by_card_instance_id_[card_instance_id] = authority_it->second;
         pending_transfer_card_authority_by_action_id_.erase(authority_it);
     }
     ++transfer_card_count_;
+}
+
+std::string BattleSimulation::TransferCardAuditMaterial() const {
+    std::ostringstream out;
+    for (const auto& item : transferred_card_edges_) {
+        const auto authority_it = transferred_card_authority_by_card_instance_id_.find(item.first);
+        out << item.first << ':'
+            << item.second.first << '>'
+            << item.second.second << ':';
+        if (authority_it != transferred_card_authority_by_card_instance_id_.end()) {
+            out << authority_it->second.owner_player_id << ':'
+                << BoolToken(authority_it->second.mode_allowed) << ':'
+                << BoolToken(authority_it->second.cost_paid) << ':'
+                << BoolToken(authority_it->second.cooldown_ready);
+        } else {
+            out << "missing:0:0:0";
+        }
+        out << ';';
+    }
+    return out.str();
 }
 
 void BattleSimulation::SpawnBulletsForTick() {

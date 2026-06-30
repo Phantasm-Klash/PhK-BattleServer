@@ -205,6 +205,7 @@ private:
     void ApplyModeActionsForTick(std::uint64_t tick);
     void ApplyReadyModeAction(const BattleModeAction& action);
     void ApplyTransferCardModeAction(const BattleModeAction& action);
+    [[nodiscard]] std::string TransferCardAuditMaterial() const;
     void SpawnBulletsForTick();
     void AdvanceBullets();
     void AccumulateAcceptedInput(const BattleInput& input);
@@ -237,6 +238,7 @@ private:
     std::map<std::string, TransferableCardState> pending_transfer_card_authority_by_action_id_;
     std::set<std::string> reserved_transfer_card_instance_ids_;
     std::map<std::string, std::pair<std::string, std::string>> transferred_card_edges_;
+    std::map<std::string, TransferableCardState> transferred_card_authority_by_card_instance_id_;
     std::string last_transfer_card_instance_id_;
     std::string last_transfer_from_player_id_;
     std::string last_transfer_to_player_id_;

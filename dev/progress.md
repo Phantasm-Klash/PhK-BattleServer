@@ -8,6 +8,12 @@ Status date: 2026-06-30
 - Existing Boss transfer authority checks still cover unknown card instances, owner mismatches, mode-forbidden cards, unpaid costs, cooldown blocks, duplicate transfer attempts, replay trace material, and result projection binding.
 - This remains in-memory battle authority only. The C++ battle server still does not persist cards, inventory, rewards, wallet, Steam state, or business database state.
 
+## 2026-06-30 Boss Transfer Aggregate Audit Boundary
+
+- Boss snapshots and development result projection now carry deterministic `transfer_card_edges_material` for every accepted in-match transfer, not only the last transfer.
+- The aggregate binds card instance id, from/to player ids, and frozen server authority flags into the final replay snapshot, canonical state hash, signed-result `mode_result_json`, and result verifier options.
+- `BattleResultVerifier` rejects tampered aggregate transfer material with `transfer_card_edges_mismatch`, while existing last-transfer fields remain for compatibility. This is replay/result audit material only and does not persist inventory, rewards, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Layout Count Result Binding
 
 - Boss snapshots and development result projection now carry `boss_layout_player_count`, binding the server-selected Boss ring layout size alongside registered player count and per-player spawn slots.

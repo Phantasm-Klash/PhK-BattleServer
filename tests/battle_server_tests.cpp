@@ -1258,6 +1258,10 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_tick"), std::to_string(action.tick));
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_seq"), std::to_string(transfer.seq));
     CHECK_EQ(first_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        first_snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-001:p1>p2:p1:1:1:1;")
+    );
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-001"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
@@ -1492,6 +1496,10 @@ bool TestBossTransferCardValidation() {
     const auto snapshot = server.TickMatch("match-001");
     CHECK_EQ(snapshot.mode_state.at("mode_action_count"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-disconnected:p1>p2:p1:1:1:1;")
+    );
     CHECK_EQ(snapshot.mode_state.at("last_transfer_card_instance_id"), std::string("boss-card-disconnected"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_from_player_id"), std::string("p1"));
     CHECK_EQ(snapshot.mode_state.at("last_transfer_to_player_id"), std::string("p2"));
@@ -1949,6 +1957,10 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(
+        mode_result_json.find("\"transfer_card_edges_material\":\"instance-card-001:p1>p2:p1:1:1:1;\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(mode_result_json.find("\"last_transfer_card_instance_id\":\"instance-card-001\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"last_transfer_authority_mode_allowed\":1") != std::string::npos);
@@ -2019,9 +2031,13 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     phk::battle::TransferableCardState transfer_card;
     transfer_card.card_instance_id = "instance-result-card-001";
     transfer_card.owner_player_id = "p1";
+    phk::battle::TransferableCardState transfer_card_2;
+    transfer_card_2.card_instance_id = "instance-result-card-002";
+    transfer_card_2.owner_player_id = "p2";
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
     CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card_2));
 
     auto transfer = MakeModeAction(5);
     transfer.match_id = "match-001";
@@ -2033,6 +2049,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-result-card-001\"}";
     CHECK_TRUE(server.AcceptModeAction(transfer).ok);
 
+    auto transfer_2 = MakeModeAction(6);
+    transfer_2.match_id = "match-001";
+    transfer_2.player_id = "p2";
+    transfer_2.tick = 1;
+    transfer_2.seq = 2;
+    transfer_2.action_id = "action-instance-result-transfer-2";
+    transfer_2.action_type = "transfer_card";
+    transfer_2.payload_json = "{\"target_player_id\":\"p3\",\"card_instance_id\":\"instance-result-card-002\"}";
+    CHECK_TRUE(server.AcceptModeAction(transfer_2).ok);
+
     for (std::size_t index = 1; index <= 4; ++index) {
         auto ready = MakeModeAction(index + 1);
         ready.match_id = "match-001";
@@ -2043,6 +2069,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         ready.action_type = "ready";
         ready.payload_json = "{\"ready\":true}";
         if (index == 1) {
+            ready.seq = 3;
+        } else if (index == 2) {
             ready.seq = 3;
         }
         CHECK_TRUE(server.AcceptModeAction(ready).ok);
@@ -2094,22 +2122,28 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":2") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"last_transfer_card_instance_id\":\"instance-result-card-001\""
+            "\"transfer_card_edges_material\":\"instance-result-card-001:p1>p2:p1:1:1:1;"
+            "instance-result-card-002:p2>p3:p2:1:1:1;\""
         ) != std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p1\"") !=
+        built.signed_result.result.mode_result_json.find(
+            "\"last_transfer_card_instance_id\":\"instance-result-card-002\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"last_transfer_from_player_id\":\"p2\"") !=
         std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p2\"") !=
+        built.signed_result.result.mode_result_json.find("\"last_transfer_to_player_id\":\"p3\"") !=
         std::string::npos
     );
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p1\"") !=
+        built.signed_result.result.mode_result_json.find("\"last_transfer_authority_owner_player_id\":\"p2\"") !=
         std::string::npos
     );
     CHECK_TRUE(
@@ -2360,12 +2394,22 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_transfer_count = built.signed_result;
     wrong_transfer_count.result.mode_result_json = ReplaceFirst(
         wrong_transfer_count.result.mode_result_json,
-        "\"transfer_card_count\":1",
-        "\"transfer_card_count\":2"
+        "\"transfer_card_count\":2",
+        "\"transfer_card_count\":3"
     );
     const auto wrong_transfer_count_result = server.SubmitBattleResult(wrong_transfer_count);
     CHECK_TRUE(!wrong_transfer_count_result.ok);
     CHECK_EQ(wrong_transfer_count_result.reason, std::string("transfer_card_count_mismatch"));
+
+    auto wrong_transfer_edges = built.signed_result;
+    wrong_transfer_edges.result.mode_result_json = ReplaceJsonStringField(
+        wrong_transfer_edges.result.mode_result_json,
+        "transfer_card_edges_material",
+        "instance-result-card-001:p1>p2:p1:1:1:1;instance-result-card-002:p2>p4:p2:1:1:1;"
+    );
+    const auto wrong_transfer_edges_result = server.SubmitBattleResult(wrong_transfer_edges);
+    CHECK_TRUE(!wrong_transfer_edges_result.ok);
+    CHECK_EQ(wrong_transfer_edges_result.reason, std::string("transfer_card_edges_mismatch"));
 
     auto wrong_transfer_instance = built.signed_result;
     wrong_transfer_instance.result.mode_result_json = ReplaceJsonStringField(
@@ -2381,7 +2425,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_from.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_from.result.mode_result_json,
         "last_transfer_from_player_id",
-        "p2"
+        "p1"
     );
     const auto wrong_transfer_from_result = server.SubmitBattleResult(wrong_transfer_from);
     CHECK_TRUE(!wrong_transfer_from_result.ok);
@@ -2391,7 +2435,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_to.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_to.result.mode_result_json,
         "last_transfer_to_player_id",
-        "p3"
+        "p4"
     );
     const auto wrong_transfer_to_result = server.SubmitBattleResult(wrong_transfer_to);
     CHECK_TRUE(!wrong_transfer_to_result.ok);
@@ -2401,7 +2445,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_transfer_owner.result.mode_result_json = ReplaceJsonStringField(
         wrong_transfer_owner.result.mode_result_json,
         "last_transfer_authority_owner_player_id",
-        "p2"
+        "p1"
     );
     const auto wrong_transfer_owner_result = server.SubmitBattleResult(wrong_transfer_owner);
     CHECK_TRUE(!wrong_transfer_owner_result.ok);
