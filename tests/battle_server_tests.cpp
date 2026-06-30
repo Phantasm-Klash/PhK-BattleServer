@@ -3198,6 +3198,15 @@ bool TestSettledMatchRetirementLifecycle() {
     );
     CHECK_TRUE(!decoded_reconnect_after_settle.ok);
     CHECK_EQ(decoded_reconnect_after_settle.reason, std::string("match_settled"));
+    phk::battle::BattlePacketHeader plaintext_after_settle;
+    plaintext_after_settle.match_id = "match-001";
+    plaintext_after_settle.player_id = "p1";
+    plaintext_after_settle.tick = 2;
+    plaintext_after_settle.seq = 2;
+    plaintext_after_settle.payload_type = phk::battle::BattlePayloadType::Snapshot;
+    const auto plaintext_dispatch_after_settle = server.Dispatch(plaintext_after_settle, {'s'});
+    CHECK_TRUE(!plaintext_dispatch_after_settle.ok);
+    CHECK_EQ(plaintext_dispatch_after_settle.reason, std::string("match_settled"));
 
     const auto tick_after_settle = server.TickMatch("match-001");
     CHECK_EQ(tick_after_settle.snapshot_kind, std::string("match_settled"));
@@ -3239,6 +3248,9 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto handshake_after_retire_result = server.AcceptHandshake(handshake_after_settle);
     CHECK_TRUE(!handshake_after_retire_result.ok);
     CHECK_EQ(handshake_after_retire_result.reason, std::string("match_retired"));
+    const auto plaintext_dispatch_after_retire = server.Dispatch(plaintext_after_settle, {'s'});
+    CHECK_TRUE(!plaintext_dispatch_after_retire.ok);
+    CHECK_EQ(plaintext_dispatch_after_retire.reason, std::string("match_retired"));
     const auto replay_ticket_after_retire = server.RegisterTicket(MakeTicket());
     CHECK_TRUE(!replay_ticket_after_retire.ok);
     CHECK_EQ(replay_ticket_after_retire.reason, std::string("match_retired"));
