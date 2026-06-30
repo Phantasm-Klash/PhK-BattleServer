@@ -641,6 +641,16 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_cursor_result.ok);
     CHECK_EQ(wrong_cursor_result.reason, std::string("event_cursor_mismatch"));
 
+    auto wrong_owner = valid_result;
+    wrong_owner.result.mode_result_json = ReplaceJsonStringField(
+        valid_result.result.mode_result_json,
+        "battle_result_owner",
+        "client"
+    );
+    const auto wrong_owner_result = server.SubmitBattleResult(wrong_owner);
+    CHECK_TRUE(!wrong_owner_result.ok);
+    CHECK_EQ(wrong_owner_result.reason, std::string("battle_result_owner_mismatch"));
+
     auto missing_replay_counts = valid_result;
     missing_replay_counts.result.mode_result_json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
         std::to_string(summary.event_count) + "}";

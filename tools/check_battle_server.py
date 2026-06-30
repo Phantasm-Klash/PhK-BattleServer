@@ -338,6 +338,7 @@ def main() -> int:
         "required_input_stream_hash" not in result_text
         or "required_event_stream_hash" not in result_text
         or "required_final_state_hash" not in result_text
+        or "required_battle_result_owner" not in result_text
         or "required_replay_fixture_hash" not in result_text
         or "required_final_snapshot_tick" not in result_text
         or "required_final_snapshot_kind" not in result_text
@@ -535,6 +536,7 @@ def main() -> int:
         or "options.required_input_stream_hash = summary.input_stream_hash" not in server_impl
         or "options.required_event_stream_hash = summary.event_stream_hash" not in server_impl
         or "options.required_final_state_hash = summary.final_state_hash" not in server_impl
+        or 'options.required_battle_result_owner = "cpp"' not in server_impl
         or "options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record)" not in server_impl
         or "options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture)" not in server_impl
         or "options.required_final_snapshot_tick = replay_fixture.final_snapshot.snapshot_tick" not in server_impl
@@ -586,6 +588,7 @@ def main() -> int:
         or "result_hash_mismatch" not in result_impl
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
+        or "battle_result_owner_mismatch" not in result_impl
         or "final_tick_mismatch" not in result_impl
         or "tick_rate_hz_mismatch" not in result_impl
         or "input_count_mismatch" not in result_impl
@@ -758,6 +761,7 @@ def main() -> int:
         or "sha256:dev-fnv64-e6fb6a98c2e6844d" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
+        or "battle_result_owner_mismatch" not in tests_text
         or "match_seed_mismatch" not in tests_text
         or "tampered_fixture_seed" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text

@@ -55,6 +55,7 @@ struct BattleResultVerificationOptions {
     std::string required_input_stream_hash;
     std::string required_event_stream_hash;
     std::string required_final_state_hash;
+    std::string required_battle_result_owner = "cpp";
     std::string required_replay_summary_hash;
     std::string required_replay_fixture_hash;
     std::string required_final_snapshot_kind;

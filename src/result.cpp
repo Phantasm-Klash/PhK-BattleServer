@@ -181,6 +181,15 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_replay_counter_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "battle_result_owner",
+            options.required_battle_result_owner
+        )) {
+        Fail(verification, "battle_result_owner_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
         !ContainsJsonUintField(result.mode_result_json, "final_tick", options.required_final_tick)) {
         Fail(verification, "final_tick_mismatch");
         return verification;

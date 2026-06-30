@@ -901,6 +901,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.now_ms = config_.now_ms;
     const ReplayFixture replay_fixture = simulation_it->second.BuildReplayFixture();
     const ReplaySummary& summary = replay_fixture.summary;
+    options.required_battle_result_owner = "cpp";
     options.required_result_hash = DevResultHashFromReplaySummary(summary);
     options.required_replay_id = DevReplayIdFromReplaySummary(summary);
     options.required_event_cursor = summary.event_count;
