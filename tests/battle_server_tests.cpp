@@ -1403,6 +1403,48 @@ bool TestBossModeAuthoritativeDamageState() {
     return true;
 }
 
+bool TestBossModeResultProjection() {
+    phk::battle::SimulationConfig instance_config;
+    instance_config.match_id = "match-instance-boss-result";
+    instance_config.mode_id = "instance_boss";
+    instance_config.spawn_period_ticks = 1000;
+    instance_config.boss_max_hp = 20;
+    phk::battle::BattleSimulation simulation(instance_config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
+
+    auto p1_shoot = MakeInput("p1", 1, 1, 0);
+    p1_shoot.match_id = instance_config.match_id;
+    p1_shoot.shoot = true;
+    auto p2_shoot = MakeInput("p2", 1, 1, 0);
+    p2_shoot.match_id = instance_config.match_id;
+    p2_shoot.shoot = true;
+    CHECK_TRUE(simulation.AcceptInput(p1_shoot).ok);
+    CHECK_TRUE(simulation.AcceptInput(p2_shoot).ok);
+    CHECK_EQ(simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
+
+    const auto fixture = simulation.BuildReplayFixture("user-boss");
+    const auto mode_result_json = phk::battle::DevModeResultJsonFromReplayFixture(fixture);
+    CHECK_TRUE(mode_result_json.find("\"battle_result_owner\":\"cpp\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
+
+    phk::battle::SimulationConfig pvp_config;
+    pvp_config.match_id = "match-pvp-result";
+    pvp_config.mode_id = "pvp_duel";
+    phk::battle::BattleSimulation pvp_simulation(pvp_config);
+    CHECK_TRUE(pvp_simulation.AddPlayer("p1", -20000, 0));
+    const auto pvp_mode_result_json = phk::battle::DevModeResultJsonFromReplayFixture(
+        pvp_simulation.BuildReplayFixture("user-pvp")
+    );
+    CHECK_TRUE(pvp_mode_result_json.find("boss_") == std::string::npos);
+    return true;
+}
+
 bool TestAuthoritativeReplay60TickFixture() {
     phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-60");
 
@@ -2856,6 +2898,7 @@ int main() {
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
+        {"BossModeResultProjection", TestBossModeResultProjection},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},

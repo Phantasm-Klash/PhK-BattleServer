@@ -825,7 +825,7 @@ std::string DevReplayRecordBridgeHash(const ReplayRecordBridge& record) {
 
 std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const ReplaySummary& summary = fixture.summary;
-    return "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
+    std::string json = "{\"battle_result_owner\":\"cpp\",\"event_cursor\":" +
         std::to_string(summary.event_count) +
         ",\"final_tick\":" +
         std::to_string(summary.final_tick) +
@@ -855,7 +855,33 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         DevReplayInputStreamSummaryHash(fixture.replay_summary_record) +
         "\",\"replay_fixture_hash\":\"" +
         DevReplayFixtureHash(fixture) +
-        "\"}";
+        "\"";
+    const auto boss_scope = fixture.final_snapshot.mode_state.find("boss_scope");
+    if (boss_scope != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_scope\":\"" + boss_scope->second + "\"";
+    }
+    const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
+    if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+    }
+    const auto boss_current_hp = fixture.final_snapshot.mode_state.find("boss_current_hp");
+    if (boss_current_hp != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_current_hp\":" + boss_current_hp->second;
+    }
+    const auto boss_damage_total = fixture.final_snapshot.mode_state.find("boss_damage_total");
+    if (boss_damage_total != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_damage_total\":" + boss_damage_total->second;
+    }
+    const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
+    if (boss_defeated != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_defeated\":" + boss_defeated->second;
+    }
+    const auto boss_clear_status = fixture.final_snapshot.mode_state.find("boss_clear_status");
+    if (boss_clear_status != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_clear_status\":\"" + boss_clear_status->second + "\"";
+    }
+    json += "}";
+    return json;
 }
 
 std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
