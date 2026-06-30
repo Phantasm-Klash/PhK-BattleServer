@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Lifecycle State Audit Boundary
+
+- Boss snapshots now expose `boss_lifecycle_state` as `waiting_for_players`, `waiting_for_ready`, or `start_ready`, derived only from server-owned connected/registered/ready state.
+- Development signed-result `mode_result_json` carries the same lifecycle state, and `SubmitBattleResult` rejects forged lifecycle material before accepting a Boss result.
+- This remains in-memory room lifecycle and replay/result audit material only. The C++ battle server still does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Pending Ready De-duplication Boundary
 
 - `ready` mode actions now reserve a pending-ready slot as soon as they are accepted into the authoritative tick queue.

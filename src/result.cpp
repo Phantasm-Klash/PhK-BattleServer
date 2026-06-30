@@ -425,6 +425,15 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "boss_lifecycle_state",
+            options.required_boss_lifecycle_state
+        )) {
+        Fail(verification, "boss_lifecycle_state_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonUintField(
             result.mode_result_json,
             "connected_player_count",

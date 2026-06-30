@@ -1003,6 +1003,7 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_all_registered_ready =
             std::stoull(mode_state.at("boss_all_registered_ready"));
         options.required_boss_ready_to_start = std::stoull(mode_state.at("boss_ready_to_start"));
+        options.required_boss_lifecycle_state = mode_state.at("boss_lifecycle_state");
         options.required_connected_player_count = std::stoull(mode_state.at("connected_player_count"));
         options.required_disconnected_player_count = std::stoull(mode_state.at("disconnected_player_count"));
         options.required_boss_max_hp = std::stoull(mode_state.at("boss_max_hp"));
