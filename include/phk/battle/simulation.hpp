@@ -18,6 +18,8 @@ inline constexpr std::int32_t kArenaHalfHeightMilli = 90000;
 inline constexpr std::size_t kDefaultMaxModeActionIdBytes = 128;
 inline constexpr std::size_t kDefaultMaxModeActionTypeBytes = 64;
 inline constexpr std::size_t kDefaultMaxModeActionPayloadBytes = 4096;
+inline constexpr std::size_t kDefaultMaxBossIdentityBytes = 128;
+inline constexpr std::size_t kBossModeMaxPlayers = 8;
 
 enum class InputValidationCode {
     Ok,
@@ -142,6 +144,9 @@ struct SimulationConfig {
     std::size_t max_mode_action_id_bytes = kDefaultMaxModeActionIdBytes;
     std::size_t max_mode_action_type_bytes = kDefaultMaxModeActionTypeBytes;
     std::size_t max_mode_action_payload_bytes = kDefaultMaxModeActionPayloadBytes;
+    std::string boss_instance_id;
+    std::string boss_season_id;
+    std::string boss_phase_id;
     std::uint64_t boss_max_hp = 1000;
     std::string boss_friendly_fire_policy = "disabled";
 };

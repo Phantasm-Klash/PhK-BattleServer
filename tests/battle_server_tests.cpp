@@ -1893,6 +1893,43 @@ bool TestBossModeCapacityGuard() {
     return true;
 }
 
+bool TestBossSimulationRejectsNinthPlayer() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-boss-simulation-cap";
+    config.mode_id = "world_boss";
+    phk::battle::BattleSimulation simulation(config);
+
+    for (std::size_t index = 1; index <= phk::battle::kBossModeMaxPlayers; ++index) {
+        CHECK_TRUE(simulation.AddPlayer(
+            "p" + std::to_string(index),
+            static_cast<std::int32_t>(index * 1000),
+            0
+        ));
+    }
+
+    CHECK_TRUE(!simulation.AddPlayer("p9", 9000, 0));
+    CHECK_EQ(simulation.PlayerCount(), phk::battle::kBossModeMaxPlayers);
+    const auto snapshot = simulation.Snapshot();
+    CHECK_EQ(snapshot.players.size(), phk::battle::kBossModeMaxPlayers);
+    CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("8"));
+    CHECK_EQ(snapshot.mode_state.at("boss_layout_player_count"), std::string("8"));
+    CHECK_TRUE(snapshot.mode_state.find("boss_player_p9_spawn_slot") == snapshot.mode_state.end());
+
+    phk::battle::SimulationConfig pvp_config;
+    pvp_config.match_id = "match-pvp-simulation-cap";
+    pvp_config.mode_id = "pvp_duel";
+    phk::battle::BattleSimulation pvp_simulation(pvp_config);
+    for (std::size_t index = 1; index <= phk::battle::kBossModeMaxPlayers + 1; ++index) {
+        CHECK_TRUE(pvp_simulation.AddPlayer(
+            "p" + std::to_string(index),
+            static_cast<std::int32_t>(index * 1000),
+            0
+        ));
+    }
+    CHECK_EQ(pvp_simulation.PlayerCount(), phk::battle::kBossModeMaxPlayers + 1);
+    return true;
+}
+
 bool TestBossStartReadinessTracksConnectedPlayers() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -1988,6 +2025,9 @@ bool TestBossModeBulletPattern() {
     world_config.spawn_period_ticks = 1;
     world_config.max_bullets = 16;
     world_config.boss_friendly_fire_policy = "player_bullets_only";
+    world_config.boss_instance_id = "world-boss-season-001";
+    world_config.boss_season_id = "season-alpha";
+    world_config.boss_phase_id = "phase-opening";
     phk::battle::BattleSimulation world_simulation(world_config);
     CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
     const auto world_snapshot = world_simulation.Tick();
@@ -2000,11 +2040,17 @@ bool TestBossModeBulletPattern() {
     CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_instance_id"), std::string("world-boss-season-001"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_season_id"), std::string("season-alpha"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_phase_id"), std::string("phase-opening"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("player_bullets_only"));
 
     phk::battle::SimulationConfig instance_config = world_config;
     instance_config.match_id = "match-instance-boss-pattern";
     instance_config.mode_id = "instance_boss";
+    instance_config.boss_instance_id.clear();
+    instance_config.boss_season_id.clear();
+    instance_config.boss_phase_id.clear();
     instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation instance_simulation(instance_config);
     CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
@@ -2014,6 +2060,12 @@ bool TestBossModeBulletPattern() {
     CHECK_EQ(instance_snapshot.bullets_delta[0].color, std::string("violet"));
     CHECK_EQ(instance_snapshot.bullets_delta[0].radius_milli, static_cast<std::uint32_t>(5000));
     CHECK_TRUE(instance_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    CHECK_EQ(
+        instance_snapshot.mode_state.at("boss_instance_id"),
+        std::string("instance-boss:match-instance-boss-pattern")
+    );
+    CHECK_EQ(instance_snapshot.mode_state.at("boss_season_id"), std::string("season-local-s0"));
+    CHECK_EQ(instance_snapshot.mode_state.at("boss_phase_id"), std::string("phase-1"));
     CHECK_EQ(instance_snapshot.mode_state.at("boss_friendly_fire_policy"), std::string("all_friendly_fire"));
 
     phk::battle::SimulationConfig invalid_policy_config = world_config;
@@ -2025,6 +2077,21 @@ bool TestBossModeBulletPattern() {
         invalid_policy_simulation.Snapshot().mode_state.at("boss_friendly_fire_policy"),
         std::string("disabled")
     );
+
+    phk::battle::SimulationConfig invalid_identity_config = world_config;
+    invalid_identity_config.match_id = "match-world-boss-invalid-identity";
+    invalid_identity_config.boss_instance_id = "world-boss\"\nclient";
+    invalid_identity_config.boss_season_id = std::string(phk::battle::kDefaultMaxBossIdentityBytes + 1, 's');
+    invalid_identity_config.boss_phase_id = "phase/client";
+    phk::battle::BattleSimulation invalid_identity_simulation(invalid_identity_config);
+    CHECK_TRUE(invalid_identity_simulation.AddPlayer("p1", 0, -60000));
+    const auto invalid_identity_snapshot = invalid_identity_simulation.Snapshot();
+    CHECK_EQ(
+        invalid_identity_snapshot.mode_state.at("boss_instance_id"),
+        std::string("world-boss:match-world-boss-invalid-identity")
+    );
+    CHECK_EQ(invalid_identity_snapshot.mode_state.at("boss_season_id"), std::string("season-local-s0"));
+    CHECK_EQ(invalid_identity_snapshot.mode_state.at("boss_phase_id"), std::string("phase-1"));
     return true;
 }
 
@@ -2122,6 +2189,9 @@ bool TestBossModeResultProjection() {
     instance_config.spawn_period_ticks = 1000;
     instance_config.boss_max_hp = 20;
     instance_config.boss_friendly_fire_policy = "all_friendly_fire";
+    instance_config.boss_instance_id = "instance-boss-result-001";
+    instance_config.boss_season_id = "instance-season-s0";
+    instance_config.boss_phase_id = "instance-phase-a";
     phk::battle::BattleSimulation simulation(instance_config);
     CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
     CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
@@ -2153,6 +2223,9 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"battle_result_owner\":\"cpp\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_instance_id\":\"instance-boss-result-001\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_season_id\":\"instance-season-s0\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_phase_id\":\"instance-phase-a\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_friendly_fire_policy\":\"all_friendly_fire\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_min_players\":4") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_max_players\":8") != std::string::npos);
@@ -2374,6 +2447,18 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_completion_policy\":\"defeat_required\"") != std::string::npos);
     CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_instance_id\":\"instance-boss:match-001\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_season_id\":\"season-local-s0\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_phase_id\":\"phase-1\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"boss_friendly_fire_policy\":\"disabled\"") !=
         std::string::npos
     );
@@ -2470,6 +2555,36 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_scope_result = server.SubmitBattleResult(wrong_scope);
     CHECK_TRUE(!wrong_scope_result.ok);
     CHECK_EQ(wrong_scope_result.reason, std::string("boss_scope_mismatch"));
+
+    auto wrong_boss_instance = built.signed_result;
+    wrong_boss_instance.result.mode_result_json = ReplaceJsonStringField(
+        wrong_boss_instance.result.mode_result_json,
+        "boss_instance_id",
+        "client-authored-boss-instance"
+    );
+    const auto wrong_boss_instance_result = server.SubmitBattleResult(wrong_boss_instance);
+    CHECK_TRUE(!wrong_boss_instance_result.ok);
+    CHECK_EQ(wrong_boss_instance_result.reason, std::string("boss_instance_id_mismatch"));
+
+    auto wrong_boss_season = built.signed_result;
+    wrong_boss_season.result.mode_result_json = ReplaceJsonStringField(
+        wrong_boss_season.result.mode_result_json,
+        "boss_season_id",
+        "season-client"
+    );
+    const auto wrong_boss_season_result = server.SubmitBattleResult(wrong_boss_season);
+    CHECK_TRUE(!wrong_boss_season_result.ok);
+    CHECK_EQ(wrong_boss_season_result.reason, std::string("boss_season_id_mismatch"));
+
+    auto wrong_boss_phase = built.signed_result;
+    wrong_boss_phase.result.mode_result_json = ReplaceJsonStringField(
+        wrong_boss_phase.result.mode_result_json,
+        "boss_phase_id",
+        "phase-client"
+    );
+    const auto wrong_boss_phase_result = server.SubmitBattleResult(wrong_boss_phase);
+    CHECK_TRUE(!wrong_boss_phase_result.ok);
+    CHECK_EQ(wrong_boss_phase_result.reason, std::string("boss_phase_id_mismatch"));
 
     auto wrong_friendly_fire = built.signed_result;
     wrong_friendly_fire.result.mode_result_json = ReplaceJsonStringField(
@@ -4553,6 +4668,7 @@ int main() {
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
+        {"BossSimulationRejectsNinthPlayer", TestBossSimulationRejectsNinthPlayer},
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
         {"BossReadyToStartRequiresAllReadyPlayers", TestBossReadyToStartRequiresAllReadyPlayers},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
