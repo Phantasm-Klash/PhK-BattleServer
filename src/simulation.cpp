@@ -1092,6 +1092,9 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.held_input_fallback_count = held_input_fallback_count_;
     summary.mode_action_count = mode_action_count_;
     summary.event_count = event_count_;
+    for (const auto& item : players_) {
+        summary.player_ids.push_back(item.first);
+    }
     summary.input_trace = input_trace_;
     summary.event_trace = event_trace_;
     if (has_last_mode_action_) {
@@ -1598,6 +1601,9 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.held_input_fallback_count);
     hash = HashAppend(hash, summary.mode_action_count);
     hash = HashAppend(hash, summary.event_count);
+    for (const auto& player_id : summary.player_ids) {
+        hash = HashAppend(hash, player_id);
+    }
     for (const auto& item : summary.input_trace) {
         hash = HashAppend(hash, item);
     }

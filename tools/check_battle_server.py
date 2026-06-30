@@ -794,21 +794,21 @@ def main() -> int:
         or "DriveAuthoritativeReplay60Ticks" not in tests_text
         or "fnv64:183370bd6f8c18e7" not in tests_text
         or "fnv64:7c13fa803ae1b2dd" not in tests_text
-        or "sha256:dev-fnv64-a16275656f937e1d" not in tests_text
+        or "sha256:dev-fnv64-70b0875fedb4037c" not in tests_text
         or "fnv64:a0b383d4a7be0bf7" not in tests_text
         or "fnv64:8049946f03724f36" not in tests_text
-        or "sha256:dev-fnv64-5efd3f91d3827299" not in tests_text
+        or "sha256:dev-fnv64-a7c5633652ee3768" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "DevReplayInputStreamSummaryHash(summary_record)" not in tests_text
         or "sha256:dev-fnv64-28cdfb99face4a10" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
-        or "sha256:dev-fnv64-3527845dc49e78a0" not in tests_text
+        or "sha256:dev-fnv64-31691f363321149c" not in tests_text
         or "ReplayRecordBridgeBoundary" not in tests_text
         or "BuildReplayRecord(\"match-001\"" not in tests_text
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
         or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-c4e0fa7ecf81b6f0" not in tests_text
+        or "sha256:dev-fnv64-08219ff97786a5bf" not in tests_text
         or "final_snapshot_tick_mismatch" not in tests_text
         or "final_snapshot_kind_mismatch" not in tests_text
         or "final_snapshot_state_hash_mismatch" not in tests_text
@@ -835,8 +835,8 @@ def main() -> int:
         or "ReplaceJsonStringField" not in tests_text
         or "ModeResultJsonForSummary" in tests_text
         or "MakeBattleResultForSummary" in tests_text
-        or "sha256:dev-fnv64-f86264708dfa96b8" not in tests_text
-        or "sha256:dev-fnv64-ed53d4a3d1bd4f9b" not in tests_text
+        or "sha256:dev-fnv64-19959dc47479580d" not in tests_text
+        or "sha256:dev-fnv64-939e7eb9c028b0d4" not in tests_text
         or "sha256:dev-fnv64-e6fb6a98c2e6844d" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
