@@ -846,6 +846,8 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             !players_.empty() && connected_player_count == players_.size();
         const bool boss_all_registered_ready =
             boss_all_registered_connected && ready_connected_player_count == players_.size();
+        const std::string boss_lifecycle_state = !boss_start_ready ? "waiting_for_players" :
+            (!boss_all_registered_ready ? "waiting_for_ready" : "start_ready");
         snapshot.mode_state["battle_layout"] = "boss_center_ring";
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
@@ -860,6 +862,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_start_ready"] = BoolToken(boss_start_ready);
         snapshot.mode_state["boss_ready_to_start"] =
             BoolToken(boss_start_ready && boss_all_registered_ready);
+        snapshot.mode_state["boss_lifecycle_state"] = boss_lifecycle_state;
         snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
@@ -1367,6 +1370,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_ready_to_start = fixture.final_snapshot.mode_state.find("boss_ready_to_start");
     if (boss_ready_to_start != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_ready_to_start\":" + boss_ready_to_start->second;
+    }
+    const auto boss_lifecycle_state = fixture.final_snapshot.mode_state.find("boss_lifecycle_state");
+    if (boss_lifecycle_state != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_lifecycle_state\":\"" + boss_lifecycle_state->second + "\"";
     }
     const auto connected_player_count = fixture.final_snapshot.mode_state.find("connected_player_count");
     if (boss_scope != fixture.final_snapshot.mode_state.end() &&
