@@ -3490,8 +3490,10 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_EQ(cancelled_pending.removed_sessions, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.active_sessions_before, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.pending_boss_configs_before, static_cast<std::size_t>(1));
     CHECK_EQ(cancelled_pending.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.pending_boss_configs_after, static_cast<std::size_t>(0));
 
     const auto reconfigure_cancelled = server.ConfigureBossMatch(boss_config);
     CHECK_TRUE(!reconfigure_cancelled.ok);
@@ -3525,8 +3527,10 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_EQ(cancelled.removed_sessions, static_cast<std::size_t>(2));
     CHECK_EQ(cancelled.active_sessions_before, static_cast<std::size_t>(2));
     CHECK_EQ(cancelled.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(cancelled.pending_boss_configs_before, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled.active_matches_after, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled.pending_boss_configs_after, static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
 

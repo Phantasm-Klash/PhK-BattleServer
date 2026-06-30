@@ -1222,12 +1222,17 @@ CancelMatchResult BattleServer::CancelMatch(const std::string& match_id) {
     result.match_id = match_id;
     result.active_sessions_before = sessions_by_ticket_.size();
     result.active_matches_before = simulations_by_match_.size();
+    result.pending_boss_configs_before = pending_boss_config_by_match_.size();
+    auto finish = [this, &result]() -> CancelMatchResult {
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
+        result.pending_boss_configs_after = pending_boss_config_by_match_.size();
+        return result;
+    };
 
     if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
         result.reason = "match_settled";
-        result.active_sessions_after = result.active_sessions_before;
-        result.active_matches_after = result.active_matches_before;
-        return result;
+        return finish();
     }
 
     const bool was_cancelled = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end();
@@ -1260,18 +1265,14 @@ CancelMatchResult BattleServer::CancelMatch(const std::string& match_id) {
         } else {
             result.reason = "match_unknown";
         }
-        result.active_sessions_after = sessions_by_ticket_.size();
-        result.active_matches_after = simulations_by_match_.size();
-        return result;
+        return finish();
     }
 
     cancelled_match_ids_.insert(match_id);
     result.ok = true;
     result.reason = "ok";
     result.already_cancelled = was_cancelled;
-    result.active_sessions_after = sessions_by_ticket_.size();
-    result.active_matches_after = simulations_by_match_.size();
-    return result;
+    return finish();
 }
 
 RetireMatchResult BattleServer::RetireMatch(const std::string& match_id) {

@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Pending Config Cancellation Audit
+
+- `CancelMatchResult` now reports pending Boss config counts before and after cancellation, alongside existing active session/match cleanup fields.
+- Cancelling a preconfigured Boss match removes the pending config and reports the count transition from 1 to 0; CTest also covers ordinary match cancellation staying at 0.
+- This remains compact in-memory lifecycle audit material only. It does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Ticket Pending Config Lifecycle Audit
 
 - `RegisterTicketResult` now reports pending Boss config counts before and after ticket registration, matching the existing active session/match lifecycle counters.
