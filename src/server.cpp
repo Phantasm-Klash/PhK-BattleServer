@@ -71,9 +71,8 @@ bool IsBossMode(const std::string& mode_id) {
 }
 
 std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std::string& mode_id) {
-    constexpr std::uint32_t kBossModeMaxPlayers = 8;
     if (IsBossMode(mode_id) && config.max_players > kBossModeMaxPlayers) {
-        return kBossModeMaxPlayers;
+        return static_cast<std::uint32_t>(kBossModeMaxPlayers);
     }
     return config.max_players;
 }

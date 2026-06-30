@@ -817,7 +817,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         const bool replay_final_snapshot = snapshot.snapshot_kind == "replay_final";
         const bool boss_defeated = boss_current_hp_ == 0;
         const bool instance_clear_credit = instance_boss && boss_defeated && connected_player_count > 0;
-        const bool boss_start_ready = connected_player_count >= 4 && connected_player_count <= 8;
+        const bool boss_start_ready =
+            connected_player_count >= kBossModeMinPlayers &&
+            connected_player_count <= kBossModeMaxPlayers;
         const bool boss_all_registered_connected =
             !players_.empty() && connected_player_count == players_.size();
         const bool boss_all_registered_ready =
@@ -826,8 +828,8 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
         snapshot.mode_state["player_fire_target"] = "boss_center";
-        snapshot.mode_state["boss_min_players"] = "4";
-        snapshot.mode_state["boss_max_players"] = "8";
+        snapshot.mode_state["boss_min_players"] = std::to_string(kBossModeMinPlayers);
+        snapshot.mode_state["boss_max_players"] = std::to_string(kBossModeMaxPlayers);
         snapshot.mode_state["boss_registered_player_count"] = std::to_string(players_.size());
         snapshot.mode_state["boss_layout_player_count"] = std::to_string(players_.size());
         snapshot.mode_state["boss_ready_player_count"] = std::to_string(ready_connected_player_count);

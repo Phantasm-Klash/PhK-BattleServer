@@ -361,6 +361,7 @@ def main() -> int:
         "kBattleTickRateHz = 60" not in simulation_text
         or "BattleSimulation" not in simulation_text
         or "kDefaultMaxBossIdentityBytes" not in simulation_text
+        or "kBossModeMinPlayers = 4" not in simulation_text
         or "kBossModeMaxPlayers = 8" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
@@ -449,6 +450,10 @@ def main() -> int:
         or '"boss_friendly_fire_policy"' not in simulation_impl
         or "IsAllowedBossFriendlyFirePolicy" not in simulation_impl
         or "NormalizedBossIdentityField" not in simulation_impl
+        or "connected_player_count >= kBossModeMinPlayers" not in simulation_impl
+        or "connected_player_count <= kBossModeMaxPlayers" not in simulation_impl
+        or 'std::to_string(kBossModeMinPlayers)' not in simulation_impl
+        or 'std::to_string(kBossModeMaxPlayers)' not in simulation_impl
         or "players_.size() >= kBossModeMaxPlayers" not in simulation_impl
         or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
@@ -488,6 +493,7 @@ def main() -> int:
     if (
         "match_mode_ruleset_mismatch" not in server_impl
         or "SessionExistsForPlayer" not in server_impl
+        or "static_cast<std::uint32_t>(kBossModeMaxPlayers)" not in server_impl
         or "BattleServer::IsPlayerConnected" not in server_impl
         or "options.required_ruleset_version" not in server_impl
         or "options.required_result_hash" not in server_impl
