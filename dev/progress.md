@@ -113,7 +113,7 @@ Status date: 2026-06-30
 
 - Added `ReplayRecordBridge` and `BattleServer::BuildReplayRecord` as a dependency-light `ReplayRecord` protobuf replacement target before generated C++ bindings land.
 - The bridge binds the server-owned replay id, owner user id, match/mode/stage ids, ticket-derived replay loadout refs, manifest-compatible replay stream summary, server-built signed battle result settlement, server-authoritative flags, created-at timestamp, canonical payload, and deterministic development record hash.
-- CTest and `tools/check_battle_server.py` now gate the bridge API, canonical payload, pinned record hash, loadout/deck snapshot material, stream/settlement/authority tamper sensitivity, and `ReplayRecord.loadout/stream/settlement/server_authoritative` manifest fields. This remains export/scaffold material only and does not persist replay rows, rewards, inventory, wallet, or database state.
+- CTest and `tools/check_battle_server.py` now gate the bridge API, canonical payload, pinned record hash, loadout/deck snapshot material, replay owner tamper sensitivity, stream/settlement match/mode/replay/authority tamper sensitivity, and `ReplayRecord.loadout/stream/settlement/server_authoritative` manifest fields. This remains export/scaffold material only and does not persist replay rows, rewards, inventory, wallet, or database state.
 
 ## 2026-06-30 Signed Result Tick-Rate Boundary
 
