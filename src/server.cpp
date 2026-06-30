@@ -815,6 +815,18 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_replay_summary_hash = DevReplayInputStreamSummaryHash(replay_fixture.replay_summary_record);
     options.required_replay_fixture_hash = DevReplayFixtureHash(replay_fixture);
     options.require_replay_counter_fields = true;
+    const auto& mode_state = replay_fixture.final_snapshot.mode_state;
+    const auto boss_scope = mode_state.find("boss_scope");
+    if (boss_scope != mode_state.end()) {
+        options.require_boss_result_fields = true;
+        options.required_boss_scope = boss_scope->second;
+        options.required_boss_completion_policy = mode_state.at("boss_completion_policy");
+        options.required_boss_current_hp = std::stoull(mode_state.at("boss_current_hp"));
+        options.required_boss_damage_total = std::stoull(mode_state.at("boss_damage_total"));
+        options.required_boss_defeated = std::stoull(mode_state.at("boss_defeated"));
+        options.required_boss_clear_status = mode_state.at("boss_clear_status");
+        options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
+    }
     for (const auto& item : sessions_by_ticket_) {
         const BattleSessionRecord& session = item.second;
         if (session.match_id == signed_result.result.match_id) {

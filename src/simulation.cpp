@@ -967,6 +967,12 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     if (boss_damage_total != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_damage_total\":" + boss_damage_total->second;
     }
+    for (const auto& player_id : fixture.player_ids) {
+        const auto player_damage = fixture.final_snapshot.mode_state.find("boss_damage_" + player_id);
+        if (player_damage != fixture.final_snapshot.mode_state.end()) {
+            json += ",\"boss_damage_" + player_id + "\":" + player_damage->second;
+        }
+    }
     const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
     if (boss_defeated != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_defeated\":" + boss_defeated->second;

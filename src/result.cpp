@@ -258,6 +258,41 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "replay_fixture_hash_mismatch");
         return verification;
     }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_scope", options.required_boss_scope)) {
+        Fail(verification, "boss_scope_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_completion_policy", options.required_boss_completion_policy)) {
+        Fail(verification, "boss_completion_policy_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "boss_current_hp", options.required_boss_current_hp)) {
+        Fail(verification, "boss_current_hp_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "boss_damage_total", options.required_boss_damage_total)) {
+        Fail(verification, "boss_damage_total_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "boss_defeated", options.required_boss_defeated)) {
+        Fail(verification, "boss_defeated_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_clear_status", options.required_boss_clear_status)) {
+        Fail(verification, "boss_clear_status_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_result_disposition", options.required_boss_result_disposition)) {
+        Fail(verification, "boss_result_disposition_mismatch");
+        return verification;
+    }
     if (result.reward_projection_json.empty()) {
         Fail(verification, "reward_projection_missing");
         return verification;
