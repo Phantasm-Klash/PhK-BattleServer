@@ -347,6 +347,28 @@ BattleResultVerification BattleResultVerifier::Verify(
             }
         }
     }
+    if (options.require_boss_result_fields) {
+        for (const auto& item : options.required_boss_spawn_slot_by_player) {
+            if (!ContainsJsonStringField(
+                result.mode_result_json,
+                "boss_player_" + item.first + "_spawn_slot",
+                item.second
+            )) {
+                Fail(verification, "boss_player_spawn_slot_mismatch");
+                return verification;
+            }
+        }
+        for (const auto& item : options.required_boss_fire_target_by_player) {
+            if (!ContainsJsonStringField(
+                result.mode_result_json,
+                "boss_player_" + item.first + "_fire_target",
+                item.second
+            )) {
+                Fail(verification, "boss_player_fire_target_mismatch");
+                return verification;
+            }
+        }
+    }
     if (options.require_boss_result_fields &&
         !ContainsJsonUintField(result.mode_result_json, "boss_defeated", options.required_boss_defeated)) {
         Fail(verification, "boss_defeated_mismatch");

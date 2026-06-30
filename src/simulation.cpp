@@ -1055,6 +1055,18 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         if (player_damage != fixture.final_snapshot.mode_state.end()) {
             json += ",\"boss_damage_" + player_id + "\":" + player_damage->second;
         }
+        const auto player_spawn_slot = fixture.final_snapshot.mode_state.find(
+            "boss_player_" + player_id + "_spawn_slot"
+        );
+        if (player_spawn_slot != fixture.final_snapshot.mode_state.end()) {
+            json += ",\"boss_player_" + player_id + "_spawn_slot\":\"" + player_spawn_slot->second + "\"";
+        }
+        const auto player_fire_target = fixture.final_snapshot.mode_state.find(
+            "boss_player_" + player_id + "_fire_target"
+        );
+        if (player_fire_target != fixture.final_snapshot.mode_state.end()) {
+            json += ",\"boss_player_" + player_id + "_fire_target\":\"" + player_fire_target->second + "\"";
+        }
     }
     const auto boss_defeated = fixture.final_snapshot.mode_state.find("boss_defeated");
     if (boss_defeated != fixture.final_snapshot.mode_state.end()) {

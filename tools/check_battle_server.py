@@ -528,6 +528,8 @@ def main() -> int:
         or "options.required_boss_max_hp" not in server_impl
         or "options.required_boss_current_hp" not in server_impl
         or "options.required_boss_damage_total" not in server_impl
+        or "options.required_boss_spawn_slot_by_player" not in server_impl
+        or "options.required_boss_fire_target_by_player" not in server_impl
         or "options.required_boss_defeated" not in server_impl
         or "options.required_boss_defeated_tick" not in server_impl
         or "options.required_boss_clear_status" not in server_impl
@@ -581,6 +583,8 @@ def main() -> int:
         or "boss_max_hp_mismatch" not in result_impl
         or "boss_current_hp_mismatch" not in result_impl
         or "boss_damage_total_mismatch" not in result_impl
+        or "boss_player_spawn_slot_mismatch" not in result_impl
+        or "boss_player_fire_target_mismatch" not in result_impl
         or "boss_defeated_mismatch" not in result_impl
         or "boss_defeated_tick_mismatch" not in result_impl
         or "boss_clear_status_mismatch" not in result_impl
@@ -771,6 +775,8 @@ def main() -> int:
         or "boss_damage_total_mismatch" not in tests_text
         or '\\"boss_damage_p1\\":10' not in tests_text
         or '\\"boss_damage_p2\\":10' not in tests_text
+        or "boss_player_spawn_slot_mismatch" not in tests_text
+        or "boss_player_fire_target_mismatch" not in tests_text
         or "boss_defeated_mismatch" not in tests_text
         or "boss_defeated_tick_mismatch" not in tests_text
         or "boss_clear_status_mismatch" not in tests_text

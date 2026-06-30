@@ -886,6 +886,14 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
             if (damage_it != mode_state.end()) {
                 options.required_boss_damage_by_player[player.player_id] = std::stoull(damage_it->second);
             }
+            const auto spawn_slot_it = mode_state.find("boss_player_" + player.player_id + "_spawn_slot");
+            if (spawn_slot_it != mode_state.end()) {
+                options.required_boss_spawn_slot_by_player[player.player_id] = spawn_slot_it->second;
+            }
+            const auto fire_target_it = mode_state.find("boss_player_" + player.player_id + "_fire_target");
+            if (fire_target_it != mode_state.end()) {
+                options.required_boss_fire_target_by_player[player.player_id] = fire_target_it->second;
+            }
         }
     }
     const auto transfer_card_count = mode_state.find("transfer_card_count");

@@ -1744,7 +1744,11 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p1_spawn_slot\":\"north\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p1_fire_target\":\"boss_center\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p2_spawn_slot\":\"east\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_player_p2_fire_target\":\"boss_center\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
@@ -1853,7 +1857,23 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p1_spawn_slot\":\"north\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p1_fire_target\":\"boss_center\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p2\":10") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p2_spawn_slot\":\"east\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_player_p2_fire_target\":\"boss_center\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
@@ -2010,6 +2030,26 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_player_damage_result = server.SubmitBattleResult(wrong_player_damage);
     CHECK_TRUE(!wrong_player_damage_result.ok);
     CHECK_EQ(wrong_player_damage_result.reason, std::string("boss_player_damage_mismatch"));
+
+    auto wrong_spawn_slot = built.signed_result;
+    wrong_spawn_slot.result.mode_result_json = ReplaceJsonStringField(
+        wrong_spawn_slot.result.mode_result_json,
+        "boss_player_p1_spawn_slot",
+        "south"
+    );
+    const auto wrong_spawn_slot_result = server.SubmitBattleResult(wrong_spawn_slot);
+    CHECK_TRUE(!wrong_spawn_slot_result.ok);
+    CHECK_EQ(wrong_spawn_slot_result.reason, std::string("boss_player_spawn_slot_mismatch"));
+
+    auto wrong_fire_target = built.signed_result;
+    wrong_fire_target.result.mode_result_json = ReplaceJsonStringField(
+        wrong_fire_target.result.mode_result_json,
+        "boss_player_p2_fire_target",
+        "client_cursor"
+    );
+    const auto wrong_fire_target_result = server.SubmitBattleResult(wrong_fire_target);
+    CHECK_TRUE(!wrong_fire_target_result.ok);
+    CHECK_EQ(wrong_fire_target_result.reason, std::string("boss_player_fire_target_mismatch"));
 
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(

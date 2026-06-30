@@ -80,6 +80,8 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_last_transfer_authority_cost_paid = 0;
     std::uint64_t required_last_transfer_authority_cooldown_ready = 0;
     std::map<std::string, std::uint64_t> required_boss_damage_by_player;
+    std::map<std::string, std::string> required_boss_spawn_slot_by_player;
+    std::map<std::string, std::string> required_boss_fire_target_by_player;
     std::int64_t now_ms = 0;
     bool allow_dev_signature_shape_only = true;
     bool require_dev_signature_payload_binding = true;
