@@ -336,6 +336,21 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_instance_id", options.required_boss_instance_id)) {
+        Fail(verification, "boss_instance_id_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_season_id", options.required_boss_season_id)) {
+        Fail(verification, "boss_season_id_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        !ContainsJsonStringField(result.mode_result_json, "boss_phase_id", options.required_boss_phase_id)) {
+        Fail(verification, "boss_phase_id_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonStringField(
             result.mode_result_json,
             "boss_friendly_fire_policy",

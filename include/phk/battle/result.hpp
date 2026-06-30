@@ -63,6 +63,9 @@ struct BattleResultVerificationOptions {
     std::string required_boss_scope;
     std::string required_boss_completion_policy;
     std::string required_boss_friendly_fire_policy;
+    std::string required_boss_instance_id;
+    std::string required_boss_season_id;
+    std::string required_boss_phase_id;
     std::string required_boss_clear_status;
     std::string required_boss_result_disposition;
     std::string required_boss_instance_result_state;

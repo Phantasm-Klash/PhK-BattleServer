@@ -73,6 +73,11 @@ bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
 
+std::string DefaultBossInstanceId(std::string_view mode_id, std::string_view match_id) {
+    const std::string prefix = mode_id == "world_boss" ? "world-boss:" : "instance-boss:";
+    return prefix + std::string(match_id);
+}
+
 bool IsBattleRoyaleMode(std::string_view mode_id) {
     return mode_id == "battle_royale";
 }
@@ -301,6 +306,15 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
     if (IsBossMode(config_.mode_id)) {
         if (!IsAllowedBossFriendlyFirePolicy(config_.boss_friendly_fire_policy)) {
             config_.boss_friendly_fire_policy = "disabled";
+        }
+        if (config_.boss_instance_id.empty()) {
+            config_.boss_instance_id = DefaultBossInstanceId(config_.mode_id, config_.match_id);
+        }
+        if (config_.boss_season_id.empty()) {
+            config_.boss_season_id = "season-local-s0";
+        }
+        if (config_.boss_phase_id.empty()) {
+            config_.boss_phase_id = "phase-1";
         }
         if (config_.boss_max_hp == 0) {
             config_.boss_max_hp = 1;
@@ -802,6 +816,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
             "defeat_required";
+        snapshot.mode_state["boss_instance_id"] = config_.boss_instance_id;
+        snapshot.mode_state["boss_season_id"] = config_.boss_season_id;
+        snapshot.mode_state["boss_phase_id"] = config_.boss_phase_id;
         snapshot.mode_state["boss_friendly_fire_policy"] = config_.boss_friendly_fire_policy;
         snapshot.mode_state["boss_max_hp"] = std::to_string(boss_max_hp_);
         snapshot.mode_state["boss_current_hp"] = std::to_string(boss_current_hp_);
@@ -1025,6 +1042,9 @@ std::string BattleSimulation::CanonicalStateHash() const {
         }
     }
     if (IsBossMode(config_.mode_id)) {
+        hash = HashAppend(hash, config_.boss_instance_id);
+        hash = HashAppend(hash, config_.boss_season_id);
+        hash = HashAppend(hash, config_.boss_phase_id);
         hash = HashAppend(hash, boss_max_hp_);
         hash = HashAppend(hash, boss_current_hp_);
         hash = HashAppend(hash, boss_damage_total_);
@@ -1247,6 +1267,18 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_completion_policy = fixture.final_snapshot.mode_state.find("boss_completion_policy");
     if (boss_completion_policy != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_completion_policy\":\"" + boss_completion_policy->second + "\"";
+    }
+    const auto boss_instance_id = fixture.final_snapshot.mode_state.find("boss_instance_id");
+    if (boss_instance_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_instance_id\":\"" + boss_instance_id->second + "\"";
+    }
+    const auto boss_season_id = fixture.final_snapshot.mode_state.find("boss_season_id");
+    if (boss_season_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_season_id\":\"" + boss_season_id->second + "\"";
+    }
+    const auto boss_phase_id = fixture.final_snapshot.mode_state.find("boss_phase_id");
+    if (boss_phase_id != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_phase_id\":\"" + boss_phase_id->second + "\"";
     }
     const auto boss_friendly_fire_policy = fixture.final_snapshot.mode_state.find("boss_friendly_fire_policy");
     if (boss_friendly_fire_policy != fixture.final_snapshot.mode_state.end()) {

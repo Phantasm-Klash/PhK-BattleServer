@@ -555,6 +555,9 @@ def main() -> int:
         or "options.require_boss_result_fields = true" not in server_impl
         or "options.required_boss_scope = boss_scope->second" not in server_impl
         or "options.required_boss_completion_policy" not in server_impl
+        or "options.required_boss_instance_id" not in server_impl
+        or "options.required_boss_season_id" not in server_impl
+        or "options.required_boss_phase_id" not in server_impl
         or "options.required_boss_friendly_fire_policy" not in server_impl
         or "options.required_connected_player_count" not in server_impl
         or "options.required_disconnected_player_count" not in server_impl
@@ -616,6 +619,9 @@ def main() -> int:
         or "final_snapshot_event_cursor_mismatch" not in result_impl
         or "boss_scope_mismatch" not in result_impl
         or "boss_completion_policy_mismatch" not in result_impl
+        or "boss_instance_id_mismatch" not in result_impl
+        or "boss_season_id_mismatch" not in result_impl
+        or "boss_phase_id_mismatch" not in result_impl
         or "boss_friendly_fire_policy_mismatch" not in result_impl
         or "connected_player_count_mismatch" not in result_impl
         or "disconnected_player_count_mismatch" not in result_impl
@@ -832,6 +838,11 @@ def main() -> int:
         or "boss_result_disposition" not in tests_text
         or "BossModeResultSubmissionRequiresBossProjection" not in tests_text
         or "boss_scope_mismatch" not in tests_text
+        or "boss_instance_id_mismatch" not in tests_text
+        or "boss_season_id_mismatch" not in tests_text
+        or "boss_phase_id_mismatch" not in tests_text
+        or "world-boss-season-001" not in tests_text
+        or "instance-boss:match-001" not in tests_text
         or "boss_friendly_fire_policy_mismatch" not in tests_text
         or "boss_registered_player_count" not in tests_text
         or "boss_registered_player_count_mismatch" not in tests_text
