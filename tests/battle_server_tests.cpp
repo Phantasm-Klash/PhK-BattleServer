@@ -3082,6 +3082,80 @@ bool TestBossModeResultRequiresStartableRoom() {
     return true;
 }
 
+bool TestBossRosterLocksAfterReadyToStart() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489646000;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-roster-lock-" + std::to_string(index),
+            "user-roster-lock-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "instance_boss",
+            "00112233445566778899fb0" + std::to_string(index)
+        )).ok);
+        auto ready = MakeModeAction(index);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "boss-roster-lock-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+    CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_ready_to_start"), std::string("1"));
+
+    const auto late_join = server.RegisterTicket(MakeModeTicket(
+        "ticket-roster-lock-late",
+        "user-roster-lock-late",
+        "p5",
+        "instance_boss",
+        "00112233445566778899fb05"
+    ));
+    CHECK_TRUE(!late_join.ok);
+    CHECK_EQ(late_join.reason, std::string("boss_roster_locked"));
+    CHECK_EQ(late_join.active_sessions_before, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.active_sessions_after, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.match_session_count_before, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.match_session_count_after, static_cast<std::size_t>(4));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
+    const auto disconnected_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("waiting_for_players"));
+    const auto disconnected_late_join = server.RegisterTicket(MakeModeTicket(
+        "ticket-roster-lock-disconnected-late",
+        "user-roster-lock-disconnected-late",
+        "p5",
+        "instance_boss",
+        "00112233445566778899fb06"
+    ));
+    CHECK_TRUE(!disconnected_late_join.ok);
+    CHECK_EQ(disconnected_late_join.reason, std::string("boss_roster_locked"));
+    CHECK_EQ(disconnected_late_join.active_sessions_after, static_cast<std::size_t>(4));
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", true).ok);
+    auto p4_ready_again = MakeModeAction(5);
+    p4_ready_again.match_id = "match-001";
+    p4_ready_again.player_id = "p4";
+    p4_ready_again.tick = 2;
+    p4_ready_again.seq = 2;
+    p4_ready_again.action_id = "boss-roster-lock-ready-again";
+    p4_ready_again.action_type = "ready";
+    p4_ready_again.payload_json = "{\"ready\":true}";
+    CHECK_TRUE(server.AcceptModeAction(p4_ready_again).ok);
+    CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_ready_to_start"), std::string("1"));
+
+    const auto snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot.players.size(), static_cast<std::size_t>(4));
+    CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
+    CHECK_EQ(snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
+    CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
+    return true;
+}
+
 bool TestSettledMatchRetirementLifecycle() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489650000;
@@ -4885,6 +4959,7 @@ int main() {
         {"InstanceBossResultStateMutualExclusion", TestInstanceBossResultStateMutualExclusion},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
+        {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
