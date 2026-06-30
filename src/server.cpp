@@ -340,6 +340,10 @@ ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_c
         result.reason = "match_retired";
         return result;
     }
+    if (cancelled_match_ids_.find(boss_config.match_id) != cancelled_match_ids_.end()) {
+        result.reason = "match_cancelled";
+        return result;
+    }
     if (!IsAllowedBossFriendlyFirePolicy(boss_config.boss_friendly_fire_policy)) {
         boss_config.boss_friendly_fire_policy = "disabled";
     }
@@ -381,6 +385,11 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     };
     if (result_hash_by_match_.find(signed_ticket.ticket.match_id) != result_hash_by_match_.end()) {
         result.reason = "match_retired";
+        result.session.match_id = signed_ticket.ticket.match_id;
+        return finish();
+    }
+    if (cancelled_match_ids_.find(signed_ticket.ticket.match_id) != cancelled_match_ids_.end()) {
+        result.reason = "match_cancelled";
         result.session.match_id = signed_ticket.ticket.match_id;
         return finish();
     }
@@ -506,6 +515,10 @@ BattleHandshakeAccept BattleServer::AcceptHandshake(const BattleHandshakeHello& 
         rejected.reason = ticket_it == sessions_by_ticket_.end() ? "match_retired" : "match_settled";
         return rejected;
     }
+    if (cancelled_match_ids_.find(hello.battle_ticket.ticket.match_id) != cancelled_match_ids_.end()) {
+        rejected.reason = "match_cancelled";
+        return rejected;
+    }
     if (ticket_it == sessions_by_ticket_.end()) {
         rejected.reason = "ticket_not_registered";
         return rejected;
@@ -547,8 +560,9 @@ DispatchResult BattleServer::Dispatch(
     if (!header.match_id.empty()) {
         const auto simulation_it = simulations_by_match_.find(header.match_id);
         const bool has_result = result_hash_by_match_.find(header.match_id) != result_hash_by_match_.end();
+        const bool cancelled = cancelled_match_ids_.find(header.match_id) != cancelled_match_ids_.end();
         if (simulation_it == simulations_by_match_.end()) {
-            result.reason = has_result ? "match_retired" : "match_unknown";
+            result.reason = has_result ? "match_retired" : (cancelled ? "match_cancelled" : "match_unknown");
             return result;
         }
         if (has_result) {
@@ -590,7 +604,9 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
     }
     const auto simulation_it = simulations_by_match_.find(packet.header.match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = "match_unknown";
+        result.reason = cancelled_match_ids_.find(packet.header.match_id) != cancelled_match_ids_.end()
+            ? "match_cancelled"
+            : "match_unknown";
         return result;
     }
     if (result_hash_by_match_.find(packet.header.match_id) != result_hash_by_match_.end()) {
@@ -1035,7 +1051,9 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     SubmitBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = "match_unknown";
+        result.reason = cancelled_match_ids_.find(signed_result.result.match_id) != cancelled_match_ids_.end()
+            ? "match_cancelled"
+            : "match_unknown";
         return result;
     }
     if (!BossMatchReadyForResult(simulation_it->second)) {
@@ -1181,6 +1199,63 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     result.ok = true;
     result.reason = "ok";
     result.settlement_key = "battle-result:" + signed_result.result.match_id;
+    return result;
+}
+
+CancelMatchResult BattleServer::CancelMatch(const std::string& match_id) {
+    CancelMatchResult result;
+    result.match_id = match_id;
+    result.active_sessions_before = sessions_by_ticket_.size();
+    result.active_matches_before = simulations_by_match_.size();
+
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_settled";
+        result.active_sessions_after = result.active_sessions_before;
+        result.active_matches_after = result.active_matches_before;
+        return result;
+    }
+
+    const bool was_cancelled = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end();
+    auto pending_boss_config_it = pending_boss_config_by_match_.find(match_id);
+    if (pending_boss_config_it != pending_boss_config_by_match_.end()) {
+        pending_boss_config_by_match_.erase(pending_boss_config_it);
+        result.removed_pending_boss_config = true;
+    }
+
+    for (auto session_it = sessions_by_ticket_.begin(); session_it != sessions_by_ticket_.end();) {
+        if (session_it->second.match_id == match_id) {
+            session_it = sessions_by_ticket_.erase(session_it);
+            ++result.removed_sessions;
+        } else {
+            ++session_it;
+        }
+    }
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it != simulations_by_match_.end()) {
+        simulations_by_match_.erase(simulation_it);
+        result.removed_match = true;
+    }
+    boss_roster_locked_match_ids_.erase(match_id);
+
+    if (!result.removed_pending_boss_config && result.removed_sessions == 0 && !result.removed_match) {
+        if (was_cancelled) {
+            result.ok = true;
+            result.reason = "ok";
+            result.already_cancelled = true;
+        } else {
+            result.reason = "match_unknown";
+        }
+        result.active_sessions_after = sessions_by_ticket_.size();
+        result.active_matches_after = simulations_by_match_.size();
+        return result;
+    }
+
+    cancelled_match_ids_.insert(match_id);
+    result.ok = true;
+    result.reason = "ok";
+    result.already_cancelled = was_cancelled;
+    result.active_sessions_after = sessions_by_ticket_.size();
+    result.active_matches_after = simulations_by_match_.size();
     return result;
 }
 
