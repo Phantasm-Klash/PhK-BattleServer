@@ -297,6 +297,16 @@ def main() -> int:
         print("missing files:", ", ".join(missing), file=sys.stderr)
         return 1
 
+    architecture_text = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    if (
+        "match seed binding" not in architecture_text
+        or "match seed plus final snapshot" not in architecture_text
+        or "match seed, player ids" not in architecture_text
+        or "replay/seed-bound development signed-result callback material" not in architecture_text
+    ):
+        print("architecture doc missing replay/result match seed binding notes", file=sys.stderr)
+        return 1
+
     protocol_battle = WORKSPACE / "PhK-Protocol" / "proto" / "phk" / "v1" / "battle.proto"
     protocol_matchmaking = WORKSPACE / "PhK-Protocol" / "proto" / "phk" / "v1" / "matchmaking.proto"
     if not protocol_battle.exists() or not protocol_matchmaking.exists():
