@@ -3037,6 +3037,10 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto premature_retire = server.RetireMatch("match-001");
     CHECK_TRUE(!premature_retire.ok);
     CHECK_EQ(premature_retire.reason, std::string("match_not_settled"));
+    CHECK_EQ(premature_retire.active_sessions_before, static_cast<std::size_t>(2));
+    CHECK_EQ(premature_retire.active_matches_before, static_cast<std::size_t>(1));
+    CHECK_EQ(premature_retire.active_sessions_after, static_cast<std::size_t>(2));
+    CHECK_EQ(premature_retire.active_matches_after, static_cast<std::size_t>(1));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
 
@@ -3144,7 +3148,17 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_EQ(retired.reason, std::string("ok"));
     CHECK_EQ(retired.match_id, std::string("match-001"));
     CHECK_EQ(retired.result_hash, built_result.signed_result.result.result_hash);
+    CHECK_EQ(retired.input_stream_hash, settled_summary.input_stream_hash);
+    CHECK_EQ(retired.event_stream_hash, settled_summary.event_stream_hash);
+    CHECK_EQ(retired.final_state_hash, settled_summary.final_state_hash);
+    CHECK_EQ(retired.final_tick, settled_summary.final_tick);
+    CHECK_EQ(retired.input_count, settled_summary.input_count);
+    CHECK_EQ(retired.event_count, settled_summary.event_count);
+    CHECK_EQ(retired.active_sessions_before, static_cast<std::size_t>(2));
+    CHECK_EQ(retired.active_matches_before, static_cast<std::size_t>(1));
     CHECK_EQ(retired.removed_sessions, static_cast<std::size_t>(2));
+    CHECK_EQ(retired.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(retired.active_matches_after, static_cast<std::size_t>(0));
     CHECK_TRUE(!retired.already_retired);
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
@@ -3164,12 +3178,20 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto retired_again = server.RetireMatch("match-001");
     CHECK_TRUE(retired_again.ok);
     CHECK_TRUE(retired_again.already_retired);
+    CHECK_EQ(retired_again.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.active_matches_before, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.removed_sessions, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(retired_again.active_matches_after, static_cast<std::size_t>(0));
     CHECK_EQ(retired_again.result_hash, built_result.signed_result.result.result_hash);
 
     const auto missing = server.RetireMatch("missing-match");
     CHECK_TRUE(!missing.ok);
     CHECK_EQ(missing.reason, std::string("match_not_settled"));
+    CHECK_EQ(missing.active_sessions_before, static_cast<std::size_t>(0));
+    CHECK_EQ(missing.active_matches_before, static_cast<std::size_t>(0));
+    CHECK_EQ(missing.active_sessions_after, static_cast<std::size_t>(0));
+    CHECK_EQ(missing.active_matches_after, static_cast<std::size_t>(0));
     return true;
 }
 

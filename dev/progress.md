@@ -8,6 +8,12 @@ Status date: 2026-06-30
 - Duplicate ready intents from the same player are rejected with `ready_already_set` even before the first ready action's tick is applied, preventing duplicate replay/event entries for one ready transition.
 - Disconnect clears both applied and pending ready state. This remains room lifecycle authority only and does not write rewards, inventory, wallet, Steam state, or business database state.
 
+## 2026-06-30 Structured Retire Audit Boundary
+
+- `RetireMatchResult` now reports active session/match counts before and after cleanup, removed session count, and final replay tick/input/event/hash summaries for the settled match being cleared.
+- Premature and repeated retire calls also return explicit active-count fields, so lifecycle callers can distinguish not-settled, already-retired, and successful cleanup states without reading large logs.
+- This remains in-memory battle-room lifecycle audit material only. The C++ battle server still does not persist rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Stable Player-Ordered Result Export
 
 - Signed battle result callbacks and development `ReplayRecord` bridge loadouts now collect match sessions in stable `player_id` order instead of ticket-id map order.

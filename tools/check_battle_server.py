@@ -547,6 +547,13 @@ def main() -> int:
         or "DevBattleResultSignatureHex" not in server_impl
         or "DevModeResultJsonFromReplayFixture(replay_fixture)" not in server_impl
         or "DevReplayRecordBridgeHash(record)" not in server_impl
+        or "result.active_sessions_before = sessions_by_ticket_.size()" not in server_impl
+        or "result.active_matches_before = simulations_by_match_.size()" not in server_impl
+        or "result.input_stream_hash = summary.input_stream_hash" not in server_impl
+        or "result.event_stream_hash = summary.event_stream_hash" not in server_impl
+        or "result.final_state_hash = summary.final_state_hash" not in server_impl
+        or "result.active_sessions_after = sessions_by_ticket_.size()" not in server_impl
+        or "result.active_matches_after = simulations_by_match_.size()" not in server_impl
         or "DevResultHashFromReplaySummary" not in server_impl
         or "DevReplayIdFromReplaySummary" not in server_impl
         or "projection_only" not in server_impl
@@ -600,8 +607,17 @@ def main() -> int:
         return 1
 
     server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
-    if "encrypted_dispatch_accepted" not in server_header:
-        print("decoded packet result missing encrypted dispatch acceptance marker", file=sys.stderr)
+    if (
+        "encrypted_dispatch_accepted" not in server_header
+        or "active_sessions_before" not in server_header
+        or "active_matches_before" not in server_header
+        or "active_sessions_after" not in server_header
+        or "active_matches_after" not in server_header
+        or "final_state_hash" not in server_header
+        or "input_stream_hash" not in server_header
+        or "event_stream_hash" not in server_header
+    ):
+        print("server facade result structs missing decoded dispatch marker or structured retire audit fields", file=sys.stderr)
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
@@ -899,6 +915,11 @@ def main() -> int:
         or "decoded_input_after_settle" not in tests_text
         or "decoded_action_after_settle" not in tests_text
         or "decoded_reconnect_after_settle" not in tests_text
+        or "retired.active_sessions_before" not in tests_text
+        or "retired.active_sessions_after" not in tests_text
+        or "retired.final_state_hash" not in tests_text
+        or "retired.input_stream_hash" not in tests_text
+        or "retired.event_stream_hash" not in tests_text
         or "last_mode_action_type" not in tests_text
         or "adapter.Stats().accepted_datagrams" not in tests_text
         or "adapter.Stats().rejected_datagrams" not in tests_text
