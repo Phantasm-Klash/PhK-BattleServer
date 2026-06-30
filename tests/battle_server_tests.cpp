@@ -2040,6 +2040,21 @@ bool TestBossModeBulletPattern() {
         invalid_policy_simulation.Snapshot().mode_state.at("boss_friendly_fire_policy"),
         std::string("disabled")
     );
+
+    phk::battle::SimulationConfig invalid_identity_config = world_config;
+    invalid_identity_config.match_id = "match-world-boss-invalid-identity";
+    invalid_identity_config.boss_instance_id = "world-boss\"\nclient";
+    invalid_identity_config.boss_season_id = std::string(phk::battle::kDefaultMaxBossIdentityBytes + 1, 's');
+    invalid_identity_config.boss_phase_id = "phase/client";
+    phk::battle::BattleSimulation invalid_identity_simulation(invalid_identity_config);
+    CHECK_TRUE(invalid_identity_simulation.AddPlayer("p1", 0, -60000));
+    const auto invalid_identity_snapshot = invalid_identity_simulation.Snapshot();
+    CHECK_EQ(
+        invalid_identity_snapshot.mode_state.at("boss_instance_id"),
+        std::string("world-boss:match-world-boss-invalid-identity")
+    );
+    CHECK_EQ(invalid_identity_snapshot.mode_state.at("boss_season_id"), std::string("season-local-s0"));
+    CHECK_EQ(invalid_identity_snapshot.mode_state.at("boss_phase_id"), std::string("phase-1"));
     return true;
 }
 

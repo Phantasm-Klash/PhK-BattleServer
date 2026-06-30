@@ -78,6 +78,24 @@ std::string DefaultBossInstanceId(std::string_view mode_id, std::string_view mat
     return prefix + std::string(match_id);
 }
 
+bool IsAllowedBossIdentityChar(char ch) {
+    const auto byte = static_cast<unsigned char>(ch);
+    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == ':' || ch == '.';
+}
+
+bool IsValidBossIdentityField(std::string_view value) {
+    return !value.empty() &&
+        value.size() <= kDefaultMaxBossIdentityBytes &&
+        std::all_of(value.begin(), value.end(), IsAllowedBossIdentityChar);
+}
+
+std::string NormalizedBossIdentityField(std::string value, std::string fallback) {
+    if (IsValidBossIdentityField(value)) {
+        return value;
+    }
+    return fallback;
+}
+
 bool IsBattleRoyaleMode(std::string_view mode_id) {
     return mode_id == "battle_royale";
 }
@@ -307,15 +325,18 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
         if (!IsAllowedBossFriendlyFirePolicy(config_.boss_friendly_fire_policy)) {
             config_.boss_friendly_fire_policy = "disabled";
         }
-        if (config_.boss_instance_id.empty()) {
-            config_.boss_instance_id = DefaultBossInstanceId(config_.mode_id, config_.match_id);
-        }
-        if (config_.boss_season_id.empty()) {
-            config_.boss_season_id = "season-local-s0";
-        }
-        if (config_.boss_phase_id.empty()) {
-            config_.boss_phase_id = "phase-1";
-        }
+        config_.boss_instance_id = NormalizedBossIdentityField(
+            std::move(config_.boss_instance_id),
+            DefaultBossInstanceId(config_.mode_id, config_.match_id)
+        );
+        config_.boss_season_id = NormalizedBossIdentityField(
+            std::move(config_.boss_season_id),
+            "season-local-s0"
+        );
+        config_.boss_phase_id = NormalizedBossIdentityField(
+            std::move(config_.boss_phase_id),
+            "phase-1"
+        );
         if (config_.boss_max_hp == 0) {
             config_.boss_max_hp = 1;
         }

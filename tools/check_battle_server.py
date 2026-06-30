@@ -360,6 +360,7 @@ def main() -> int:
     if (
         "kBattleTickRateHz = 60" not in simulation_text
         or "BattleSimulation" not in simulation_text
+        or "kDefaultMaxBossIdentityBytes" not in simulation_text
         or "ReplaySummary" not in simulation_text
         or "ReplayFixture" not in simulation_text
         or "ReplayRecordBridge" not in simulation_text
@@ -446,6 +447,7 @@ def main() -> int:
         or '"boss_result_disposition"' not in simulation_impl
         or '"boss_friendly_fire_policy"' not in simulation_impl
         or "IsAllowedBossFriendlyFirePolicy" not in simulation_impl
+        or "NormalizedBossIdentityField" not in simulation_impl
         or '"boss_damage_" + player_id' not in simulation_impl
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
@@ -843,6 +845,8 @@ def main() -> int:
         or "boss_phase_id_mismatch" not in tests_text
         or "world-boss-season-001" not in tests_text
         or "instance-boss:match-001" not in tests_text
+        or "match-world-boss-invalid-identity" not in tests_text
+        or "kDefaultMaxBossIdentityBytes + 1" not in tests_text
         or "boss_friendly_fire_policy_mismatch" not in tests_text
         or "boss_registered_player_count" not in tests_text
         or "boss_registered_player_count_mismatch" not in tests_text

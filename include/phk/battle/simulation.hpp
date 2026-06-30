@@ -18,6 +18,7 @@ inline constexpr std::int32_t kArenaHalfHeightMilli = 90000;
 inline constexpr std::size_t kDefaultMaxModeActionIdBytes = 128;
 inline constexpr std::size_t kDefaultMaxModeActionTypeBytes = 64;
 inline constexpr std::size_t kDefaultMaxModeActionPayloadBytes = 4096;
+inline constexpr std::size_t kDefaultMaxBossIdentityBytes = 128;
 
 enum class InputValidationCode {
     Ok,
