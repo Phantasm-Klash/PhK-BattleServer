@@ -2023,7 +2023,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 0)).ok);
     CHECK_TRUE(server.ConfigureTransferableCard("match-001", transfer_card));
 
-    auto transfer = MakeModeAction(2);
+    auto transfer = MakeModeAction(5);
     transfer.match_id = "match-001";
     transfer.player_id = "p1";
     transfer.tick = 1;
@@ -2032,6 +2032,21 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     transfer.action_type = "transfer_card";
     transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"instance-result-card-001\"}";
     CHECK_TRUE(server.AcceptModeAction(transfer).ok);
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index + 1);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = index <= 2 ? 2 : 1;
+        ready.action_id = "instance-result-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        if (index == 1) {
+            ready.seq = 3;
+        }
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto built = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(built.ok);
@@ -2046,10 +2061,10 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_registered_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_layout_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_connected\":1") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_ready\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_all_registered_ready\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":1") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
@@ -2179,8 +2194,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_ready_count = built.signed_result;
     wrong_ready_count.result.mode_result_json = ReplaceFirst(
         wrong_ready_count.result.mode_result_json,
-        "\"boss_ready_player_count\":0",
-        "\"boss_ready_player_count\":4"
+        "\"boss_ready_player_count\":4",
+        "\"boss_ready_player_count\":3"
     );
     const auto wrong_ready_count_result = server.SubmitBattleResult(wrong_ready_count);
     CHECK_TRUE(!wrong_ready_count_result.ok);
@@ -2202,8 +2217,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_all_registered_ready = built.signed_result;
     wrong_all_registered_ready.result.mode_result_json = ReplaceFirst(
         wrong_all_registered_ready.result.mode_result_json,
-        "\"boss_all_registered_ready\":0",
-        "\"boss_all_registered_ready\":1"
+        "\"boss_all_registered_ready\":1",
+        "\"boss_all_registered_ready\":0"
     );
     const auto wrong_all_registered_ready_result = server.SubmitBattleResult(wrong_all_registered_ready);
     CHECK_TRUE(!wrong_all_registered_ready_result.ok);
@@ -2215,8 +2230,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_ready_to_start = built.signed_result;
     wrong_ready_to_start.result.mode_result_json = ReplaceFirst(
         wrong_ready_to_start.result.mode_result_json,
-        "\"boss_ready_to_start\":0",
-        "\"boss_ready_to_start\":1"
+        "\"boss_ready_to_start\":1",
+        "\"boss_ready_to_start\":0"
     );
     const auto wrong_ready_to_start_result = server.SubmitBattleResult(wrong_ready_to_start);
     CHECK_TRUE(!wrong_ready_to_start_result.ok);
@@ -2480,6 +2495,24 @@ bool TestBossModeResultRequiresStartableRoom() {
     const auto startable_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(startable_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(startable_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(startable_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    const auto not_ready_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!not_ready_result.ok);
+    CHECK_EQ(not_ready_result.reason, std::string("boss_match_not_startable"));
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "underfilled-boss-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+    const auto ready_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
     return true;
 }
