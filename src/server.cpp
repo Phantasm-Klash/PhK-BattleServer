@@ -1,6 +1,8 @@
 #include "phk/battle/server.hpp"
 
+#include <cctype>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -70,6 +72,43 @@ InputValidationResult InvalidDecodedPayloadResult(std::string reason) {
     result.code = InputValidationCode::InvalidModeAction;
     result.reason = std::move(reason);
     return result;
+}
+
+InputValidationResult EventCursorAheadResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::EventCursorAhead;
+    result.reason = "event_cursor_ahead";
+    return result;
+}
+
+std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& payload_json) {
+    constexpr const char* kCursorField = "\"last_seen_event_cursor\"";
+    const std::string field(kCursorField);
+    const auto field_offset = payload_json.find(field);
+    if (field_offset == std::string::npos) {
+        return std::nullopt;
+    }
+    const auto colon_offset = payload_json.find(':', field_offset + field.size());
+    if (colon_offset == std::string::npos) {
+        return std::nullopt;
+    }
+    std::size_t digit_offset = colon_offset + 1;
+    while (digit_offset < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        ++digit_offset;
+    }
+    if (digit_offset >= payload_json.size() ||
+        !std::isdigit(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        return std::nullopt;
+    }
+
+    std::uint64_t cursor = 0;
+    while (digit_offset < payload_json.size() &&
+        std::isdigit(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        cursor = cursor * 10u + static_cast<std::uint64_t>(payload_json[digit_offset] - '0');
+        ++digit_offset;
+    }
+    return cursor;
 }
 
 bool SameVersionStamp(const VersionStamp& left, const VersionStamp& right) {
@@ -143,6 +182,13 @@ InputValidationResult ValidateDecodedReconnectModeActionBinding(
         action.action_type != "reconnect"
     ) {
         return InvalidDecodedPayloadResult("decoded_reconnect_header_mismatch");
+    }
+    const auto last_seen_event_cursor = ExtractLastSeenEventCursor(action.payload_json);
+    if (!last_seen_event_cursor.has_value()) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_missing");
+    }
+    if (last_seen_event_cursor.value() != header.ack) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_mismatch");
     }
 
     InputValidationResult result;
@@ -440,7 +486,33 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     if (!binding.ok) {
         return binding;
     }
-    return AcceptModeAction(action);
+    const auto simulation_it = simulations_by_match_.find(action.match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        InputValidationResult result;
+        result.code = InputValidationCode::MatchUnknown;
+        result.reason = "match_unknown";
+        return result;
+    }
+    if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
+        return UnknownPlayerResult();
+    }
+
+    const auto last_seen_event_cursor = ExtractLastSeenEventCursor(action.payload_json);
+    if (!last_seen_event_cursor.has_value()) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_missing");
+    }
+    if (last_seen_event_cursor.value() != header.ack) {
+        return InvalidDecodedPayloadResult("decoded_reconnect_cursor_mismatch");
+    }
+    if (header.ack > simulation_it->second.Summary().event_count) {
+        return EventCursorAheadResult();
+    }
+
+    auto accepted = simulation_it->second.AcceptModeAction(action);
+    if (!accepted.ok) {
+        return accepted;
+    }
+    return simulation_it->second.SetPlayerConnected(action.player_id, true);
 }
 
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {

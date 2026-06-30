@@ -5,8 +5,9 @@ Status date: 2026-06-30
 ## 2026-06-30 Decoded Reconnect Adapter Boundary
 
 - `BattleServer::AcceptDecodedReconnectModeAction` now models the future protobuf decode handoff for reconnect packets separately from normal mode actions.
-- `DecodedBattlePacketAdapter` accepts reconnect packets only after encrypted session/key/nonce/event-cursor dispatch succeeds, then requires a decoded `reconnect` mode action whose version, match id, player id, tick, and seq match the encrypted header before queuing authoritative recovery.
-- CTest and `tools/check_battle_server.py` now gate missing reconnect decoded payloads, reconnect header/action mismatches, rejected non-reconnect action types on reconnect packets, and tick-delayed reconnect recovery while real protobuf/KCP/AEAD remains pending.
+- `DecodedBattlePacketAdapter` accepts reconnect packets only after encrypted session/key/nonce/event-cursor dispatch succeeds, then requires a decoded `reconnect` mode action whose version, match id, player id, tick, seq, and `last_seen_event_cursor` payload agree with the encrypted header before recovery is accepted.
+- Decoded reconnect packets now restore the server facade connection state immediately while still queuing the reconnect mode action into the authoritative tick/replay stream, so transport recovery can resume packet flow without letting malformed protobuf-replacement payloads consume nonce/seq state.
+- CTest and `tools/check_battle_server.py` now gate missing reconnect decoded payloads, reconnect header/action mismatches, rejected non-reconnect action types, missing/mismatched reconnect cursors, future event cursor rejection, immediate connection-state recovery, and tick-bound replay recording while real protobuf/KCP/AEAD remains pending.
 
 ## 2026-06-30 Decoded Encrypted-Dispatch Marker
 

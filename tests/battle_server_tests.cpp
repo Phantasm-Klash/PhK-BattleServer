@@ -1550,6 +1550,13 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     const auto reconnect_snapshot = server.ReconnectSnapshot("match-001", "p2", mode_action_summary.event_count);
     CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
     CHECK_EQ(reconnect_snapshot.mode_state.at("reconnect_player_id"), std::string("p2"));
+    bool saw_immediate_reconnect_event = false;
+    for (const auto& trace : server.MatchReplaySummary("match-001").event_trace) {
+        if (trace.find("connection|connected|p2") != std::string::npos) {
+            saw_immediate_reconnect_event = true;
+        }
+    }
+    CHECK_TRUE(saw_immediate_reconnect_event);
     CHECK_EQ(reconnect_snapshot.mode_state.at("missed_event_count"), std::string("3"));
     const auto cursor_ahead_snapshot = server.ReconnectSnapshot("match-001", "p2", 999);
     CHECK_EQ(cursor_ahead_snapshot.snapshot_kind, std::string("event_cursor_ahead"));
@@ -2271,6 +2278,44 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_EQ(wrong_reconnect_type_result.reason, std::string("decoded_reconnect_header_mismatch"));
     CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
 
+    auto missing_reconnect_cursor = reconnect_packet;
+    missing_reconnect_cursor.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(missing_reconnect_cursor.encrypted_packet.header);
+    missing_reconnect_cursor.decoded_mode_action.seq = 4;
+    missing_reconnect_cursor.decoded_mode_action.payload_json = "{\"source\":\"client-reconnect\"}";
+    const auto missing_reconnect_cursor_result = adapter.AcceptDecodedPacket(missing_reconnect_cursor);
+    CHECK_TRUE(!missing_reconnect_cursor_result.ok);
+    CHECK_TRUE(!missing_reconnect_cursor_result.dispatch.ok);
+    CHECK_TRUE(!missing_reconnect_cursor_result.encrypted_dispatch_accepted);
+    CHECK_EQ(missing_reconnect_cursor_result.reason, std::string("decoded_reconnect_cursor_missing"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
+    auto mismatched_reconnect_cursor = reconnect_packet;
+    mismatched_reconnect_cursor.encrypted_packet.header.seq = 4;
+    RefreshDevAeadNonce(mismatched_reconnect_cursor.encrypted_packet.header);
+    mismatched_reconnect_cursor.decoded_mode_action.seq = 4;
+    mismatched_reconnect_cursor.decoded_mode_action.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(reconnect_base_event_count + 1) + "}";
+    const auto mismatched_reconnect_cursor_result = adapter.AcceptDecodedPacket(mismatched_reconnect_cursor);
+    CHECK_TRUE(!mismatched_reconnect_cursor_result.ok);
+    CHECK_TRUE(!mismatched_reconnect_cursor_result.dispatch.ok);
+    CHECK_TRUE(!mismatched_reconnect_cursor_result.encrypted_dispatch_accepted);
+    CHECK_EQ(mismatched_reconnect_cursor_result.reason, std::string("decoded_reconnect_cursor_mismatch"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
+    auto reconnect_cursor_ahead = reconnect_packet;
+    reconnect_cursor_ahead.encrypted_packet.header.seq = 4;
+    reconnect_cursor_ahead.encrypted_packet.header.ack = reconnect_base_event_count + 1;
+    RefreshDevAeadNonce(reconnect_cursor_ahead.encrypted_packet.header);
+    reconnect_cursor_ahead.decoded_mode_action.seq = 4;
+    reconnect_cursor_ahead.decoded_mode_action.payload_json =
+        "{\"last_seen_event_cursor\":" + std::to_string(reconnect_base_event_count + 1) + "}";
+    const auto reconnect_cursor_ahead_result = adapter.AcceptDecodedPacket(reconnect_cursor_ahead);
+    CHECK_TRUE(!reconnect_cursor_ahead_result.ok);
+    CHECK_TRUE(!reconnect_cursor_ahead_result.encrypted_dispatch_accepted);
+    CHECK_EQ(reconnect_cursor_ahead_result.reason, std::string("encrypted_event_cursor_ahead"));
+    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+
     auto accepted_reconnect = reconnect_packet;
     accepted_reconnect.encrypted_packet.header.seq = 4;
     RefreshDevAeadNonce(accepted_reconnect.encrypted_packet.header);
@@ -2280,7 +2325,10 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_TRUE(accepted_reconnect_result.encrypted_dispatch_accepted);
     CHECK_EQ(accepted_reconnect_result.dispatch.response_kind, std::string("reconnect"));
     CHECK_EQ(accepted_reconnect_result.decoded.reason, std::string("ok"));
-    CHECK_TRUE(!server.IsPlayerConnected("match-001", "p2"));
+    CHECK_TRUE(server.IsPlayerConnected("match-001", "p2"));
+    const auto reconnect_snapshot = server.ReconnectSnapshot("match-001", "p2", reconnect_base_event_count);
+    CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
+    CHECK_EQ(reconnect_snapshot.mode_state.at("reconnect_player_id"), std::string("p2"));
 
     auto invalid_dispatch = input_packet;
     invalid_dispatch.encrypted_packet.header.player_id = "p2";
@@ -2316,7 +2364,6 @@ bool TestDecodedBattlePacketAdapterBoundary() {
     CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(3));
     CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, accepted_reconnect.decoded_mode_action.action_id);
     CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_type, std::string("reconnect"));
-    CHECK_TRUE(server.MatchReplaySummary("match-001").event_trace[server.MatchReplaySummary("match-001").event_trace.size() - 2].find("connection|connected|p2") != std::string::npos);
     return true;
 }
 
