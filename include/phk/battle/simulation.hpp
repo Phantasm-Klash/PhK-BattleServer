@@ -20,6 +20,7 @@ enum class InputValidationCode {
     Ok,
     VersionIncompatible,
     MatchUnknown,
+    MatchSettled,
     MatchMismatch,
     PlayerUnknown,
     SeqMissing,

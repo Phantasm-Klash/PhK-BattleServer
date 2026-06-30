@@ -1423,6 +1423,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "version_incompatible";
         case InputValidationCode::MatchUnknown:
             return "match_unknown";
+        case InputValidationCode::MatchSettled:
+            return "match_settled";
         case InputValidationCode::MatchMismatch:
             return "match_mismatch";
         case InputValidationCode::PlayerUnknown:

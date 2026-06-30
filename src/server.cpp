@@ -106,6 +106,13 @@ InputValidationResult EventCursorAheadResult() {
     return result;
 }
 
+InputValidationResult MatchSettledResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::MatchSettled;
+    result.reason = "match_settled";
+    return result;
+}
+
 std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& payload_json) {
     constexpr const char* kCursorField = "\"last_seen_event_cursor\"";
     const std::string field(kCursorField);
@@ -440,6 +447,10 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "match_unknown";
         return result;
     }
+    if (result_hash_by_match_.find(packet.header.match_id) != result_hash_by_match_.end()) {
+        result.reason = "match_settled";
+        return result;
+    }
     const auto session_validation = ValidateEncryptedSession(packet.header);
     if (!session_validation.ok) {
         result.reason = session_validation.reason;
@@ -559,6 +570,9 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
         result.reason = "match_unknown";
         return result;
     }
+    if (result_hash_by_match_.find(action.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
+    }
     if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
         return UnknownPlayerResult();
     }
@@ -589,6 +603,9 @@ bool BattleServer::ConfigureTransferableCard(
     if (simulation_it == simulations_by_match_.end()) {
         return false;
     }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return false;
+    }
     return simulation_it->second.ConfigureTransferableCard(std::move(card));
 }
 
@@ -599,6 +616,9 @@ InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
         return result;
+    }
+    if (result_hash_by_match_.find(input.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, input.match_id, input.player_id)) {
         return UnknownPlayerResult();
@@ -613,6 +633,9 @@ InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& act
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
         return result;
+    }
+    if (result_hash_by_match_.find(action.match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, action.match_id, action.player_id)) {
         return UnknownPlayerResult();
@@ -640,6 +663,9 @@ InputValidationResult BattleServer::SetPlayerConnected(
         result.reason = "match_unknown";
         return result;
     }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return MatchSettledResult();
+    }
     return simulation_it->second.SetPlayerConnected(player_id, connected);
 }
 
@@ -649,6 +675,10 @@ BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
         BattleSnapshot snapshot;
         snapshot.match_id = match_id;
         snapshot.snapshot_kind = "match_unknown";
+        return snapshot;
+    }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        BattleSnapshot snapshot = simulation_it->second.Snapshot("match_settled");
         return snapshot;
     }
     return simulation_it->second.Tick();

@@ -2192,6 +2192,48 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto submitted = server.SubmitBattleResult(built_result.signed_result);
     CHECK_TRUE(submitted.ok);
     CHECK_TRUE(!submitted.duplicate);
+    const auto settled_summary = server.MatchReplaySummary("match-001");
+
+    const auto input_after_settle = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
+    CHECK_TRUE(!input_after_settle.ok);
+    CHECK_EQ(input_after_settle.reason, std::string("match_settled"));
+    auto ready_after_settle = MakeModeAction(2);
+    ready_after_settle.tick = 2;
+    ready_after_settle.seq = 2;
+    ready_after_settle.action_id = "ready-after-settle";
+    ready_after_settle.action_type = "ready";
+    ready_after_settle.payload_json = "{\"ready\":true}";
+    const auto mode_action_after_settle = server.AcceptModeAction(ready_after_settle);
+    CHECK_TRUE(!mode_action_after_settle.ok);
+    CHECK_EQ(mode_action_after_settle.reason, std::string("match_settled"));
+    const auto disconnect_after_settle = server.SetPlayerConnected("match-001", "p1", false);
+    CHECK_TRUE(!disconnect_after_settle.ok);
+    CHECK_EQ(disconnect_after_settle.reason, std::string("match_settled"));
+    phk::battle::TransferableCardState card_after_settle;
+    card_after_settle.card_instance_id = "card-after-settle";
+    card_after_settle.owner_player_id = "p1";
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", card_after_settle));
+    phk::battle::BattleEncryptedPacket encrypted_after_settle;
+    encrypted_after_settle.header.match_id = "match-001";
+    encrypted_after_settle.header.player_id = "p1";
+    encrypted_after_settle.header.tick = 2;
+    encrypted_after_settle.header.seq = 2;
+    encrypted_after_settle.header.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(encrypted_after_settle.header);
+    encrypted_after_settle.ciphertext = {1, 2, 3};
+    encrypted_after_settle.auth_tag = std::vector<std::uint8_t>(16, 7);
+    const auto encrypted_dispatch_after_settle = server.DispatchEncrypted(encrypted_after_settle);
+    CHECK_TRUE(!encrypted_dispatch_after_settle.ok);
+    CHECK_EQ(encrypted_dispatch_after_settle.reason, std::string("match_settled"));
+
+    const auto tick_after_settle = server.TickMatch("match-001");
+    CHECK_EQ(tick_after_settle.snapshot_kind, std::string("match_settled"));
+    CHECK_EQ(tick_after_settle.snapshot_tick, settled_summary.final_tick);
+    const auto summary_after_settle_mutations = server.MatchReplaySummary("match-001");
+    CHECK_EQ(summary_after_settle_mutations.final_tick, settled_summary.final_tick);
+    CHECK_EQ(summary_after_settle_mutations.input_count, settled_summary.input_count);
+    CHECK_EQ(summary_after_settle_mutations.event_count, settled_summary.event_count);
+    CHECK_EQ(summary_after_settle_mutations.final_state_hash, settled_summary.final_state_hash);
 
     const auto retired = server.RetireMatch("match-001");
     CHECK_TRUE(retired.ok);

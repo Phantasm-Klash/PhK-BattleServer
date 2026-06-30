@@ -8,6 +8,12 @@ Status date: 2026-06-30
 - `BattleServer::SubmitBattleResult` binds these fields back to the final replay snapshot, and `BattleResultVerifier` rejects forged Boss readiness/capacity result material with dedicated mismatch reasons.
 - This is audit/settlement context for Nakama/Go only; the C++ battle server still does not persist Boss HP, rewards, inventory, wallet, or business database state.
 
+## 2026-06-30 Settled Match Freeze Boundary
+
+- Once a signed battle result is accepted, the server facade now freezes that match until `RetireMatch` clears it.
+- Post-settlement input, mode actions, reconnect-style decoded actions, connection-state mutation, transferable-card configuration, encrypted dispatch, and tick advancement are rejected or held with `match_settled`, preserving the signed replay/hash material.
+- Read-only snapshot and replay summary access remain available before retirement for business-server audit; retired matches still reject new tickets as `match_retired`.
+
 ## 2026-06-30 Boss Max HP Result Binding
 
 - Development Boss result projection now includes server-owned `boss_max_hp` alongside current HP and damage totals.
