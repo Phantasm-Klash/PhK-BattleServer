@@ -629,6 +629,7 @@ def main() -> int:
         or "dev_result_signature_mismatch" not in result_impl
         or "DevBattleResultSignatureHex" not in result_impl
         or "reward_projection_mutation_forbidden" not in result_impl
+        or "mode_result_mutation_forbidden" not in result_impl
     ):
         print("result boundary missing ruleset/hash/replay/cursor/tick/count/trace/digest/signature verification or projection-only result shape", file=sys.stderr)
         return 1
@@ -763,6 +764,7 @@ def main() -> int:
         or "replay_fixture_hash_mismatch" not in tests_text
         or "battle_result_owner_mismatch" not in tests_text
         or "match_seed_mismatch" not in tests_text
+        or "mode_result_mutation_forbidden" not in tests_text
         or "tampered_fixture_seed" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
