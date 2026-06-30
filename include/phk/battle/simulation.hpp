@@ -214,6 +214,7 @@ private:
     };
 
     [[nodiscard]] std::uint64_t MixSeed(std::uint64_t value) const;
+    [[nodiscard]] bool BossReadyToStartForTick(std::uint64_t tick) const;
     [[nodiscard]] std::string CanonicalStateHash() const;
     [[nodiscard]] BattleInput InputForTick(const PlayerState& player) const;
     void ApplyInput(PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
@@ -245,6 +246,7 @@ private:
     std::uint64_t boss_damage_total_ = 0;
     std::uint64_t boss_defeated_tick_ = 0;
     std::uint64_t transfer_card_count_ = 0;
+    bool boss_combat_started_ = false;
     bool has_last_mode_action_ = false;
     BattleModeAction last_mode_action_;
     std::map<std::string, PlayerState> players_;
