@@ -461,6 +461,12 @@ def main() -> int:
         or "decoded_mode_action_header_mismatch" not in server_impl
         or "handshake_required" not in server_impl
         or "handshake_accepted" not in server_impl
+        or "ValidateEncryptedSession" not in server_impl
+        or "handshake_transcript_missing" not in server_impl
+        or "session_aead_missing" not in server_impl
+        or "session_key_missing" not in server_impl
+        or "session_direction_key_reuse" not in server_impl
+        or "server_to_client_key_id" not in server_impl
         or "client_to_server_key_ref" not in server_impl
         or "session_key_mismatch" not in server_impl
         or "IsSnapshotAckBoundPayload" not in server_impl
@@ -659,6 +665,8 @@ def main() -> int:
         or "final_state_hash_mismatch" not in tests_text
         or "handshake_required" not in tests_text
         or "client_to_server_key_ref" not in tests_text
+        or "server_to_client_key_ref" not in tests_text
+        or "outbound_key_result" not in tests_text
         or "DecodedPayloadHeaderBinding" not in tests_text
         or "DecodedBattlePacketAdapterBoundary" not in tests_text
         or "DecodedBattlePacketAdapter adapter(server)" not in tests_text

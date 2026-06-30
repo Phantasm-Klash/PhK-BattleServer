@@ -60,6 +60,11 @@ bool IsClientToServerEncryptedPayload(BattlePayloadType payload_type) {
         payload_type == BattlePayloadType::Reconnect;
 }
 
+bool IsSupportedNegotiatedAead(const std::string& selected_aead) {
+    return selected_aead == "CHACHA20_POLY1305" ||
+        selected_aead == "XCHACHA20_POLY1305";
+}
+
 InputValidationResult UnknownPlayerResult() {
     InputValidationResult result;
     result.code = InputValidationCode::PlayerUnknown;
@@ -407,21 +412,9 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         result.reason = "match_unknown";
         return result;
     }
-    const BattleSessionRecord* session = SessionForPlayer(
-        sessions_by_ticket_,
-        packet.header.match_id,
-        packet.header.player_id
-    );
-    if (session == nullptr) {
-        result.reason = "player_unknown";
-        return result;
-    }
-    if (!session->handshake_accepted) {
-        result.reason = "handshake_required";
-        return result;
-    }
-    if (packet.header.key_id != session->key_id) {
-        result.reason = "session_key_mismatch";
+    const auto session_validation = ValidateEncryptedSession(packet.header);
+    if (!session_validation.ok) {
+        result.reason = session_validation.reason;
         return result;
     }
     if (IsSnapshotAckBoundPayload(packet.header.payload_type)) {
@@ -454,6 +447,51 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
         }
     }
     return dispatcher_.DispatchEncrypted(packet);
+}
+
+EncryptedSessionValidation BattleServer::ValidateEncryptedSession(
+    const BattlePacketHeader& header
+) const {
+    EncryptedSessionValidation result;
+    const BattleSessionRecord* session = SessionForPlayer(
+        sessions_by_ticket_,
+        header.match_id,
+        header.player_id
+    );
+    if (session == nullptr) {
+        result.reason = "player_unknown";
+        return result;
+    }
+    if (!session->handshake_accepted) {
+        result.reason = "handshake_required";
+        return result;
+    }
+    if (session->handshake_transcript_hash.size() != 32 ||
+        !IsHex(session->handshake_transcript_hash)) {
+        result.reason = "handshake_transcript_missing";
+        return result;
+    }
+    if (!IsSupportedNegotiatedAead(session->selected_aead)) {
+        result.reason = "session_aead_missing";
+        return result;
+    }
+    if (session->key_id.empty() || session->server_to_client_key_id.empty()) {
+        result.reason = "session_key_missing";
+        return result;
+    }
+    if (session->key_id == session->server_to_client_key_id) {
+        result.reason = "session_direction_key_reuse";
+        return result;
+    }
+    if (header.key_id != session->key_id) {
+        result.reason = "session_key_mismatch";
+        return result;
+    }
+
+    result.ok = true;
+    result.reason = "ok";
+    result.session = session;
+    return result;
 }
 
 InputValidationResult BattleServer::AcceptDecodedInput(

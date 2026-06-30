@@ -36,6 +36,12 @@ struct BattleSessionRecord {
     bool handshake_accepted = false;
 };
 
+struct EncryptedSessionValidation {
+	bool ok = false;
+	std::string reason;
+	const BattleSessionRecord* session = nullptr;
+};
+
 struct RegisterTicketResult {
 	bool ok = false;
 	std::string reason;
@@ -124,6 +130,9 @@ public:
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
 
 private:
+	[[nodiscard]] EncryptedSessionValidation ValidateEncryptedSession(
+		const BattlePacketHeader& header
+	) const;
 	[[nodiscard]] std::uint64_t DeriveMatchSeed(const std::string& match_id) const;
 	[[nodiscard]] std::int32_t InitialPlayerX(std::size_t player_index) const;
 

@@ -1799,6 +1799,13 @@ bool TestServerEncryptedPacketSessionBoundary() {
     CHECK_TRUE(!ticket_key_result.ok);
     CHECK_EQ(ticket_key_result.reason, std::string("session_key_mismatch"));
 
+    auto outbound_key_packet = packet;
+    outbound_key_packet.header.key_id = accept.server_to_client_key_ref;
+    RefreshDevAeadNonce(outbound_key_packet.header);
+    const auto outbound_key_result = server.DispatchEncrypted(outbound_key_packet);
+    CHECK_TRUE(!outbound_key_result.ok);
+    CHECK_EQ(outbound_key_result.reason, std::string("session_key_mismatch"));
+
     packet.header.key_id = accept.client_to_server_key_ref;
     RefreshDevAeadNonce(packet.header);
     const auto accepted = server.DispatchEncrypted(packet);

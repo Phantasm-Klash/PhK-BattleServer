@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Negotiated Encrypted Session Boundary
+
+- `BattleServer::DispatchEncrypted` now routes inbound encrypted packets through a negotiated-session validation helper before dispatcher seq/nonce state can advance.
+- The validation keeps ticket registration separate from real session readiness: an accepted handshake must leave transcript material, a supported ChaCha20-Poly1305-compatible AEAD label, non-empty directional key refs, and distinct client-to-server/server-to-client key material.
+- CTest and `tools/check_battle_server.py` now gate this scaffold through inbound server-to-client key rejection and implementation fingerprints for transcript, AEAD, and directional-key checks while real X25519/HKDF/AEAD remains pending.
+
 ## 2026-06-30 Decoded Reconnect Adapter Boundary
 
 - `BattleServer::AcceptDecodedReconnectModeAction` now models the future protobuf decode handoff for reconnect packets separately from normal mode actions.
