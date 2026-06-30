@@ -212,6 +212,15 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
         ++token_start;
     }
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    if (token_start < payload_json.size() &&
+        payload_json[token_start] != ',' &&
+        payload_json[token_start] != '}') {
+        return std::nullopt;
+    }
     return negative ? -value : value;
 }
 

@@ -1196,6 +1196,12 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!cast_card_bad_slot_result.ok);
     CHECK_EQ(cast_card_bad_slot_result.reason, std::string("cast_card_slot_invalid"));
 
+    auto cast_card_fractional_slot = cast_card_missing_slot;
+    cast_card_fractional_slot.payload_json = "{\"card_slot\":1.5}";
+    const auto cast_card_fractional_slot_result = first.AcceptModeAction(cast_card_fractional_slot);
+    CHECK_TRUE(!cast_card_fractional_slot_result.ok);
+    CHECK_EQ(cast_card_fractional_slot_result.reason, std::string("cast_card_slot_missing"));
+
     auto cast_card_forged_damage = cast_card_missing_slot;
     cast_card_forged_damage.payload_json = "{\"card_slot\":1,\"damage\":999,\"boss_hp\":0}";
     const auto cast_card_forged_damage_result = first.AcceptModeAction(cast_card_forged_damage);
@@ -1459,6 +1465,12 @@ bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
     const auto invalid_candidate_result = simulation.AcceptModeAction(invalid_candidate);
     CHECK_TRUE(!invalid_candidate_result.ok);
     CHECK_EQ(invalid_candidate_result.reason, std::string("select_round_card_candidate_invalid"));
+
+    auto fractional_candidate = missing_candidate;
+    fractional_candidate.payload_json = "{\"candidate_index\":1.5}";
+    const auto fractional_candidate_result = simulation.AcceptModeAction(fractional_candidate);
+    CHECK_TRUE(!fractional_candidate_result.ok);
+    CHECK_EQ(fractional_candidate_result.reason, std::string("select_round_card_candidate_missing"));
 
     auto forged_candidate = missing_candidate;
     forged_candidate.payload_json = "{\"candidate_index\":1,\"reward\":\"grant\"}";

@@ -811,12 +811,14 @@ def main() -> int:
         or "disconnected_card_action" not in tests_text
         or "cast_card_slot_missing" not in tests_text
         or "cast_card_slot_invalid" not in tests_text
+        or '\\"card_slot\\":1.5' not in tests_text
         or "mode_action_authority_field_forbidden" not in tests_text
         or '\\"card_slot\\":1,\\"damage\\":999,\\"boss_hp\\":0' not in tests_text
         or "BattleRoyaleSelectRoundCardPayloadBoundary" not in tests_text
         or "select_round_card_mode_unsupported" not in tests_text
         or "select_round_card_candidate_missing" not in tests_text
         or "select_round_card_candidate_invalid" not in tests_text
+        or '\\"candidate_index\\":1.5' not in tests_text
         or '\\"candidate_index\\":1,\\"reward\\":\\"grant\\"' not in tests_text
         or "transfer_card_not_authorized" not in tests_text
         or "transfer_card_mode_unsupported" not in tests_text
