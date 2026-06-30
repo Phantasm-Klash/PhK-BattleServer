@@ -2053,6 +2053,9 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_instance_surviving_player_count\":2") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_instance_clear_credit\":1") != std::string::npos);
+    CHECK_TRUE(mode_result_json.find("\"boss_instance_result_state\":\"cleared\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"transfer_card_count\":1") != std::string::npos);
     CHECK_TRUE(
         mode_result_json.find("\"transfer_card_edges_material\":\"instance-card-001:p1>p2:p1:1:1:1;\"") !=
@@ -2087,8 +2090,77 @@ bool TestBossModeResultProjection() {
     const auto incomplete_result_json = phk::battle::DevModeResultJsonFromReplayFixture(
         incomplete_simulation.BuildReplayFixture("user-boss-incomplete")
     );
-    CHECK_TRUE(incomplete_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
-    CHECK_TRUE(incomplete_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_clear_status\":\"failed\"") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_result_disposition\":\"instance_failed\"") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_instance_surviving_player_count\":1") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_instance_clear_credit\":0") != std::string::npos);
+    CHECK_TRUE(incomplete_result_json.find("\"boss_instance_result_state\":\"failed\"") != std::string::npos);
+    return true;
+}
+
+bool TestInstanceBossResultStateMutualExclusion() {
+    phk::battle::SimulationConfig failed_config;
+    failed_config.match_id = "match-instance-boss-final-failed";
+    failed_config.mode_id = "instance_boss";
+    failed_config.spawn_period_ticks = 1000;
+    failed_config.boss_max_hp = 100;
+    phk::battle::BattleSimulation failed_simulation(failed_config);
+    CHECK_TRUE(failed_simulation.AddPlayer("p1", 0, -60000));
+    const auto running_snapshot = failed_simulation.Snapshot();
+    CHECK_EQ(running_snapshot.mode_state.at("boss_clear_status"), std::string("running"));
+    CHECK_EQ(running_snapshot.mode_state.at("boss_result_disposition"), std::string("instance_incomplete"));
+    CHECK_EQ(running_snapshot.mode_state.at("boss_instance_result_state"), std::string("running"));
+    const auto failed_fixture = failed_simulation.BuildReplayFixture("user-instance-failed");
+    CHECK_EQ(failed_fixture.final_snapshot.mode_state.at("boss_clear_status"), std::string("failed"));
+    CHECK_EQ(
+        failed_fixture.final_snapshot.mode_state.at("boss_result_disposition"),
+        std::string("instance_failed")
+    );
+    CHECK_EQ(failed_fixture.final_snapshot.mode_state.at("boss_instance_result_state"), std::string("failed"));
+    CHECK_EQ(failed_fixture.final_snapshot.mode_state.at("boss_instance_surviving_player_count"), std::string("1"));
+    CHECK_EQ(failed_fixture.final_snapshot.mode_state.at("boss_instance_clear_credit"), std::string("0"));
+
+    phk::battle::SimulationConfig cleared_config = failed_config;
+    cleared_config.match_id = "match-instance-boss-final-cleared";
+    cleared_config.boss_max_hp = 10;
+    phk::battle::BattleSimulation cleared_simulation(cleared_config);
+    CHECK_TRUE(cleared_simulation.AddPlayer("p1", 0, -60000));
+    auto shoot = MakeInput("p1", 1, 1, 0);
+    shoot.match_id = cleared_config.match_id;
+    shoot.shoot = true;
+    CHECK_TRUE(cleared_simulation.AcceptInput(shoot).ok);
+    CHECK_EQ(cleared_simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
+    const auto cleared_fixture = cleared_simulation.BuildReplayFixture("user-instance-cleared");
+    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
+    CHECK_EQ(
+        cleared_fixture.final_snapshot.mode_state.at("boss_result_disposition"),
+        std::string("instance_cleared")
+    );
+    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_result_state"), std::string("cleared"));
+    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_surviving_player_count"), std::string("1"));
+    CHECK_EQ(cleared_fixture.final_snapshot.mode_state.at("boss_instance_clear_credit"), std::string("1"));
+
+    phk::battle::SimulationConfig no_survivor_config = failed_config;
+    no_survivor_config.match_id = "match-instance-boss-no-survivor";
+    no_survivor_config.boss_max_hp = 10;
+    phk::battle::BattleSimulation no_survivor_simulation(no_survivor_config);
+    CHECK_TRUE(no_survivor_simulation.AddPlayer("p1", 0, -60000));
+    shoot.match_id = no_survivor_config.match_id;
+    shoot.tick = 1;
+    shoot.seq = 1;
+    CHECK_TRUE(no_survivor_simulation.AcceptInput(shoot).ok);
+    CHECK_EQ(no_survivor_simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
+    CHECK_TRUE(no_survivor_simulation.SetPlayerConnected("p1", false).ok);
+    const auto no_survivor_fixture = no_survivor_simulation.BuildReplayFixture("user-instance-no-survivor");
+    CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_defeated"), std::string("1"));
+    CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_clear_status"), std::string("failed"));
+    CHECK_EQ(
+        no_survivor_fixture.final_snapshot.mode_state.at("boss_result_disposition"),
+        std::string("instance_failed")
+    );
+    CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_instance_result_state"), std::string("failed"));
+    CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_instance_surviving_player_count"), std::string("0"));
+    CHECK_EQ(no_survivor_fixture.final_snapshot.mode_state.at("boss_instance_clear_credit"), std::string("0"));
     return true;
 }
 
@@ -2217,8 +2289,17 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"running\"") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_incomplete\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"failed\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_failed\"") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_instance_surviving_player_count\":4") !=
+        std::string::npos
+    );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_instance_clear_credit\":0") != std::string::npos);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_instance_result_state\":\"failed\"") !=
+        std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":2") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
@@ -2487,6 +2568,45 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto wrong_disposition_result = server.SubmitBattleResult(wrong_disposition);
     CHECK_TRUE(!wrong_disposition_result.ok);
     CHECK_EQ(wrong_disposition_result.reason, std::string("boss_result_disposition_mismatch"));
+
+    auto wrong_instance_survivors = built.signed_result;
+    wrong_instance_survivors.result.mode_result_json = ReplaceFirst(
+        wrong_instance_survivors.result.mode_result_json,
+        "\"boss_instance_surviving_player_count\":4",
+        "\"boss_instance_surviving_player_count\":0"
+    );
+    const auto wrong_instance_survivors_result = server.SubmitBattleResult(wrong_instance_survivors);
+    CHECK_TRUE(!wrong_instance_survivors_result.ok);
+    CHECK_EQ(
+        wrong_instance_survivors_result.reason,
+        std::string("boss_instance_surviving_player_count_mismatch")
+    );
+
+    auto wrong_instance_clear_credit = built.signed_result;
+    wrong_instance_clear_credit.result.mode_result_json = ReplaceFirst(
+        wrong_instance_clear_credit.result.mode_result_json,
+        "\"boss_instance_clear_credit\":0",
+        "\"boss_instance_clear_credit\":1"
+    );
+    const auto wrong_instance_clear_credit_result = server.SubmitBattleResult(wrong_instance_clear_credit);
+    CHECK_TRUE(!wrong_instance_clear_credit_result.ok);
+    CHECK_EQ(
+        wrong_instance_clear_credit_result.reason,
+        std::string("boss_instance_clear_credit_mismatch")
+    );
+
+    auto wrong_instance_result_state = built.signed_result;
+    wrong_instance_result_state.result.mode_result_json = ReplaceJsonStringField(
+        wrong_instance_result_state.result.mode_result_json,
+        "boss_instance_result_state",
+        "cleared"
+    );
+    const auto wrong_instance_result_state_result = server.SubmitBattleResult(wrong_instance_result_state);
+    CHECK_TRUE(!wrong_instance_result_state_result.ok);
+    CHECK_EQ(
+        wrong_instance_result_state_result.reason,
+        std::string("boss_instance_result_state_mismatch")
+    );
 
     auto wrong_transfer_count = built.signed_result;
     wrong_transfer_count.result.mode_result_json = ReplaceFirst(
@@ -4308,6 +4428,7 @@ int main() {
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
+        {"InstanceBossResultStateMutualExclusion", TestInstanceBossResultStateMutualExclusion},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},

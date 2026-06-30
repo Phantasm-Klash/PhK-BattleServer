@@ -956,6 +956,18 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_defeated_tick = std::stoull(mode_state.at("boss_defeated_tick"));
         options.required_boss_clear_status = mode_state.at("boss_clear_status");
         options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
+        const auto instance_survivors = mode_state.find("boss_instance_surviving_player_count");
+        if (instance_survivors != mode_state.end()) {
+            options.required_boss_instance_surviving_player_count = std::stoull(instance_survivors->second);
+        }
+        const auto instance_clear_credit = mode_state.find("boss_instance_clear_credit");
+        if (instance_clear_credit != mode_state.end()) {
+            options.required_boss_instance_clear_credit = std::stoull(instance_clear_credit->second);
+        }
+        const auto instance_result_state = mode_state.find("boss_instance_result_state");
+        if (instance_result_state != mode_state.end()) {
+            options.required_boss_instance_result_state = instance_result_state->second;
+        }
         for (const auto& player : replay_fixture.final_snapshot.players) {
             const auto damage_it = mode_state.find("boss_damage_" + player.player_id);
             if (damage_it != mode_state.end()) {
