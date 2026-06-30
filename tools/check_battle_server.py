@@ -745,8 +745,12 @@ def main() -> int:
         or "final_snapshot_event_cursor_mismatch" not in tests_text
         or '"final_snapshot_kind\\":\\"replay_final\\"' not in tests_text
         or "tampered_stream" not in tests_text
+        or "tampered_owner" not in tests_text
         or "tampered_loadout" not in tests_text
         or "tampered_settlement" not in tests_text
+        or "tampered_settlement_match" not in tests_text
+        or "tampered_settlement_mode" not in tests_text
+        or "tampered_settlement_replay" not in tests_text
         or "tampered_fixture_snapshot" not in tests_text
         or "tampered_fixture_player" not in tests_text
         or "tampered_fixture_bullet" not in tests_text
