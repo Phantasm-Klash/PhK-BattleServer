@@ -77,6 +77,7 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_boss_min_players = 0;
     std::uint64_t required_boss_max_players = 0;
     std::uint64_t required_boss_registered_player_count = 0;
+    std::uint64_t required_boss_layout_player_count = 0;
     std::uint64_t required_boss_start_ready = 0;
     std::uint64_t required_boss_ready_player_count = 0;
     std::uint64_t required_boss_all_registered_connected = 0;

@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Layout Count Result Binding
+
+- Boss snapshots and development result projection now carry `boss_layout_player_count`, binding the server-selected Boss ring layout size alongside registered player count and per-player spawn slots.
+- `BattleServer::SubmitBattleResult` rejects forged layout-count result material before accepting a signed callback, so Nakama/Go can audit that Boss replay/result layout metadata came from the C++ final snapshot.
+- This remains replay/result audit material only. The C++ battle server still does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Registered Readiness Audit Boundary
 
 - Boss snapshots and development result projection now carry `boss_registered_player_count`, `boss_all_registered_connected`, and `boss_all_registered_ready` alongside the existing connected/ready/start fields.

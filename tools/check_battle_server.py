@@ -442,6 +442,7 @@ def main() -> int:
         or "world_damage_report" not in simulation_impl
         or "instance_incomplete" not in simulation_impl
         or '"boss_player_" + player.player_id + "_spawn_slot"' not in simulation_impl
+        or '"boss_layout_player_count"' not in simulation_impl
         or "BossSpawnSlotName" not in simulation_impl
         or "pending_transfer_card_authority_by_action_id_" not in simulation_impl
         or 'snapshot.mode_state["last_transfer_authority_owner_player_id"]' not in simulation_impl
@@ -553,6 +554,7 @@ def main() -> int:
         or "options.required_boss_current_hp" not in server_impl
         or "options.required_boss_damage_total" not in server_impl
         or "options.required_boss_spawn_slot_by_player" not in server_impl
+        or "options.required_boss_layout_player_count" not in server_impl
         or "options.required_boss_fire_target_by_player" not in server_impl
         or "options.required_boss_defeated" not in server_impl
         or "options.required_boss_defeated_tick" not in server_impl
@@ -613,6 +615,7 @@ def main() -> int:
         or "boss_current_hp_mismatch" not in result_impl
         or "boss_damage_total_mismatch" not in result_impl
         or "boss_player_spawn_slot_mismatch" not in result_impl
+        or "boss_layout_player_count_mismatch" not in result_impl
         or "boss_player_fire_target_mismatch" not in result_impl
         or "boss_defeated_mismatch" not in result_impl
         or "boss_defeated_tick_mismatch" not in result_impl
