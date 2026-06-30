@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-06-30 Boss Pending Config Retirement Audit
+
+- `RetireMatchResult` now reports pending Boss config counts before and after settled-match cleanup, matching configure, ticket registration, and cancellation lifecycle result fields.
+- CTest covers normal retirement, repeated retirement, and missing-match retirement as zero-pending structured status, so settled cleanup can prove it does not leave unconsumed Boss config material.
+- This remains compact in-memory lifecycle audit material only. It does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Boss Pending Config Cancellation Audit
 
 - `CancelMatchResult` now reports pending Boss config counts before and after cancellation, alongside existing active session/match cleanup fields.
