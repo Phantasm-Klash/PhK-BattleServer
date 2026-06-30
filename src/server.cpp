@@ -108,6 +108,17 @@ bool IsAllowedBossFriendlyFirePolicy(const std::string& policy) {
         policy == "all_friendly_fire";
 }
 
+bool IsAllowedBossIdentityChar(char ch) {
+    const auto byte = static_cast<unsigned char>(ch);
+    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == ':' || ch == '.';
+}
+
+bool IsValidOptionalBossIdentityField(const std::string& value) {
+    return value.empty() ||
+        (value.size() <= kDefaultMaxBossIdentityBytes &&
+            std::all_of(value.begin(), value.end(), IsAllowedBossIdentityChar));
+}
+
 bool BossMatchReadyForResult(const BattleSimulation& simulation) {
     if (!IsBossMode(simulation.Config().mode_id)) {
         return true;
@@ -355,6 +366,18 @@ ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_c
     }
     if (pending_boss_config_by_match_.find(boss_config.match_id) != pending_boss_config_by_match_.end()) {
         result.reason = "boss_config_already_pending";
+        return finish();
+    }
+    if (!IsValidOptionalBossIdentityField(boss_config.boss_instance_id)) {
+        result.reason = "boss_instance_id_invalid";
+        return finish();
+    }
+    if (!IsValidOptionalBossIdentityField(boss_config.boss_season_id)) {
+        result.reason = "boss_season_id_invalid";
+        return finish();
+    }
+    if (!IsValidOptionalBossIdentityField(boss_config.boss_phase_id)) {
+        result.reason = "boss_phase_id_invalid";
         return finish();
     }
     if (!IsAllowedBossFriendlyFirePolicy(boss_config.boss_friendly_fire_policy)) {

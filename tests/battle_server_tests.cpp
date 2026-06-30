@@ -1885,6 +1885,33 @@ bool TestBossMatchPreconfiguration() {
     CHECK_TRUE(!non_boss.ok);
     CHECK_EQ(non_boss.reason, std::string("boss_mode_required"));
 
+    phk::battle::BossMatchConfig invalid_instance_config;
+    invalid_instance_config.match_id = "match-invalid-instance";
+    invalid_instance_config.mode_id = "world_boss";
+    invalid_instance_config.boss_instance_id = "world boss with spaces";
+    const auto invalid_instance = server.ConfigureBossMatch(invalid_instance_config);
+    CHECK_TRUE(!invalid_instance.ok);
+    CHECK_EQ(invalid_instance.reason, std::string("boss_instance_id_invalid"));
+    CHECK_EQ(invalid_instance.pending_boss_configs_after, static_cast<std::size_t>(0));
+
+    phk::battle::BossMatchConfig invalid_season_config;
+    invalid_season_config.match_id = "match-invalid-season";
+    invalid_season_config.mode_id = "world_boss";
+    invalid_season_config.boss_season_id = "season/with/slash";
+    const auto invalid_season = server.ConfigureBossMatch(invalid_season_config);
+    CHECK_TRUE(!invalid_season.ok);
+    CHECK_EQ(invalid_season.reason, std::string("boss_season_id_invalid"));
+    CHECK_EQ(invalid_season.pending_boss_configs_after, static_cast<std::size_t>(0));
+
+    phk::battle::BossMatchConfig invalid_phase_config;
+    invalid_phase_config.match_id = "match-invalid-phase";
+    invalid_phase_config.mode_id = "world_boss";
+    invalid_phase_config.boss_phase_id = "phase#frag";
+    const auto invalid_phase = server.ConfigureBossMatch(invalid_phase_config);
+    CHECK_TRUE(!invalid_phase.ok);
+    CHECK_EQ(invalid_phase.reason, std::string("boss_phase_id_invalid"));
+    CHECK_EQ(invalid_phase.pending_boss_configs_after, static_cast<std::size_t>(0));
+
     phk::battle::BossMatchConfig boss_config;
     boss_config.match_id = "match-001";
     boss_config.mode_id = "world_boss";
