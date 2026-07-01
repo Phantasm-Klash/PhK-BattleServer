@@ -981,8 +981,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             !players_.empty() && connected_player_count == players_.size();
         const bool boss_all_registered_ready =
             boss_all_registered_connected && ready_connected_player_count == players_.size();
-        const std::string boss_lifecycle_state = !boss_start_ready ? "waiting_for_players" :
-            (!boss_all_registered_ready ? "waiting_for_ready" : "start_ready");
+        const std::string boss_lifecycle_state = boss_combat_started_ ? "combat_started" :
+            (!boss_start_ready ? "waiting_for_players" :
+                (!boss_all_registered_ready ? "waiting_for_ready" : "start_ready"));
         snapshot.mode_state["battle_layout"] = "boss_center_ring";
         snapshot.mode_state["boss_center_x_milli"] = "0";
         snapshot.mode_state["boss_center_y_milli"] = "0";
