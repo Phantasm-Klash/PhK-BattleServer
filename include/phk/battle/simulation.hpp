@@ -99,6 +99,10 @@ struct ReplayInputStreamSummaryRecord {
     std::string final_state_hash;
     std::uint64_t match_seed = 0;
     std::uint64_t final_tick = 0;
+    std::uint64_t boss_max_hp = 0;
+    std::uint64_t boss_current_hp = 0;
+    std::uint64_t boss_damage_total = 0;
+    std::uint64_t boss_defeated_tick = 0;
 };
 
 struct ReplayFixture {

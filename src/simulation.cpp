@@ -1287,6 +1287,10 @@ ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
     record.final_state_hash = summary.final_state_hash;
     record.match_seed = summary.match_seed;
     record.final_tick = summary.final_tick;
+    record.boss_max_hp = summary.boss_max_hp;
+    record.boss_current_hp = summary.boss_current_hp;
+    record.boss_damage_total = summary.boss_damage_total;
+    record.boss_defeated_tick = summary.boss_defeated_tick;
     return record;
 }
 
@@ -1477,7 +1481,11 @@ std::string CanonicalReplayInputStreamSummaryRecord(
         << record.event_stream_hash << '|'
         << record.final_state_hash << '|'
         << record.match_seed << '|'
-        << record.final_tick;
+        << record.final_tick << '|'
+        << record.boss_max_hp << '|'
+        << record.boss_current_hp << '|'
+        << record.boss_damage_total << '|'
+        << record.boss_defeated_tick;
     return out.str();
 }
 
