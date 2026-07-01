@@ -5705,14 +5705,21 @@ bool TestDispatcher() {
     CHECK_EQ(forged_result_action_result.reason, std::string("mode_action_client_result_forbidden"));
 
     phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
-    const std::string forged_damage_payload =
-        "{\"action_type\":\"ready\",\"boss_damage\":9999}";
-    const auto forged_damage_action_result = dispatcher.Dispatch(
-        forged_damage_action,
-        std::vector<std::uint8_t>(forged_damage_payload.begin(), forged_damage_payload.end())
-    );
-    CHECK_TRUE(!forged_damage_action_result.ok);
-    CHECK_EQ(forged_damage_action_result.reason, std::string("mode_action_authority_field_forbidden"));
+    const std::vector<std::string> forged_damage_payloads = {
+        "{\"action_type\":\"ready\",\"boss_damage\":9999}",
+        "{\"action_type\":\"ready\",\"current_hp\":0}",
+        "{\"action_type\":\"ready\",\"max_hp\":1}",
+        "{\"action_type\":\"ready\",\"hp_delta\":-999}",
+        "{\"action_type\":\"ready\",\"boss_max_hp\":1}",
+    };
+    for (const auto& forged_damage_payload : forged_damage_payloads) {
+        const auto forged_damage_action_result = dispatcher.Dispatch(
+            forged_damage_action,
+            std::vector<std::uint8_t>(forged_damage_payload.begin(), forged_damage_payload.end())
+        );
+        CHECK_TRUE(!forged_damage_action_result.ok);
+        CHECK_EQ(forged_damage_action_result.reason, std::string("mode_action_authority_field_forbidden"));
+    }
 
     const std::string unsupported_action_payload =
         "{\"action_type\":\"grant_reward\",\"target_player_id\":\"p2\"}";
