@@ -4045,7 +4045,11 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_EQ(cancelled_again.reason, std::string("ok"));
 
     const auto snapshot_after_cancel = server.MatchSnapshot("match-001");
-    CHECK_EQ(snapshot_after_cancel.snapshot_kind, std::string("match_unknown"));
+    CHECK_EQ(snapshot_after_cancel.snapshot_kind, std::string("match_cancelled"));
+    const auto tick_after_cancel = server.TickMatch("match-001");
+    CHECK_EQ(tick_after_cancel.snapshot_kind, std::string("match_cancelled"));
+    const auto reconnect_snapshot_after_cancel = server.ReconnectSnapshot("match-001", "p1", 0);
+    CHECK_EQ(reconnect_snapshot_after_cancel.snapshot_kind, std::string("match_cancelled"));
     const auto ticket_after_cancel = server.RegisterTicket(MakeTicket());
     CHECK_TRUE(!ticket_after_cancel.ok);
     CHECK_EQ(ticket_after_cancel.reason, std::string("match_cancelled"));
@@ -4083,7 +4087,22 @@ bool TestUnsettledMatchCancellationLifecycle() {
 
     const auto input_after_cancel = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
     CHECK_TRUE(!input_after_cancel.ok);
-    CHECK_EQ(input_after_cancel.reason, std::string("match_unknown"));
+    CHECK_EQ(input_after_cancel.reason, std::string("match_cancelled"));
+    auto mode_action_after_cancel = MakeModeAction(2);
+    mode_action_after_cancel.tick = 2;
+    mode_action_after_cancel.seq = 2;
+    const auto mode_action_result_after_cancel = server.AcceptModeAction(mode_action_after_cancel);
+    CHECK_TRUE(!mode_action_result_after_cancel.ok);
+    CHECK_EQ(mode_action_result_after_cancel.reason, std::string("match_cancelled"));
+    const auto connected_after_cancel = server.SetPlayerConnected("match-001", "p1", false);
+    CHECK_TRUE(!connected_after_cancel.ok);
+    CHECK_EQ(connected_after_cancel.reason, std::string("match_cancelled"));
+    const auto result_after_cancel = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!result_after_cancel.ok);
+    CHECK_EQ(result_after_cancel.reason, std::string("match_cancelled"));
+    const auto replay_record_after_cancel = server.BuildReplayRecord("match-001", "user-alice", "stage-dev");
+    CHECK_TRUE(!replay_record_after_cancel.ok);
+    CHECK_EQ(replay_record_after_cancel.reason, std::string("match_cancelled"));
 
     const auto missing_cancel = server.CancelMatch("missing-match");
     CHECK_TRUE(!missing_cancel.ok);
