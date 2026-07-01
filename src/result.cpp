@@ -596,6 +596,11 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_boss_result_fields &&
+        !ContainsJsonUintField(result.mode_result_json, "boss_roster_locked", options.required_boss_roster_locked)) {
+        Fail(verification, "boss_roster_locked_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
         !ContainsJsonStringField(
             result.mode_result_json,
             "boss_lifecycle_state",

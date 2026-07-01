@@ -999,6 +999,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_ready_to_start"] =
             BoolToken(boss_start_ready && boss_all_registered_ready);
         snapshot.mode_state["boss_lifecycle_state"] = boss_lifecycle_state;
+        snapshot.mode_state["boss_roster_locked"] = BoolToken(boss_combat_started_);
         snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
@@ -1580,6 +1581,10 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_lifecycle_state = fixture.final_snapshot.mode_state.find("boss_lifecycle_state");
     if (boss_lifecycle_state != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_lifecycle_state\":" + JsonString(boss_lifecycle_state->second);
+    }
+    const auto boss_roster_locked = fixture.final_snapshot.mode_state.find("boss_roster_locked");
+    if (boss_roster_locked != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_roster_locked\":" + boss_roster_locked->second;
     }
     const auto connected_player_count = fixture.final_snapshot.mode_state.find("connected_player_count");
     if (boss_scope != fixture.final_snapshot.mode_state.end() &&

@@ -3701,6 +3701,7 @@ bool TestBossRosterLocksAfterReadyToStart() {
         CHECK_TRUE(server.AcceptModeAction(ready).ok);
     }
     CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("boss_roster_locked"), std::string("1"));
 
     const auto late_join = server.RegisterTicket(MakeModeTicket(
         "ticket-roster-lock-late",
@@ -3719,8 +3720,23 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
-    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
+    const auto disconnected_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(disconnected_result.ok);
+    CHECK_TRUE(
+        disconnected_result.signed_result.result.mode_result_json.find("\"boss_roster_locked\":1") !=
+        std::string::npos
+    );
+    auto wrong_roster_lock = disconnected_result.signed_result;
+    wrong_roster_lock.result.mode_result_json = ReplaceFirst(
+        wrong_roster_lock.result.mode_result_json,
+        "\"boss_roster_locked\":1",
+        "\"boss_roster_locked\":0"
+    );
+    const auto wrong_roster_lock_result = server.SubmitBattleResult(wrong_roster_lock);
+    CHECK_TRUE(!wrong_roster_lock_result.ok);
+    CHECK_EQ(wrong_roster_lock_result.reason, std::string("boss_roster_locked_mismatch"));
     const auto disconnected_late_join = server.RegisterTicket(MakeModeTicket(
         "ticket-roster-lock-disconnected-late",
         "user-roster-lock-disconnected-late",
@@ -3748,6 +3764,7 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_EQ(snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_EQ(snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
     return true;
 }
