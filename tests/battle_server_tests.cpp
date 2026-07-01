@@ -4402,10 +4402,26 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("retired"));
 
     const auto snapshot_after_retire = server.MatchSnapshot("match-001");
-    CHECK_EQ(snapshot_after_retire.snapshot_kind, std::string("match_unknown"));
+    CHECK_EQ(snapshot_after_retire.snapshot_kind, std::string("match_retired"));
+    const auto tick_after_retire = server.TickMatch("match-001");
+    CHECK_EQ(tick_after_retire.snapshot_kind, std::string("match_retired"));
+    const auto reconnect_snapshot_after_retire = server.ReconnectSnapshot(
+        "match-001",
+        "p1",
+        settled_summary.event_count
+    );
+    CHECK_EQ(reconnect_snapshot_after_retire.snapshot_kind, std::string("match_retired"));
     const auto input_after_retire = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
     CHECK_TRUE(!input_after_retire.ok);
-    CHECK_EQ(input_after_retire.reason, std::string("match_unknown"));
+    CHECK_EQ(input_after_retire.reason, std::string("match_retired"));
+    auto action_after_retire = ready_after_settle;
+    action_after_retire.action_id = "ready-after-retire";
+    const auto mode_action_after_retire = server.AcceptModeAction(action_after_retire);
+    CHECK_TRUE(!mode_action_after_retire.ok);
+    CHECK_EQ(mode_action_after_retire.reason, std::string("match_retired"));
+    const auto disconnect_after_retire = server.SetPlayerConnected("match-001", "p1", false);
+    CHECK_TRUE(!disconnect_after_retire.ok);
+    CHECK_EQ(disconnect_after_retire.reason, std::string("match_retired"));
     const auto result_build_after_retire = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(!result_build_after_retire.ok);
     CHECK_EQ(result_build_after_retire.reason, std::string("match_retired"));
