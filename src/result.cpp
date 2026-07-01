@@ -430,6 +430,78 @@ BattleResultVerification BattleResultVerifier::Verify(
         return verification;
     }
     if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "pending_input_tick_count",
+            options.required_pending_input_tick_count
+        )) {
+        Fail(verification, "pending_input_tick_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "pending_input_record_count",
+            options.required_pending_input_record_count
+        )) {
+        Fail(verification, "pending_input_record_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "input_buffer_peak_tick_count",
+            options.required_input_buffer_peak_tick_count
+        )) {
+        Fail(verification, "input_buffer_peak_tick_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "input_buffer_peak_record_count",
+            options.required_input_buffer_peak_record_count
+        )) {
+        Fail(verification, "input_buffer_peak_record_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "pending_mode_action_tick_count",
+            options.required_pending_mode_action_tick_count
+        )) {
+        Fail(verification, "pending_mode_action_tick_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "pending_mode_action_record_count",
+            options.required_pending_mode_action_record_count
+        )) {
+        Fail(verification, "pending_mode_action_record_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "mode_action_buffer_peak_tick_count",
+            options.required_mode_action_buffer_peak_tick_count
+        )) {
+        Fail(verification, "mode_action_buffer_peak_tick_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "mode_action_buffer_peak_record_count",
+            options.required_mode_action_buffer_peak_record_count
+        )) {
+        Fail(verification, "mode_action_buffer_peak_record_count_mismatch");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
         !ContainsJsonUintField(result.mode_result_json, "input_trace_count", options.required_input_trace_count)) {
         Fail(verification, "input_trace_count_mismatch");
         return verification;

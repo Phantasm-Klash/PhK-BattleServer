@@ -48,6 +48,14 @@ struct BattleResultVerificationOptions {
     std::uint64_t required_neutral_fallback_count = 0;
     std::uint64_t required_held_input_fallback_count = 0;
     std::uint64_t required_mode_action_count = 0;
+    std::uint64_t required_pending_input_tick_count = 0;
+    std::uint64_t required_pending_input_record_count = 0;
+    std::uint64_t required_input_buffer_peak_tick_count = 0;
+    std::uint64_t required_input_buffer_peak_record_count = 0;
+    std::uint64_t required_pending_mode_action_tick_count = 0;
+    std::uint64_t required_pending_mode_action_record_count = 0;
+    std::uint64_t required_mode_action_buffer_peak_tick_count = 0;
+    std::uint64_t required_mode_action_buffer_peak_record_count = 0;
     std::uint64_t required_input_trace_count = 0;
     std::uint64_t required_event_trace_count = 0;
     std::uint64_t required_final_snapshot_tick = 0;
