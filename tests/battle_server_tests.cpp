@@ -4318,6 +4318,80 @@ bool TestReplayFixtureBoundary() {
     return true;
 }
 
+bool TestRejectedInputsDoNotMutateReplayAudit() {
+    phk::battle::SimulationConfig config = MakeAuthoritativeReplay60Config("match-replay-reject-audit");
+
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(AddReplayFixturePlayers(simulation));
+    CHECK_TRUE(DriveAuthoritativeReplay60Ticks(simulation));
+
+    const auto baseline_summary = simulation.Summary();
+    const auto baseline_fixture = simulation.BuildReplayFixture("user-alice");
+    const auto baseline_record = simulation.BuildReplayInputStreamSummary("user-alice");
+    const auto baseline_result_hash = ExpectedDevResultHash(baseline_summary);
+    const auto baseline_replay_id = ExpectedDevReplayId(baseline_summary);
+    const auto baseline_fixture_hash = phk::battle::DevReplayFixtureHash(baseline_fixture);
+    const auto baseline_record_hash = phk::battle::DevReplayInputStreamSummaryHash(baseline_record);
+
+    auto old_input = MakeInput("p1", 60, 61, 1u << 3);
+    old_input.match_id = config.match_id;
+    const auto old_input_result = simulation.AcceptInput(old_input);
+    CHECK_TRUE(!old_input_result.ok);
+    CHECK_EQ(old_input_result.reason, std::string("input_tick_too_old"));
+
+    auto replay_seq_input = MakeInput("p1", 61, 60, 1u << 3);
+    replay_seq_input.match_id = config.match_id;
+    const auto replay_seq_result = simulation.AcceptInput(replay_seq_input);
+    CHECK_TRUE(!replay_seq_result.ok);
+    CHECK_EQ(replay_seq_result.reason, std::string("seq_replay"));
+
+    auto invalid_action = MakeModeAction(61);
+    invalid_action.match_id = config.match_id;
+    invalid_action.tick = 61;
+    invalid_action.action_id = "action-forged-result";
+    invalid_action.action_type = "cast_card";
+    invalid_action.payload_json = "{\"card_slot\":1,\"battle_result\":\"forged\"}";
+    const auto invalid_action_result = simulation.AcceptModeAction(invalid_action);
+    CHECK_TRUE(!invalid_action_result.ok);
+    CHECK_EQ(invalid_action_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    auto old_action = MakeModeAction(61);
+    old_action.match_id = config.match_id;
+    old_action.tick = 60;
+    old_action.action_id = "action-old-tick";
+    const auto old_action_result = simulation.AcceptModeAction(old_action);
+    CHECK_TRUE(!old_action_result.ok);
+    CHECK_EQ(old_action_result.reason, std::string("mode_action_tick_too_old"));
+
+    const auto after_summary = simulation.Summary();
+    const auto after_fixture = simulation.BuildReplayFixture("user-alice");
+    const auto after_record = simulation.BuildReplayInputStreamSummary("user-alice");
+
+    CHECK_EQ(after_summary.final_tick, baseline_summary.final_tick);
+    CHECK_EQ(after_summary.input_count, baseline_summary.input_count);
+    CHECK_EQ(after_summary.fallback_input_count, baseline_summary.fallback_input_count);
+    CHECK_EQ(after_summary.neutral_fallback_count, baseline_summary.neutral_fallback_count);
+    CHECK_EQ(after_summary.held_input_fallback_count, baseline_summary.held_input_fallback_count);
+    CHECK_EQ(after_summary.mode_action_count, baseline_summary.mode_action_count);
+    CHECK_EQ(after_summary.event_count, baseline_summary.event_count);
+    CHECK_EQ(after_summary.input_stream_hash, baseline_summary.input_stream_hash);
+    CHECK_EQ(after_summary.event_stream_hash, baseline_summary.event_stream_hash);
+    CHECK_EQ(after_summary.final_state_hash, baseline_summary.final_state_hash);
+    CHECK_TRUE(after_summary.input_trace == baseline_summary.input_trace);
+    CHECK_TRUE(after_summary.event_trace == baseline_summary.event_trace);
+    CHECK_EQ(ExpectedDevResultHash(after_summary), baseline_result_hash);
+    CHECK_EQ(ExpectedDevReplayId(after_summary), baseline_replay_id);
+    CHECK_EQ(phk::battle::DevReplayFixtureHash(after_fixture), baseline_fixture_hash);
+    CHECK_EQ(phk::battle::DevReplayInputStreamSummaryHash(after_record), baseline_record_hash);
+    CHECK_TRUE(after_fixture.input_trace == baseline_fixture.input_trace);
+    CHECK_TRUE(after_fixture.event_trace == baseline_fixture.event_trace);
+    CHECK_EQ(after_fixture.result_hash, baseline_fixture.result_hash);
+    CHECK_EQ(after_record.input_stream_hash, baseline_record.input_stream_hash);
+    CHECK_EQ(after_record.event_stream_hash, baseline_record.event_stream_hash);
+    CHECK_EQ(after_record.final_state_hash, baseline_record.final_state_hash);
+    return true;
+}
+
 bool TestReplayRecordBridgeBoundary() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489640000;
@@ -5791,6 +5865,7 @@ int main() {
         {"UnsettledMatchCancellationLifecycle", TestUnsettledMatchCancellationLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
 		{"ReplayFixtureBoundary", TestReplayFixtureBoundary},
+        {"RejectedInputsDoNotMutateReplayAudit", TestRejectedInputsDoNotMutateReplayAudit},
 		{"ReplayRecordBridgeBoundary", TestReplayRecordBridgeBoundary},
         {"ResultAndReplayRecordUseStablePlayerOrder", TestResultAndReplayRecordUseStablePlayerOrder},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
