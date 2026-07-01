@@ -5613,6 +5613,23 @@ bool TestServerAuthoritativeInputAndSnapshot() {
     CHECK_EQ(forged_result.reason, std::string("mode_action_client_result_forbidden"));
     CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, reconnect_action.action_id);
 
+    const std::vector<std::pair<std::string, std::string>> forbidden_authority_payloads = {
+        {"forged-reward", "{\"reward\":\"card_pack\"}"},
+        {"forged-inventory", "{\"inventory\":{\"card_id\":\"c001\"}}"},
+        {"forged-wallet", "{\"wallet\":{\"currency\":9999}}"},
+        {"forged-settlement", "{\"settlement\":{\"rank\":1}}"},
+    };
+    for (const auto& forbidden_payload : forbidden_authority_payloads) {
+        auto forbidden_action = MakeModeAction(4);
+        forbidden_action.tick = 4;
+        forbidden_action.action_id = forbidden_payload.first;
+        forbidden_action.payload_json = forbidden_payload.second;
+        const auto forbidden_result = server.AcceptModeAction(forbidden_action);
+        CHECK_TRUE(!forbidden_result.ok);
+        CHECK_EQ(forbidden_result.reason, std::string("mode_action_authority_field_forbidden"));
+        CHECK_EQ(server.MatchReplaySummary("match-001").last_mode_action_id, reconnect_action.action_id);
+    }
+
     auto wrong_match = MakeInput("p1", 1, 1, 0);
     wrong_match.match_id = "missing-match";
     const auto missing = server.AcceptInput(wrong_match);
