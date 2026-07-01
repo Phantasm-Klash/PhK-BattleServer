@@ -477,6 +477,12 @@ bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_mi
         return false;
     }
 
+    if (IsBossMode(config_.mode_id)) {
+        const auto spawn_point = BossSpawnPointForIndex(players_.size());
+        x_milli = spawn_point.first;
+        y_milli = spawn_point.second;
+    }
+
     PlayerState player;
     player.player_id = player_id;
     player.x_milli = ClampMilli(x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
@@ -1260,6 +1266,23 @@ ReplayFixture BattleSimulation::BuildReplayFixture(std::string owner_user_id) co
         fixture.player_ids.push_back(item.first);
     }
     return fixture;
+}
+
+std::pair<std::int32_t, std::int32_t> BattleSimulation::BossSpawnPointForIndex(
+    std::size_t player_index
+) const {
+    constexpr std::int32_t kBossSpawnRadiusMilli = 60000;
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 8> kBossSpawnPoints = {{
+        {0, -kBossSpawnRadiusMilli},
+        {kBossSpawnRadiusMilli, 0},
+        {0, kBossSpawnRadiusMilli},
+        {-kBossSpawnRadiusMilli, 0},
+        {42426, -42426},
+        {42426, 42426},
+        {-42426, 42426},
+        {-42426, -42426},
+    }};
+    return kBossSpawnPoints[player_index % kBossSpawnPoints.size()];
 }
 
 std::uint64_t BattleSimulation::MixSeed(std::uint64_t value) const {
