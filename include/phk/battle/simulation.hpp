@@ -221,7 +221,7 @@ private:
     void ApplyBossDamageForInput(const PlayerState& player, const BattleInput& input, std::uint64_t applied_tick);
     void ApplyModeActionsForTick(std::uint64_t tick);
     void ApplyReadyModeAction(const BattleModeAction& action);
-    void ApplyTransferCardModeAction(const BattleModeAction& action);
+    bool ApplyTransferCardModeAction(const BattleModeAction& action);
     [[nodiscard]] std::string TransferCardAuditMaterial() const;
     void SpawnBulletsForTick();
     void AdvanceBullets();

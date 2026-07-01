@@ -1902,7 +1902,9 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
             ApplyReadyModeAction(action);
         }
         if (action.action_type == "transfer_card") {
-            ApplyTransferCardModeAction(action);
+            if (!ApplyTransferCardModeAction(action)) {
+                continue;
+            }
         }
         AccumulateAcceptedModeAction(action);
     }
@@ -1914,24 +1916,40 @@ void BattleSimulation::ApplyReadyModeAction(const BattleModeAction& action) {
     pending_ready_player_ids_.erase(action.player_id);
 }
 
-void BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& action) {
+bool BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& action) {
     const std::string target_player_id = ExtractJsonStringField(action.payload_json, "target_player_id");
     const std::string card_instance_id = ExtractJsonStringField(action.payload_json, "card_instance_id");
     if (target_player_id.empty() || card_instance_id.empty()) {
-        return;
+        return false;
+    }
+
+    auto reject_queued_transfer = [&]() {
+        reserved_transfer_card_instance_ids_.erase(card_instance_id);
+        pending_transfer_card_authority_by_action_id_.erase(action.action_id);
+    };
+
+    const auto source_it = players_.find(action.player_id);
+    const auto target_it = players_.find(target_player_id);
+    if (source_it == players_.end() || target_it == players_.end() ||
+        !source_it->second.connected || !target_it->second.connected) {
+        reject_queued_transfer();
+        return false;
+    }
+    const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
+    if (authority_it == pending_transfer_card_authority_by_action_id_.end()) {
+        reject_queued_transfer();
+        return false;
     }
 
     transferred_card_edges_[card_instance_id] = {action.player_id, target_player_id};
     last_transfer_card_instance_id_ = card_instance_id;
     last_transfer_from_player_id_ = action.player_id;
     last_transfer_to_player_id_ = target_player_id;
-    const auto authority_it = pending_transfer_card_authority_by_action_id_.find(action.action_id);
-    if (authority_it != pending_transfer_card_authority_by_action_id_.end()) {
-        last_transfer_card_authority_ = authority_it->second;
-        transferred_card_authority_by_card_instance_id_[card_instance_id] = authority_it->second;
-        pending_transfer_card_authority_by_action_id_.erase(authority_it);
-    }
+    last_transfer_card_authority_ = authority_it->second;
+    transferred_card_authority_by_card_instance_id_[card_instance_id] = authority_it->second;
+    pending_transfer_card_authority_by_action_id_.erase(authority_it);
     ++transfer_card_count_;
+    return true;
 }
 
 std::string BattleSimulation::TransferCardAuditMaterial() const {

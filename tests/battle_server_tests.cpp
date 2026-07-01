@@ -1945,6 +1945,63 @@ bool TestBossTransferCardValidation() {
     return true;
 }
 
+bool TestBossTransferCardRevalidatesConnectedPlayersAtTick() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-revalidate-1",
+        "user-boss-transfer-revalidate-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899bc01"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-revalidate-2",
+        "user-boss-transfer-revalidate-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899bc02"
+    )).ok);
+
+    phk::battle::TransferableCardState card;
+    card.card_instance_id = "boss-card-revalidate";
+    card.owner_player_id = "p1";
+    CHECK_TRUE(server.ConfigureTransferableCard("match-001", card));
+
+    auto transfer = MakeModeAction(1);
+    transfer.match_id = "match-001";
+    transfer.player_id = "p1";
+    transfer.tick = 1;
+    transfer.seq = 1;
+    transfer.action_id = "action-boss-transfer-revalidate";
+    transfer.action_type = "transfer_card";
+    transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-revalidate\"}";
+    CHECK_TRUE(server.AcceptModeAction(transfer).ok);
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", false).ok);
+    const auto rejected_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(rejected_snapshot.mode_state.at("mode_action_count"), std::string("0"));
+    CHECK_TRUE(rejected_snapshot.mode_state.find("transfer_card_count") == rejected_snapshot.mode_state.end());
+    CHECK_TRUE(rejected_snapshot.mode_state.find("last_transfer_card_instance_id") == rejected_snapshot.mode_state.end());
+    CHECK_EQ(server.MatchReplaySummary("match-001").mode_action_count, static_cast<std::uint64_t>(0));
+
+    CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+    auto retry = transfer;
+    retry.tick = 2;
+    retry.seq = 2;
+    retry.action_id = "action-boss-transfer-revalidate-retry";
+    CHECK_TRUE(server.AcceptModeAction(retry).ok);
+    const auto accepted_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(accepted_snapshot.mode_state.at("mode_action_count"), std::string("1"));
+    CHECK_EQ(accepted_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        accepted_snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-revalidate:p1>p2:p1:1:1:1;")
+    );
+    return true;
+}
+
 bool TestBossModeSpawnLayout() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489605000;
@@ -6118,6 +6175,7 @@ int main() {
         {"BattleRoyaleSelectRoundCardPayloadBoundary", TestBattleRoyaleSelectRoundCardPayloadBoundary},
         {"ModeActionPayloadSizeLimit", TestModeActionPayloadSizeLimit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},
+        {"BossTransferCardRevalidatesConnectedPlayersAtTick", TestBossTransferCardRevalidatesConnectedPlayersAtTick},
 		{"BossModeSpawnLayout", TestBossModeSpawnLayout},
         {"BossMatchPreconfiguration", TestBossMatchPreconfiguration},
         {"BossModeCapacityGuard", TestBossModeCapacityGuard},
