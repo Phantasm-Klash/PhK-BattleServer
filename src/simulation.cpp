@@ -1208,6 +1208,9 @@ ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
     record.owner_user_id = std::move(owner_user_id);
     record.match_id = summary.match_id;
     record.input_count = summary.input_count;
+    record.fallback_input_count = summary.fallback_input_count;
+    record.neutral_fallback_count = summary.neutral_fallback_count;
+    record.held_input_fallback_count = summary.held_input_fallback_count;
     record.event_count = summary.event_count;
     record.input_stream_hash = summary.input_stream_hash;
     record.event_stream_hash = summary.event_stream_hash;
@@ -1370,6 +1373,9 @@ std::string CanonicalReplayInputStreamSummaryRecord(
         << record.owner_user_id << '|'
         << record.match_id << '|'
         << record.input_count << '|'
+        << record.fallback_input_count << '|'
+        << record.neutral_fallback_count << '|'
+        << record.held_input_fallback_count << '|'
         << record.event_count << '|'
         << record.input_stream_hash << '|'
         << record.event_stream_hash << '|'
