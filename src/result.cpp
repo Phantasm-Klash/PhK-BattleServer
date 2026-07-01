@@ -774,7 +774,8 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_boss_result_fields && result.mode_id == "instance_boss" &&
         (ContainsJsonField(result.mode_result_json, "boss_world_persistent_damage_delta") ||
             ContainsJsonField(result.mode_result_json, "boss_world_persistent_hp_after_delta") ||
-            ContainsJsonField(result.mode_result_json, "boss_world_defeat_announcement_required"))) {
+            ContainsJsonField(result.mode_result_json, "boss_world_defeat_announcement_required") ||
+            ContainsJsonField(result.mode_result_json, "boss_world_defeat_announcement_key"))) {
         Fail(verification, "boss_world_persistent_result_field_forbidden");
         return verification;
     }
@@ -806,6 +807,16 @@ BattleResultVerification BattleResultVerifier::Verify(
             options.required_boss_world_defeat_announcement_required
         )) {
         Fail(verification, "boss_world_defeat_announcement_required_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        result.mode_id == "world_boss" &&
+        !ContainsJsonStringField(
+            result.mode_result_json,
+            "boss_world_defeat_announcement_key",
+            options.required_boss_world_defeat_announcement_key
+        )) {
+        Fail(verification, "boss_world_defeat_announcement_key_mismatch");
         return verification;
     }
     if (options.require_boss_result_fields && !options.required_boss_instance_result_state.empty()) {

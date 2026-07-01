@@ -1061,6 +1061,10 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             snapshot.mode_state["boss_world_persistent_damage_delta"] = std::to_string(boss_damage_total_);
             snapshot.mode_state["boss_world_persistent_hp_after_delta"] = std::to_string(boss_current_hp_);
             snapshot.mode_state["boss_world_defeat_announcement_required"] = BoolToken(boss_defeated);
+            snapshot.mode_state["boss_world_defeat_announcement_key"] = boss_defeated ?
+                (config_.boss_instance_id + ":" + config_.boss_season_id + ":" +
+                    config_.boss_phase_id + ":" + std::to_string(boss_defeated_tick_)) :
+                "";
         } else {
             snapshot.mode_state["boss_result_disposition"] = instance_clear_credit ?
                 "instance_cleared" :
@@ -1711,6 +1715,12 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         fixture.final_snapshot.mode_state.find("boss_world_defeat_announcement_required");
     if (boss_world_defeat_announcement_required != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_world_defeat_announcement_required\":" + boss_world_defeat_announcement_required->second;
+    }
+    const auto boss_world_defeat_announcement_key =
+        fixture.final_snapshot.mode_state.find("boss_world_defeat_announcement_key");
+    if (boss_world_defeat_announcement_key != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_world_defeat_announcement_key\":" +
+            JsonString(boss_world_defeat_announcement_key->second);
     }
     const auto boss_instance_surviving_player_count =
         fixture.final_snapshot.mode_state.find("boss_instance_surviving_player_count");
