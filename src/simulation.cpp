@@ -924,6 +924,9 @@ BattleSnapshot BattleSimulation::Tick() {
 
     current_tick_ = tick_to_apply;
     ApplyModeActionsForTick(tick_to_apply);
+    if (IsBossMode(config_.mode_id) && !boss_combat_started_) {
+        boss_combat_started_ = BossReadyToStartForTick(tick_to_apply);
+    }
     SpawnBulletsForTick();
     AdvanceBullets();
     return Snapshot("full");
@@ -1822,6 +1825,9 @@ std::string BattleSimulation::TransferCardAuditMaterial() const {
 
 void BattleSimulation::SpawnBulletsForTick() {
     if (current_tick_ == 0 || (current_tick_ % config_.spawn_period_ticks) != 0 || bullets_.size() >= config_.max_bullets) {
+        return;
+    }
+    if (IsBossMode(config_.mode_id) && !boss_combat_started_) {
         return;
     }
 
