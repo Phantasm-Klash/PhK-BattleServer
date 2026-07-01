@@ -124,8 +124,8 @@ bool BossMatchReadyForResult(const BattleSimulation& simulation) {
         return true;
     }
     const auto mode_state = simulation.Snapshot().mode_state;
-    const auto ready_to_start = mode_state.find("boss_ready_to_start");
-    return ready_to_start != mode_state.end() && ready_to_start->second == "1";
+    const auto combat_started = mode_state.find("boss_combat_started");
+    return combat_started != mode_state.end() && combat_started->second == "1";
 }
 
 InputValidationResult UnknownPlayerResult() {
