@@ -69,6 +69,10 @@ std::string ReplaySummaryHashForSummary(const phk::battle::ReplaySummary& summar
     record.final_state_hash = summary.final_state_hash;
     record.match_seed = summary.match_seed;
     record.final_tick = summary.final_tick;
+    record.boss_max_hp = summary.boss_max_hp;
+    record.boss_current_hp = summary.boss_current_hp;
+    record.boss_damage_total = summary.boss_damage_total;
+    record.boss_defeated_tick = summary.boss_defeated_tick;
     return phk::battle::DevReplayInputStreamSummaryHash(record);
 }
 
@@ -1104,8 +1108,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "d50d1beefb0728e5b61254e5f017dec41302aa0110e5bd27f407e2f805f673065"
-            "921ffcacf4a00613a2738c1c45ab64097178ddce52894a3781cc6d3da394a82"
+            "3d2b6ac8206374a71e30a3bf15742a86ff35dcb60a84e065e03b15acff959644"
+            "c1404ea3f4a64c23a245879ae9b70202834ac091dec7b7e1644ff988d3d86dc0"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -1126,8 +1130,8 @@ bool TestBuildSignedBattleResultCallback() {
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
-            "\"replay_summary_hash\":\"sha256:dev-fnv64-e8a3d7f2ad39b1d1\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-9e77178bf0907b46\","
+            "\"replay_summary_hash\":\"sha256:dev-fnv64-a2cd1198e07f4591\","
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-564740df24bc7386\","
             "\"final_snapshot_tick\":1,\"final_snapshot_kind\":\"replay_final\","
             "\"final_snapshot_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"final_snapshot_event_cursor\":0}|1782489630000"
@@ -1261,7 +1265,7 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-9e77178bf0907b46\""
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-564740df24bc7386\""
         ) != std::string::npos
     );
     CHECK_TRUE(
@@ -3157,6 +3161,10 @@ bool TestBossModeResultProjection() {
     CHECK_EQ(fixture.summary.boss_current_hp, static_cast<std::uint64_t>(0));
     CHECK_EQ(fixture.summary.boss_damage_total, static_cast<std::uint64_t>(20));
     CHECK_EQ(fixture.summary.boss_defeated_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(fixture.replay_summary_record.boss_max_hp, static_cast<std::uint64_t>(20));
+    CHECK_EQ(fixture.replay_summary_record.boss_current_hp, static_cast<std::uint64_t>(0));
+    CHECK_EQ(fixture.replay_summary_record.boss_damage_total, static_cast<std::uint64_t>(20));
+    CHECK_EQ(fixture.replay_summary_record.boss_defeated_tick, static_cast<std::uint64_t>(1));
     CHECK_EQ(fixture.summary.boss_damage_by_player.at("p1"), static_cast<std::uint64_t>(10));
     CHECK_EQ(fixture.summary.boss_damage_by_player.at("p2"), static_cast<std::uint64_t>(10));
     CHECK_EQ(fixture.summary.boss_damage_by_player.at("p3"), static_cast<std::uint64_t>(0));
@@ -3171,6 +3179,12 @@ bool TestBossModeResultProjection() {
     auto tampered_boss_damage_summary = fixture.summary;
     tampered_boss_damage_summary.boss_damage_by_player["p1"] += 1;
     CHECK_TRUE(ExpectedDevResultHash(tampered_boss_damage_summary) != fixture.result_hash);
+    auto tampered_boss_hp_record = fixture.replay_summary_record;
+    tampered_boss_hp_record.boss_current_hp = 1;
+    CHECK_TRUE(
+        phk::battle::DevReplayInputStreamSummaryHash(tampered_boss_hp_record) !=
+        phk::battle::DevReplayInputStreamSummaryHash(fixture.replay_summary_record)
+    );
     auto tampered_boss_summary = fixture.summary;
     tampered_boss_summary.boss_spawn_slot_by_player["p1"] = "south";
     CHECK_TRUE(ExpectedDevResultHash(tampered_boss_summary) != fixture.result_hash);
@@ -5132,11 +5146,11 @@ bool TestReplayFixtureBoundary() {
         phk::battle::CanonicalReplayInputStreamSummaryRecord(summary_record) ==
         "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-replay-fixture:60|"
         "user-alice|match-replay-fixture|120|0|0|0|4|fnv64:a0b383d4a7be0bf7|"
-        "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60"
+        "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60|0|0|0|0"
     );
     CHECK_EQ(
         phk::battle::DevReplayInputStreamSummaryHash(summary_record),
-        std::string("sha256:dev-fnv64-82e944315b4cd1b4")
+        std::string("sha256:dev-fnv64-37cf3b2e553f0634")
     );
     auto tampered_record = summary_record;
     tampered_record.match_seed += 1;
@@ -5166,7 +5180,7 @@ bool TestReplayFixtureBoundary() {
         canonical_fixture_payload.find(
             "1|0.1.0-draft|0.1.0-draft|ruleset-local-s0|battle-replay:match-replay-fixture:60|"
             "user-alice|match-replay-fixture|120|0|0|0|4|fnv64:a0b383d4a7be0bf7|"
-            "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60"
+            "fnv64:daa6853bacb4fdd3|fnv64:8049946f03724f36|424242|60|0|0|0|0"
         ) != std::string::npos
     );
     CHECK_TRUE(canonical_fixture_payload.find("|match-replay-fixture|60|replay_final|fnv64:8049946f03724f36|4|") != std::string::npos);
@@ -5181,7 +5195,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-e223cb92b199d91a")
+        std::string("sha256:dev-fnv64-565613c7d7ef801a")
     );
     auto tampered_fixture_summary_count = fixture;
     tampered_fixture_summary_count.summary.input_count += 1;
@@ -5387,7 +5401,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-8f4392ac01c56b3f")
+        std::string("sha256:dev-fnv64-b137592e826084c5")
     );
 
     auto tampered_stream = built.replay_record;
