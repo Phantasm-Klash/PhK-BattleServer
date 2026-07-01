@@ -941,6 +941,16 @@ bool TestBattleResultSubmission() {
         std::string("final_snapshot_event_cursor_mismatch")
     );
 
+    auto unknown_mode_result_field = valid_result;
+    unknown_mode_result_field.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "}",
+        ",\"client_latency_ms\":42}"
+    );
+    const auto unknown_mode_result_field_result = server.SubmitBattleResult(unknown_mode_result_field);
+    CHECK_TRUE(!unknown_mode_result_field_result.ok);
+    CHECK_EQ(unknown_mode_result_field_result.reason, std::string("mode_result_field_unknown"));
+
     auto mutating_projection = valid_result;
     mutating_projection.result.reward_projection_json = "{\"source\":\"battle-server\",\"grant_currency\":100}";
     const auto mutating_projection_result = server.SubmitBattleResult(mutating_projection);

@@ -333,6 +333,73 @@ bool ContainsUnknownTransferResultField(const std::string& json) {
     return false;
 }
 
+bool IsKnownReplayResultField(const std::string& field_name) {
+    static const std::set<std::string> kKnownReplayFields = {
+        "battle_result_owner",
+        "event_cursor",
+        "final_tick",
+        "tick_rate_hz",
+        "match_seed",
+        "input_count",
+        "fallback_input_count",
+        "neutral_fallback_count",
+        "held_input_fallback_count",
+        "mode_action_count",
+        "pending_input_tick_count",
+        "pending_input_record_count",
+        "input_buffer_peak_tick_count",
+        "input_buffer_peak_record_count",
+        "pending_mode_action_tick_count",
+        "pending_mode_action_record_count",
+        "mode_action_buffer_peak_tick_count",
+        "mode_action_buffer_peak_record_count",
+        "input_trace_count",
+        "event_trace_count",
+        "input_stream_hash",
+        "event_stream_hash",
+        "final_state_hash",
+        "replay_summary_hash",
+        "replay_fixture_hash",
+        "final_snapshot_tick",
+        "final_snapshot_kind",
+        "final_snapshot_state_hash",
+        "final_snapshot_event_cursor",
+    };
+    return kKnownReplayFields.find(field_name) != kKnownReplayFields.end();
+}
+
+bool IsKnownModeResultField(
+    const std::string& field_name,
+    const BattleResultVerificationOptions& options
+) {
+    if (IsKnownReplayResultField(field_name)) {
+        return true;
+    }
+    if (options.require_boss_result_fields &&
+        (field_name == "connected_player_count" || field_name == "disconnected_player_count")) {
+        return true;
+    }
+    if (options.require_boss_result_fields && IsKnownBossResultField(field_name, options)) {
+        return true;
+    }
+    if (options.require_transfer_result_fields && IsKnownTransferResultField(field_name)) {
+        return true;
+    }
+    return false;
+}
+
+bool ContainsUnknownModeResultField(
+    const std::string& json,
+    const BattleResultVerificationOptions& options
+) {
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (!IsKnownModeResultField(field_name, options)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string JsonEscape(std::string_view value) {
     std::ostringstream out;
     for (const unsigned char ch : value) {
@@ -551,6 +618,15 @@ BattleResultVerification BattleResultVerifier::Verify(
     }
     if (options.require_transfer_result_fields && ContainsUnknownTransferResultField(result.mode_result_json)) {
         Fail(verification, "transfer_result_field_unknown");
+        return verification;
+    }
+    if (ContainsForbiddenModeResultMutation(result.mode_result_json)) {
+        Fail(verification, "mode_result_mutation_forbidden");
+        return verification;
+    }
+    if (options.require_replay_counter_fields &&
+        ContainsUnknownModeResultField(result.mode_result_json, options)) {
+        Fail(verification, "mode_result_field_unknown");
         return verification;
     }
     if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
@@ -1115,10 +1191,6 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_projection_only_reward &&
         ContainsForbiddenRewardMutation(result.reward_projection_json)) {
         Fail(verification, "reward_projection_mutation_forbidden");
-        return verification;
-    }
-    if (ContainsForbiddenModeResultMutation(result.mode_result_json)) {
-        Fail(verification, "mode_result_mutation_forbidden");
         return verification;
     }
     if (result.settled_at_ms <= 0) {
