@@ -1361,8 +1361,11 @@ bool TestSimulationDeterminism() {
 
     CHECK_EQ(first_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
     CHECK_EQ(first_snapshot.players.size(), static_cast<std::size_t>(2));
-    CHECK_TRUE(first_snapshot.bullets_delta.size() >= 4);
+    CHECK_EQ(first_snapshot.bullets_delta.size(), static_cast<std::size_t>(0));
     CHECK_EQ(first_snapshot.mode_state.at("mode_id"), std::string("world_boss"));
+    CHECK_EQ(first_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(first_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(first_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("ruleset_version"), std::string(phk::v1::kRulesetVersion));
     CHECK_EQ(first_snapshot.state_hash, second_snapshot.state_hash);
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
@@ -1372,7 +1375,7 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().neutral_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(4));
     CHECK_EQ(first.Summary().mode_action_count, static_cast<std::uint64_t>(2));
-    CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(3));
+    CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(first.Summary().last_mode_action_id, transfer.action_id);
     CHECK_EQ(first.Summary().last_mode_action_type, transfer.action_type);
     CHECK_EQ(first.Summary().last_mode_action_player_id, action.player_id);
@@ -1382,14 +1385,16 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(first.Summary().input_trace == second.Summary().input_trace);
     CHECK_TRUE(first.Summary().event_trace == second.Summary().event_trace);
     CHECK_EQ(first.Summary().input_trace.size(), static_cast<std::size_t>(6));
-    CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(3));
+    CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(2));
     CHECK_TRUE(first.Summary().input_trace[0].find("input|p1|tick=1|seq=1") != std::string::npos);
     CHECK_TRUE(first.Summary().input_trace[2].find("fallback|held|p1|tick=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("mode_action|p1|tick=2|seq=3") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("|card=boss-card-001|from=p1|to=p2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("|authority_owner=p1|mode_allowed=1|cost_paid=1|cooldown_ready=1") != std::string::npos);
-    CHECK_TRUE(first.Summary().event_trace[2].find("bullet_spawn|tick=2") != std::string::npos);
+    for (const auto& trace : first.Summary().event_trace) {
+        CHECK_TRUE(trace.find("bullet_spawn|") == std::string::npos);
+    }
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_id"), transfer.action_id);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_type"), transfer.action_type);
     CHECK_EQ(first_snapshot.mode_state.at("last_mode_action_player_id"), action.player_id);
@@ -2298,6 +2303,24 @@ bool TestBossModeBulletPattern() {
     world_config.boss_phase_id = "phase-opening";
     phk::battle::BattleSimulation world_simulation(world_config);
     CHECK_TRUE(world_simulation.AddPlayer("p1", 0, -60000));
+    const auto waiting_snapshot = world_simulation.Tick();
+    CHECK_EQ(waiting_snapshot.bullets_delta.size(), static_cast<std::size_t>(0));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
+    CHECK_TRUE(world_simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(world_simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(world_simulation.AddPlayer("p4", -60000, 0));
+    CHECK_TRUE(AcceptBossReadyActions(
+        world_simulation,
+        world_config.match_id,
+        2,
+        1,
+        1,
+        1,
+        1,
+        "world-boss-pattern-ready"
+    ));
     const auto world_snapshot = world_simulation.Tick();
     CHECK_EQ(world_snapshot.bullets_delta.size(), static_cast<std::size_t>(8));
     CHECK_EQ(world_snapshot.bullets_delta[0].pattern_id, std::string("boss_center_radial"));
@@ -2307,7 +2330,9 @@ bool TestBossModeBulletPattern() {
     CHECK_EQ(world_snapshot.bullets_delta[0].y_milli, 2600);
     CHECK_TRUE(world_simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     CHECK_EQ(world_snapshot.mode_state.at("battle_layout"), std::string("boss_center_ring"));
-    CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_EQ(world_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_instance_id"), std::string("world-boss-season-001"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_season_id"), std::string("season-alpha"));
     CHECK_EQ(world_snapshot.mode_state.at("boss_phase_id"), std::string("phase-opening"));
@@ -2322,6 +2347,19 @@ bool TestBossModeBulletPattern() {
     instance_config.boss_friendly_fire_policy = "all_friendly_fire";
     phk::battle::BattleSimulation instance_simulation(instance_config);
     CHECK_TRUE(instance_simulation.AddPlayer("p1", 0, -60000));
+    CHECK_TRUE(instance_simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(instance_simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(instance_simulation.AddPlayer("p4", -60000, 0));
+    CHECK_TRUE(AcceptBossReadyActions(
+        instance_simulation,
+        instance_config.match_id,
+        1,
+        1,
+        1,
+        1,
+        1,
+        "instance-boss-pattern-ready"
+    ));
     const auto instance_snapshot = instance_simulation.Tick();
     CHECK_EQ(instance_snapshot.bullets_delta.size(), static_cast<std::size_t>(8));
     CHECK_EQ(instance_snapshot.bullets_delta[0].pattern_id, std::string("boss_center_radial"));
