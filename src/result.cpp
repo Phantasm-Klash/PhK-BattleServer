@@ -485,6 +485,24 @@ bool ContainsForbiddenRewardMutation(std::string_view json) {
     return false;
 }
 
+bool IsKnownRewardProjectionField(const std::string& field_name) {
+    static const std::set<std::string> kKnownRewardProjectionFields = {
+        "source",
+        "projection_only",
+        "settlement_authority",
+    };
+    return kKnownRewardProjectionFields.find(field_name) != kKnownRewardProjectionFields.end();
+}
+
+bool ContainsUnknownRewardProjectionField(const std::string& json) {
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (!IsKnownRewardProjectionField(field_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ContainsForbiddenModeResultMutation(std::string_view json) {
     const std::string lowered = LowerAscii(json);
     for (const std::string_view needle : {
@@ -1191,6 +1209,11 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_projection_only_reward &&
         ContainsForbiddenRewardMutation(result.reward_projection_json)) {
         Fail(verification, "reward_projection_mutation_forbidden");
+        return verification;
+    }
+    if (options.require_projection_only_reward &&
+        ContainsUnknownRewardProjectionField(result.reward_projection_json)) {
+        Fail(verification, "reward_projection_field_unknown");
         return verification;
     }
     if (result.settled_at_ms <= 0) {
