@@ -2524,6 +2524,36 @@ bool TestBossModeCapacityGuard() {
         )).ok);
     }
     CHECK_EQ(pvp_server.MatchSnapshot("match-001").players.size(), static_cast<std::size_t>(10));
+
+    phk::battle::BattleServerConfig small_config;
+    small_config.now_ms = 1782489605000;
+    small_config.max_players = 1;
+    phk::battle::BattleServer small_boss_server(small_config);
+    for (std::size_t index = 1; index <= phk::battle::kBossModeMinPlayers; ++index) {
+        const std::string nonce_hex = std::string("00112233445566778899dd") +
+            (index < 10 ? "0" : "") +
+            std::to_string(index);
+        CHECK_TRUE(small_boss_server.RegisterTicket(MakeModeTicket(
+            "ticket-boss-min-cap-" + std::to_string(index),
+            "user-boss-min-cap-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            nonce_hex
+        )).ok);
+    }
+    const auto small_boss_snapshot = small_boss_server.MatchSnapshot("match-001");
+    CHECK_EQ(small_boss_snapshot.players.size(), phk::battle::kBossModeMinPlayers);
+    CHECK_EQ(small_boss_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
+    CHECK_EQ(small_boss_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    const auto too_many_for_small_boss = small_boss_server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-min-cap-5",
+        "user-boss-min-cap-5",
+        "p5",
+        "world_boss",
+        "00112233445566778899dd05"
+    ));
+    CHECK_TRUE(!too_many_for_small_boss.ok);
+    CHECK_EQ(too_many_for_small_boss.reason, std::string("match_full"));
     return true;
 }
 
