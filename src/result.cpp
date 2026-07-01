@@ -41,6 +41,22 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
     return next == ',' || next == '}';
 }
 
+bool ContainsJsonField(const std::string& json, std::string_view field_name) {
+    const std::string needle = "\"" + std::string(field_name) + "\"";
+    std::size_t offset = json.find(needle);
+    while (offset != std::string::npos) {
+        std::size_t cursor = offset + needle.size();
+        while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) {
+            ++cursor;
+        }
+        if (cursor < json.size() && json[cursor] == ':') {
+            return true;
+        }
+        offset = json.find(needle, offset + 1);
+    }
+    return false;
+}
+
 std::string JsonEscape(std::string_view value) {
     std::ostringstream out;
     for (const unsigned char ch : value) {
@@ -554,6 +570,20 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_boss_result_fields &&
         !ContainsJsonStringField(result.mode_result_json, "boss_result_disposition", options.required_boss_result_disposition)) {
         Fail(verification, "boss_result_disposition_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields && result.mode_id == "world_boss" &&
+        (ContainsJsonField(result.mode_result_json, "boss_instance_surviving_player_count") ||
+            ContainsJsonField(result.mode_result_json, "boss_instance_clear_credit") ||
+            ContainsJsonField(result.mode_result_json, "boss_instance_result_state"))) {
+        Fail(verification, "boss_instance_result_field_forbidden");
+        return verification;
+    }
+    if (options.require_boss_result_fields && result.mode_id == "instance_boss" &&
+        (ContainsJsonField(result.mode_result_json, "boss_world_persistent_damage_delta") ||
+            ContainsJsonField(result.mode_result_json, "boss_world_persistent_hp_after_delta") ||
+            ContainsJsonField(result.mode_result_json, "boss_world_defeat_announcement_required"))) {
+        Fail(verification, "boss_world_persistent_result_field_forbidden");
         return verification;
     }
     if (options.require_boss_result_fields &&
