@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Match Lifecycle Status Query
+
+- `BattleServer::MatchLifecycleStatus` now exposes compact in-memory match lifecycle state as `unknown`, `pending_boss_config`, `active`, `settled`, `retired`, or `cancelled`, so orchestration and audit callers do not need to infer state from snapshots or result paths.
+- CTest and `tools/check_battle_server.py` now gate the status transitions across Boss preconfiguration, active rooms, settlement, retirement, cancellation, and missing matches.
+- This remains room lifecycle audit material only. It does not persist replay rows, Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-07-01 Retired Replay Export Boundary
 
 - Settled-but-live matches remain readable for `BuildReplayRecord`, so Nakama/Go can export compact replay/settlement audit material before cleanup.
