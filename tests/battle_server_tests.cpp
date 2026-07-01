@@ -504,6 +504,18 @@ bool TestServerAndHandshake() {
     CHECK_EQ(duplicate_player_result.active_matches_after, static_cast<std::size_t>(1));
     CHECK_EQ(duplicate_player_result.match_session_count_after, static_cast<std::size_t>(1));
 
+    auto invalid_player_id = MakeTicket();
+    invalid_player_id.ticket.ticket_id = "ticket-invalid-player-id";
+    invalid_player_id.ticket.user_id = "user-invalid-player-id";
+    invalid_player_id.ticket.player_id = "p3:forged";
+    invalid_player_id.ticket.ticket_nonce_hex = "abcdefabcdefabcdefabcdee";
+    invalid_player_id.ticket.business_session_id = "session-ref:invalid-player-id";
+    const auto invalid_player_id_result = server.RegisterTicket(invalid_player_id);
+    CHECK_TRUE(!invalid_player_id_result.ok);
+    CHECK_EQ(invalid_player_id_result.reason, std::string("player_id_invalid"));
+    CHECK_EQ(invalid_player_id_result.active_sessions_after, static_cast<std::size_t>(1));
+    CHECK_EQ(invalid_player_id_result.active_matches_after, static_cast<std::size_t>(1));
+
     auto wrong_mode = MakeTicket();
     wrong_mode.ticket.ticket_id = "ticket-wrong-mode";
     wrong_mode.ticket.user_id = "user-eve";
@@ -1494,6 +1506,7 @@ bool TestFallbackInputReplayAudit() {
     phk::battle::BattleSimulation simulation(config);
     CHECK_TRUE(simulation.AddPlayer("p1", 0, 0));
     CHECK_TRUE(simulation.AddPlayer("p2", 10000, 0));
+    CHECK_TRUE(!simulation.AddPlayer("p3:forged", 0, 0));
 
     const auto neutral_snapshot = simulation.Tick();
     CHECK_EQ(neutral_snapshot.snapshot_tick, static_cast<std::uint64_t>(1));
@@ -1846,6 +1859,21 @@ bool TestBossTransferCardValidation() {
     const auto invalid_audit_result = server.AcceptModeAction(invalid_audit_transfer);
     CHECK_TRUE(!invalid_audit_result.ok);
     CHECK_EQ(invalid_audit_result.reason, std::string("transfer_card_instance_id_invalid"));
+
+    auto invalid_target_transfer = MakeModeAction(1);
+    invalid_target_transfer.tick = 1;
+    invalid_target_transfer.action_id = "action-boss-transfer-target-invalid";
+    invalid_target_transfer.action_type = "transfer_card";
+    invalid_target_transfer.payload_json =
+        "{\"target_player_id\":\"p2:forged\",\"card_instance_id\":\"boss-card-disconnected\"}";
+    const auto invalid_target_result = server.AcceptModeAction(invalid_target_transfer);
+    CHECK_TRUE(!invalid_target_result.ok);
+    CHECK_EQ(invalid_target_result.reason, std::string("transfer_card_target_invalid"));
+
+    phk::battle::TransferableCardState invalid_owner_card;
+    invalid_owner_card.card_instance_id = "boss-card-invalid-owner";
+    invalid_owner_card.owner_player_id = "p1:forged";
+    CHECK_TRUE(!server.ConfigureTransferableCard("match-001", invalid_owner_card));
 
     const auto unauthorized = server.AcceptModeAction(transfer);
     CHECK_TRUE(!unauthorized.ok);

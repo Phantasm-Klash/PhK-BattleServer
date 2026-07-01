@@ -470,7 +470,7 @@ bool BattleSimulation::IsPlayerConnected(const std::string& player_id) const {
 }
 
 bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
-    if (player_id.empty() || players_.find(player_id) != players_.end()) {
+    if (!IsValidAuditToken(player_id) || players_.find(player_id) != players_.end()) {
         return false;
     }
     if (IsBossMode(config_.mode_id) && players_.size() >= kBossModeMaxPlayers) {
@@ -494,7 +494,8 @@ bool BattleSimulation::ConfigureTransferableCard(TransferableCardState card) {
     if (!IsBossMode(config_.mode_id)) {
         return false;
     }
-    if (!IsValidTransferCardInstanceId(card.card_instance_id) || card.owner_player_id.empty()) {
+    if (!IsValidTransferCardInstanceId(card.card_instance_id) ||
+        !IsValidAuditToken(card.owner_player_id)) {
         return false;
     }
     if (players_.find(card.owner_player_id) == players_.end()) {
@@ -818,6 +819,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         if (!IsValidTransferCardInstanceId(card_instance_id)) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "transfer_card_instance_id_invalid";
+            return result;
+        }
+        if (!IsValidAuditToken(target_player_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "transfer_card_target_invalid";
             return result;
         }
         if (target_player_id == action.player_id) {
