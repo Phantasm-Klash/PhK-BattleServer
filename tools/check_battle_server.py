@@ -439,6 +439,9 @@ def main() -> int:
         or "input_tick_too_far_ahead" not in simulation_impl
         or "mode_action_client_result_forbidden" not in simulation_impl
         or "ContainsClientAuthoredAuthorityField" not in simulation_impl
+        or '"current_hp"' not in simulation_impl
+        or '"max_hp"' not in simulation_impl
+        or '"hp_delta"' not in simulation_impl
         or "mode_action_authority_field_forbidden" not in simulation_impl
         or "cast_card_slot_missing" not in simulation_impl
         or "cast_card_slot_invalid" not in simulation_impl
@@ -980,6 +983,9 @@ def main() -> int:
         or '\\"card_slot\\":1.5' not in tests_text
         or "mode_action_authority_field_forbidden" not in tests_text
         or '\\"card_slot\\":1,\\"damage\\":999,\\"boss_hp\\":0' not in tests_text
+        or '\\"current_hp\\":0' not in tests_text
+        or '\\"max_hp\\":1' not in tests_text
+        or '\\"hp_delta\\":-999' not in tests_text
         or "BattleRoyaleSelectRoundCardPayloadBoundary" not in tests_text
         or "select_round_card_mode_unsupported" not in tests_text
         or "select_round_card_candidate_missing" not in tests_text
