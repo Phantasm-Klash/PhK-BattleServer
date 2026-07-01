@@ -75,6 +75,7 @@ struct ReplaySummary {
     std::uint64_t boss_max_hp = 0;
     std::uint64_t boss_current_hp = 0;
     std::uint64_t boss_damage_total = 0;
+    std::uint64_t boss_defeated = 0;
     std::uint64_t boss_defeated_tick = 0;
     std::vector<std::string> player_ids;
     std::map<std::string, std::uint64_t> boss_damage_by_player;
@@ -102,6 +103,7 @@ struct ReplayInputStreamSummaryRecord {
     std::uint64_t boss_max_hp = 0;
     std::uint64_t boss_current_hp = 0;
     std::uint64_t boss_damage_total = 0;
+    std::uint64_t boss_defeated = 0;
     std::uint64_t boss_defeated_tick = 0;
 };
 
