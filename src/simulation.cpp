@@ -1254,6 +1254,7 @@ ReplaySummary BattleSimulation::Summary() const {
         summary.boss_max_hp = boss_max_hp_;
         summary.boss_current_hp = boss_current_hp_;
         summary.boss_damage_total = boss_damage_total_;
+        summary.boss_defeated = BossDefeated() ? 1u : 0u;
         summary.boss_defeated_tick = boss_defeated_tick_;
         summary.boss_damage_by_player = boss_damage_by_player_;
     }
@@ -1290,6 +1291,7 @@ ReplayInputStreamSummaryRecord BattleSimulation::BuildReplayInputStreamSummary(
     record.boss_max_hp = summary.boss_max_hp;
     record.boss_current_hp = summary.boss_current_hp;
     record.boss_damage_total = summary.boss_damage_total;
+    record.boss_defeated = summary.boss_defeated;
     record.boss_defeated_tick = summary.boss_defeated_tick;
     return record;
 }
@@ -1485,6 +1487,7 @@ std::string CanonicalReplayInputStreamSummaryRecord(
         << record.boss_max_hp << '|'
         << record.boss_current_hp << '|'
         << record.boss_damage_total << '|'
+        << record.boss_defeated << '|'
         << record.boss_defeated_tick;
     return out.str();
 }
@@ -1521,6 +1524,7 @@ std::string CanonicalReplaySummaryPayload(const ReplaySummary& summary) {
         out << summary.boss_max_hp << '|'
             << summary.boss_current_hp << '|'
             << summary.boss_damage_total << '|'
+            << summary.boss_defeated << '|'
             << summary.boss_defeated_tick << '|';
         for (const auto& item : summary.boss_damage_by_player) {
             out << "boss_damage=" << item.first << ':' << item.second << ';';
@@ -1938,6 +1942,7 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
         hash = HashAppend(hash, summary.boss_max_hp);
         hash = HashAppend(hash, summary.boss_current_hp);
         hash = HashAppend(hash, summary.boss_damage_total);
+        hash = HashAppend(hash, summary.boss_defeated);
         hash = HashAppend(hash, summary.boss_defeated_tick);
         for (const auto& item : summary.boss_damage_by_player) {
             hash = HashAppend(hash, item.first);
