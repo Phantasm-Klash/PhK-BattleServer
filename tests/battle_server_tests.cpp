@@ -4684,6 +4684,13 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto plaintext_dispatch_after_retire = server.Dispatch(plaintext_after_settle, {'s'});
     CHECK_TRUE(!plaintext_dispatch_after_retire.ok);
     CHECK_EQ(plaintext_dispatch_after_retire.reason, std::string("match_retired"));
+    auto encrypted_after_retire = encrypted_after_settle;
+    encrypted_after_retire.header.tick = 3;
+    encrypted_after_retire.header.seq = 3;
+    RefreshDevAeadNonce(encrypted_after_retire.header);
+    const auto encrypted_dispatch_after_retire = server.DispatchEncrypted(encrypted_after_retire);
+    CHECK_TRUE(!encrypted_dispatch_after_retire.ok);
+    CHECK_EQ(encrypted_dispatch_after_retire.reason, std::string("match_retired"));
     const auto replay_ticket_after_retire = server.RegisterTicket(MakeTicket());
     CHECK_TRUE(!replay_ticket_after_retire.ok);
     CHECK_EQ(replay_ticket_after_retire.reason, std::string("match_retired"));
