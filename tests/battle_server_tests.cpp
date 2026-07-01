@@ -4771,6 +4771,8 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
     const auto summary_before_cancel = server.MatchReplaySummary("match-001");
+    const auto stale_result_before_cancel = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(stale_result_before_cancel.ok);
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
     CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("active"));
@@ -4864,6 +4866,9 @@ bool TestUnsettledMatchCancellationLifecycle() {
     const auto replay_record_after_cancel = server.BuildReplayRecord("match-001", "user-alice", "stage-dev");
     CHECK_TRUE(!replay_record_after_cancel.ok);
     CHECK_EQ(replay_record_after_cancel.reason, std::string("match_cancelled"));
+    const auto stale_submit_after_cancel = server.SubmitBattleResult(stale_result_before_cancel.signed_result);
+    CHECK_TRUE(!stale_submit_after_cancel.ok);
+    CHECK_EQ(stale_submit_after_cancel.reason, std::string("match_cancelled"));
 
     const auto missing_cancel = server.CancelMatch("missing-match");
     CHECK_TRUE(!missing_cancel.ok);

@@ -2,6 +2,11 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Cancelled Result Submission Boundary
+
+- CTest now covers cancelling an active match after a development signed result was built, then rejecting that stale result submission as `match_cancelled`.
+- This keeps instant room cleanup authoritative over late settlement callbacks and remains in-memory lifecycle/result-audit material only. It does not persist replay rows, Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-07-01 Match Lifecycle Status Query
 
 - `BattleServer::MatchLifecycleStatus` now exposes compact in-memory match lifecycle state as `unknown`, `pending_boss_config`, `active`, `settled`, `retired`, or `cancelled`, so orchestration and audit callers do not need to infer state from snapshots or result paths.
