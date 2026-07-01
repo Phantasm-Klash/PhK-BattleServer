@@ -4294,6 +4294,16 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto tick_after_settle = server.TickMatch("match-001");
     CHECK_EQ(tick_after_settle.snapshot_kind, std::string("match_settled"));
     CHECK_EQ(tick_after_settle.snapshot_tick, settled_summary.final_tick);
+    const auto snapshot_after_settle = server.MatchSnapshot("match-001");
+    CHECK_EQ(snapshot_after_settle.snapshot_kind, std::string("match_settled"));
+    CHECK_EQ(snapshot_after_settle.snapshot_tick, settled_summary.final_tick);
+    const auto reconnect_snapshot_after_settle = server.ReconnectSnapshot(
+        "match-001",
+        "p1",
+        settled_summary.event_count
+    );
+    CHECK_EQ(reconnect_snapshot_after_settle.snapshot_kind, std::string("match_settled"));
+    CHECK_EQ(reconnect_snapshot_after_settle.snapshot_tick, settled_summary.final_tick);
     const auto summary_after_settle_mutations = server.MatchReplaySummary("match-001");
     CHECK_EQ(summary_after_settle_mutations.final_tick, settled_summary.final_tick);
     CHECK_EQ(summary_after_settle_mutations.input_count, settled_summary.input_count);
