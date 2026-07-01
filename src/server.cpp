@@ -163,6 +163,20 @@ InputValidationResult MatchSettledResult() {
     return result;
 }
 
+InputValidationResult MatchCancelledResult() {
+    InputValidationResult result;
+    result.code = InputValidationCode::MatchUnknown;
+    result.reason = "match_cancelled";
+    return result;
+}
+
+BattleSnapshot MatchClosedSnapshot(const std::string& match_id, const std::string& snapshot_kind) {
+    BattleSnapshot snapshot;
+    snapshot.match_id = match_id;
+    snapshot.snapshot_kind = snapshot_kind;
+    return snapshot;
+}
+
 std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& payload_json) {
     constexpr const char* kCursorField = "\"last_seen_event_cursor\"";
     const std::string field(kCursorField);
@@ -742,6 +756,9 @@ InputValidationResult BattleServer::ValidateDecodedSessionBoundary(
 ) const {
     const auto simulation_it = simulations_by_match_.find(header.match_id);
     if (simulation_it == simulations_by_match_.end()) {
+        if (cancelled_match_ids_.find(header.match_id) != cancelled_match_ids_.end()) {
+            return MatchCancelledResult();
+        }
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
@@ -821,6 +838,9 @@ InputValidationResult BattleServer::AcceptDecodedReconnectModeAction(
     }
     const auto simulation_it = simulations_by_match_.find(action.match_id);
     if (simulation_it == simulations_by_match_.end()) {
+        if (cancelled_match_ids_.find(action.match_id) != cancelled_match_ids_.end()) {
+            return MatchCancelledResult();
+        }
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
@@ -872,6 +892,9 @@ bool BattleServer::ConfigureTransferableCard(
 InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
     const auto simulation_it = simulations_by_match_.find(input.match_id);
     if (simulation_it == simulations_by_match_.end()) {
+        if (cancelled_match_ids_.find(input.match_id) != cancelled_match_ids_.end()) {
+            return MatchCancelledResult();
+        }
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
@@ -889,6 +912,9 @@ InputValidationResult BattleServer::AcceptInput(const BattleInput& input) {
 InputValidationResult BattleServer::AcceptModeAction(const BattleModeAction& action) {
     const auto simulation_it = simulations_by_match_.find(action.match_id);
     if (simulation_it == simulations_by_match_.end()) {
+        if (cancelled_match_ids_.find(action.match_id) != cancelled_match_ids_.end()) {
+            return MatchCancelledResult();
+        }
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
@@ -922,6 +948,9 @@ InputValidationResult BattleServer::SetPlayerConnected(
 ) {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
+        if (cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()) {
+            return MatchCancelledResult();
+        }
         InputValidationResult result;
         result.code = InputValidationCode::MatchUnknown;
         result.reason = "match_unknown";
@@ -940,10 +969,12 @@ InputValidationResult BattleServer::SetPlayerConnected(
 BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        BattleSnapshot snapshot;
-        snapshot.match_id = match_id;
-        snapshot.snapshot_kind = "match_unknown";
-        return snapshot;
+        return MatchClosedSnapshot(
+            match_id,
+            cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown"
+        );
     }
     if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
         BattleSnapshot snapshot = simulation_it->second.Snapshot("match_settled");
@@ -957,10 +988,12 @@ BattleSnapshot BattleServer::TickMatch(const std::string& match_id) {
 BattleSnapshot BattleServer::MatchSnapshot(const std::string& match_id) const {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        BattleSnapshot snapshot;
-        snapshot.match_id = match_id;
-        snapshot.snapshot_kind = "match_unknown";
-        return snapshot;
+        return MatchClosedSnapshot(
+            match_id,
+            cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown"
+        );
     }
     return simulation_it->second.Snapshot();
 }
@@ -972,10 +1005,12 @@ BattleSnapshot BattleServer::ReconnectSnapshot(
 ) const {
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        BattleSnapshot snapshot;
-        snapshot.match_id = match_id;
-        snapshot.snapshot_kind = "match_unknown";
-        return snapshot;
+        return MatchClosedSnapshot(
+            match_id,
+            cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown"
+        );
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, match_id, player_id)) {
         BattleSnapshot snapshot;
@@ -1002,7 +1037,9 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     BuildSignedBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = "match_unknown";
+        result.reason = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+            ? "match_cancelled"
+            : "match_unknown";
         return result;
     }
     if (!BossMatchReadyForResult(simulation_it->second)) {
@@ -1049,7 +1086,9 @@ BuildReplayRecordResult BattleServer::BuildReplayRecord(
     BuildReplayRecordResult result;
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = "match_unknown";
+        result.reason = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+            ? "match_cancelled"
+            : "match_unknown";
         return result;
     }
 
