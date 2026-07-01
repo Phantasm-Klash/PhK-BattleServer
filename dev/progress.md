@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Boss Roster-Lock Readiness Projection
+
+- Boss snapshots now keep `boss_start_ready` and `boss_ready_to_start` asserted after combat has started, matching the roster-locked lifecycle while still reporting live connected/ready counts separately for disconnect audit.
+- CTest coverage now verifies a locked Boss room rejects late joins after a disconnect, keeps result projection startable, and still exposes `connected_player_count`/`disconnected_player_count` truthfully.
+- This remains in-memory lifecycle and replay/result audit material only. It does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-07-01 Replay Summary Fallback Counters
 
 - Bound neutral and held fallback-input counters into `ReplayInputStreamSummaryRecord` and its canonical development hash, so the dependency-light replay summary records the same input-window audit counters used by signed result verification.

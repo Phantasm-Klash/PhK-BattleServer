@@ -1019,13 +1019,18 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         const bool replay_final_snapshot = snapshot.snapshot_kind == "replay_final";
         const bool boss_defeated = boss_current_hp_ == 0;
         const bool instance_clear_credit = instance_boss && boss_defeated && connected_player_count > 0;
+        const bool boss_roster_locked = boss_combat_started_;
         const bool boss_start_ready =
-            connected_player_count >= kBossModeMinPlayers &&
-            connected_player_count <= kBossModeMaxPlayers;
+            boss_roster_locked ||
+            (connected_player_count >= kBossModeMinPlayers &&
+                connected_player_count <= kBossModeMaxPlayers);
         const bool boss_all_registered_connected =
             !players_.empty() && connected_player_count == players_.size();
         const bool boss_all_registered_ready =
             boss_all_registered_connected && ready_connected_player_count == players_.size();
+        const bool boss_ready_to_start =
+            boss_roster_locked ||
+            (boss_start_ready && boss_all_registered_ready);
         const std::string boss_lifecycle_state = boss_combat_started_ ? "combat_started" :
             (!boss_start_ready ? "waiting_for_players" :
                 (!boss_all_registered_ready ? "waiting_for_ready" : "start_ready"));
@@ -1041,10 +1046,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
         snapshot.mode_state["boss_all_registered_connected"] = BoolToken(boss_all_registered_connected);
         snapshot.mode_state["boss_all_registered_ready"] = BoolToken(boss_all_registered_ready);
         snapshot.mode_state["boss_start_ready"] = BoolToken(boss_start_ready);
-        snapshot.mode_state["boss_ready_to_start"] =
-            BoolToken(boss_start_ready && boss_all_registered_ready);
+        snapshot.mode_state["boss_ready_to_start"] = BoolToken(boss_ready_to_start);
         snapshot.mode_state["boss_lifecycle_state"] = boss_lifecycle_state;
-        snapshot.mode_state["boss_roster_locked"] = BoolToken(boss_combat_started_);
+        snapshot.mode_state["boss_roster_locked"] = BoolToken(boss_roster_locked);
         snapshot.mode_state["boss_scope"] = config_.mode_id == "world_boss" ? "world_persistent" : "instance_match";
         snapshot.mode_state["boss_completion_policy"] = config_.mode_id == "world_boss" ?
             "damage_report_to_business" :
