@@ -4397,6 +4397,12 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_TRUE(cancelled_pending.removed_pending_boss_config);
     CHECK_TRUE(!cancelled_pending.removed_match);
     CHECK_EQ(cancelled_pending.removed_sessions, static_cast<std::size_t>(0));
+    CHECK_EQ(cancelled_pending.final_tick, static_cast<std::uint64_t>(0));
+    CHECK_EQ(cancelled_pending.input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(cancelled_pending.event_count, static_cast<std::uint64_t>(0));
+    CHECK_TRUE(cancelled_pending.input_stream_hash.empty());
+    CHECK_TRUE(cancelled_pending.event_stream_hash.empty());
+    CHECK_TRUE(cancelled_pending.final_state_hash.empty());
     CHECK_EQ(cancelled_pending.active_sessions_before, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.active_matches_before, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.pending_boss_configs_before, static_cast<std::size_t>(1));
@@ -4424,6 +4430,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
     CHECK_TRUE(server.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
     CHECK_EQ(server.TickMatch("match-001").snapshot_tick, static_cast<std::uint64_t>(1));
+    const auto summary_before_cancel = server.MatchReplaySummary("match-001");
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
 
@@ -4434,6 +4441,12 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_TRUE(!cancelled.removed_pending_boss_config);
     CHECK_TRUE(!cancelled.already_cancelled);
     CHECK_EQ(cancelled.removed_sessions, static_cast<std::size_t>(2));
+    CHECK_EQ(cancelled.final_tick, summary_before_cancel.final_tick);
+    CHECK_EQ(cancelled.input_count, summary_before_cancel.input_count);
+    CHECK_EQ(cancelled.event_count, summary_before_cancel.event_count);
+    CHECK_EQ(cancelled.input_stream_hash, summary_before_cancel.input_stream_hash);
+    CHECK_EQ(cancelled.event_stream_hash, summary_before_cancel.event_stream_hash);
+    CHECK_EQ(cancelled.final_state_hash, summary_before_cancel.final_state_hash);
     CHECK_EQ(cancelled.active_sessions_before, static_cast<std::size_t>(2));
     CHECK_EQ(cancelled.active_matches_before, static_cast<std::size_t>(1));
     CHECK_EQ(cancelled.pending_boss_configs_before, static_cast<std::size_t>(0));

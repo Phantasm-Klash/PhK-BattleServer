@@ -114,6 +114,12 @@ struct CancelMatchResult {
 	bool ok = false;
 	std::string reason;
 	std::string match_id;
+	std::string input_stream_hash;
+	std::string event_stream_hash;
+	std::string final_state_hash;
+	std::uint64_t final_tick = 0;
+	std::uint64_t input_count = 0;
+	std::uint64_t event_count = 0;
 	std::size_t active_sessions_before = 0;
 	std::size_t active_matches_before = 0;
 	std::size_t pending_boss_configs_before = 0;

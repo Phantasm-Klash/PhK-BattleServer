@@ -1348,6 +1348,13 @@ CancelMatchResult BattleServer::CancelMatch(const std::string& match_id) {
     }
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it != simulations_by_match_.end()) {
+        const ReplaySummary summary = simulation_it->second.Summary();
+        result.input_stream_hash = summary.input_stream_hash;
+        result.event_stream_hash = summary.event_stream_hash;
+        result.final_state_hash = summary.final_state_hash;
+        result.final_tick = summary.final_tick;
+        result.input_count = summary.input_count;
+        result.event_count = summary.event_count;
         simulations_by_match_.erase(simulation_it);
         result.removed_match = true;
     }
