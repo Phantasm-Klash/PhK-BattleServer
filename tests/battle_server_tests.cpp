@@ -2524,6 +2524,7 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_persistent_damage_delta"), std::string("20"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_persistent_hp_after_delta"), std::string("80"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_defeat_announcement_required"), std::string("0"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_defeat_announcement_key"), std::string(""));
 
     CHECK_TRUE(world_simulation.SetPlayerConnected("p2", false).ok);
     auto disconnected_input = p2_shoot;
@@ -2545,6 +2546,7 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_persistent_damage_delta"), std::string("30"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_persistent_hp_after_delta"), std::string("70"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_defeat_announcement_required"), std::string("0"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_defeat_announcement_key"), std::string(""));
 
     phk::battle::SimulationConfig instance_config;
     instance_config.match_id = "match-instance-boss-damage";
@@ -2642,6 +2644,12 @@ bool TestBossModeResultProjection() {
     CHECK_TRUE(world_mode_result_json.find("\"boss_world_persistent_hp_after_delta\":0") != std::string::npos);
     CHECK_TRUE(
         world_mode_result_json.find("\"boss_world_defeat_announcement_required\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        world_mode_result_json.find(
+            "\"boss_world_defeat_announcement_key\":\"world-boss:match-world-boss-result:season-local-s0:phase-1:1\""
+        ) !=
         std::string::npos
     );
     CHECK_TRUE(world_mode_result_json.find("boss_instance_result_state") == std::string::npos);
@@ -3052,7 +3060,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         instance_with_world_fields.result.mode_result_json,
         "}",
         ",\"boss_world_persistent_damage_delta\":20,\"boss_world_persistent_hp_after_delta\":980,"
-        "\"boss_world_defeat_announcement_required\":0}"
+        "\"boss_world_defeat_announcement_required\":0,"
+        "\"boss_world_defeat_announcement_key\":\"forged-world-announcement\"}"
     );
     const auto instance_with_world_fields_result = server.SubmitBattleResult(instance_with_world_fields);
     CHECK_TRUE(!instance_with_world_fields_result.ok);
@@ -3485,6 +3494,8 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
     boss_config.match_id = "match-001";
     boss_config.mode_id = "world_boss";
     boss_config.boss_instance_id = "world-boss-result-001";
+    boss_config.boss_season_id = "world-season-s0";
+    boss_config.boss_phase_id = "world-phase-a";
     boss_config.boss_max_hp = 10;
     CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
     CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
@@ -3543,6 +3554,11 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
         built.signed_result.result.mode_result_json.find("\"boss_world_defeat_announcement_required\":1") !=
         std::string::npos
     );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"boss_world_defeat_announcement_key\":\"world-boss-result-001:world-season-s0:world-phase-a:1\""
+        ) != std::string::npos
+    );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("boss_instance_result_state") == std::string::npos);
     CHECK_TRUE(server.SubmitBattleResult(built.signed_result).ok);
 
@@ -3577,6 +3593,19 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
     CHECK_EQ(
         wrong_announcement_result.reason,
         std::string("boss_world_defeat_announcement_required_mismatch")
+    );
+
+    auto wrong_announcement_key = built.signed_result;
+    wrong_announcement_key.result.mode_result_json = ReplaceJsonStringField(
+        wrong_announcement_key.result.mode_result_json,
+        "boss_world_defeat_announcement_key",
+        "forged-world-announcement"
+    );
+    const auto wrong_announcement_key_result = server.SubmitBattleResult(wrong_announcement_key);
+    CHECK_TRUE(!wrong_announcement_key_result.ok);
+    CHECK_EQ(
+        wrong_announcement_key_result.reason,
+        std::string("boss_world_defeat_announcement_key_mismatch")
     );
     return true;
 }

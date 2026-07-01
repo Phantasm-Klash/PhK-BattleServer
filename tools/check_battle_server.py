@@ -413,6 +413,7 @@ def main() -> int:
             '"boss_instance_surviving_player_count"',
             '"boss_instance_clear_credit"',
             '"boss_instance_result_state"',
+            '"boss_world_defeat_announcement_key"',
             "instance_clear_credit ?",
             "connected_player_count > 0",
             "instance_failed",
@@ -522,9 +523,11 @@ def main() -> int:
             "options.required_boss_instance_surviving_player_count",
             "options.required_boss_instance_clear_credit",
             "options.required_boss_instance_result_state",
+            "options.required_boss_world_defeat_announcement_key",
             'mode_state.find("boss_instance_surviving_player_count")',
             'mode_state.find("boss_instance_clear_credit")',
             'mode_state.find("boss_instance_result_state")',
+            'mode_state.find("boss_world_defeat_announcement_key")',
         ],
     ):
         return 1
@@ -684,9 +687,11 @@ def main() -> int:
             "boss_instance_surviving_player_count_mismatch",
             "boss_instance_clear_credit_mismatch",
             "boss_instance_result_state_mismatch",
+            "boss_world_defeat_announcement_key_mismatch",
             "ContainsJsonUintField(\n            result.mode_result_json,\n            \"boss_instance_surviving_player_count\"",
             "ContainsJsonUintField(\n            result.mode_result_json,\n            \"boss_instance_clear_credit\"",
             "ContainsJsonStringField(\n            result.mode_result_json,\n            \"boss_instance_result_state\"",
+            "ContainsJsonStringField(\n            result.mode_result_json,\n            \"boss_world_defeat_announcement_key\"",
         ],
     ):
         return 1
@@ -853,6 +858,8 @@ def main() -> int:
             "boss_instance_surviving_player_count_mismatch",
             "boss_instance_clear_credit_mismatch",
             "boss_instance_result_state_mismatch",
+            "boss_world_defeat_announcement_key",
+            "boss_world_defeat_announcement_key_mismatch",
             "match-instance-boss-no-survivor",
         ],
     ):

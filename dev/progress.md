@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 World Boss Announcement Idempotency Key
+
+- World Boss final snapshots and development signed-result projection now include `boss_world_defeat_announcement_key`, derived from server-owned Boss instance/season/phase identity and defeated tick only when the Boss is defeated.
+- `SubmitBattleResult` binds that key back through `BattleResultVerifier` and rejects forged keys with `boss_world_defeat_announcement_key_mismatch`, giving Nakama/Go compact material to make the all-server announcement idempotent.
+- This is replay/result audit material only. Persistent Boss HP, rewards, inventory, wallet, Steam state, and business database writes remain outside the C++ battle server.
+
 ## 2026-07-01 Instance Boss Result-State Checker Gate
 
 - `tools/check_battle_server.py` now explicitly gates instance Boss result-state projection, server verifier binding, result-verifier mismatch reasons, and CTest tamper coverage for surviving-player count, clear credit, and final result state.

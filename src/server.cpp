@@ -1227,6 +1227,10 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         if (world_announcement != mode_state.end()) {
             options.required_boss_world_defeat_announcement_required = std::stoull(world_announcement->second);
         }
+        const auto world_announcement_key = mode_state.find("boss_world_defeat_announcement_key");
+        if (world_announcement_key != mode_state.end()) {
+            options.required_boss_world_defeat_announcement_key = world_announcement_key->second;
+        }
         const auto instance_survivors = mode_state.find("boss_instance_surviving_player_count");
         if (instance_survivors != mode_state.end()) {
             options.required_boss_instance_surviving_player_count = std::stoull(instance_survivors->second);

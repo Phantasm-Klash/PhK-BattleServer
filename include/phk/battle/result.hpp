@@ -78,6 +78,7 @@ struct BattleResultVerificationOptions {
     std::string required_boss_clear_status;
     std::string required_boss_result_disposition;
     std::string required_boss_instance_result_state;
+    std::string required_boss_world_defeat_announcement_key;
     std::uint64_t required_boss_world_defeat_announcement_required = 0;
     std::string required_last_transfer_card_instance_id;
     std::string required_last_transfer_from_player_id;
