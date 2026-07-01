@@ -3219,6 +3219,89 @@ bool TestInstanceBossResultStateMutualExclusion() {
     return true;
 }
 
+bool TestBossDefeatFreezesAuthoritativeState() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-world-boss-freeze";
+    config.mode_id = "world_boss";
+    config.spawn_period_ticks = 1;
+    config.boss_max_hp = 10;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(AddBossFixturePlayers(simulation));
+
+    auto shoot = MakeInput("p1", 1, 1, 1u << 3);
+    shoot.match_id = config.match_id;
+    shoot.shoot = true;
+    CHECK_TRUE(simulation.AcceptInput(shoot).ok);
+    CHECK_TRUE(AcceptBossReadyActions(
+        simulation,
+        config.match_id,
+        1,
+        2,
+        1,
+        1,
+        1,
+        "world-freeze-ready"
+    ));
+    const auto defeated_snapshot = simulation.Tick();
+    const auto defeated_summary = simulation.Summary();
+    CHECK_EQ(defeated_snapshot.snapshot_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_current_hp"), std::string("0"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_damage_total"), std::string("10"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("boss_defeated_tick"), std::string("1"));
+    CHECK_EQ(defeated_snapshot.mode_state.at("bullet_count"), std::string("0"));
+
+    auto late_input = MakeInput("p1", 2, 3, 1u << 3);
+    late_input.match_id = config.match_id;
+    late_input.shoot = true;
+    const auto late_input_result = simulation.AcceptInput(late_input);
+    CHECK_TRUE(!late_input_result.ok);
+    CHECK_EQ(late_input_result.reason, std::string("boss_defeated"));
+
+    auto late_ready = MakeModeAction(3);
+    late_ready.match_id = config.match_id;
+    late_ready.player_id = "p1";
+    late_ready.tick = 2;
+    late_ready.seq = 3;
+    late_ready.action_id = "late-ready-after-defeat";
+    late_ready.action_type = "ready";
+    late_ready.payload_json = "{\"ready\":true}";
+    const auto late_ready_result = simulation.AcceptModeAction(late_ready);
+    CHECK_TRUE(!late_ready_result.ok);
+    CHECK_EQ(late_ready_result.reason, std::string("boss_defeated"));
+
+    phk::battle::TransferableCardState card;
+    card.card_instance_id = "late-card-after-defeat";
+    card.owner_player_id = "p1";
+    CHECK_TRUE(simulation.ConfigureTransferableCard(card));
+    auto late_transfer = MakeModeAction(4);
+    late_transfer.match_id = config.match_id;
+    late_transfer.player_id = "p1";
+    late_transfer.tick = 2;
+    late_transfer.seq = 3;
+    late_transfer.action_id = "late-transfer-after-defeat";
+    late_transfer.action_type = "transfer_card";
+    late_transfer.payload_json = "{\"target_player_id\":\"p2\",\"card_instance_id\":\"late-card-after-defeat\"}";
+    const auto late_transfer_result = simulation.AcceptModeAction(late_transfer);
+    CHECK_TRUE(!late_transfer_result.ok);
+    CHECK_EQ(late_transfer_result.reason, std::string("boss_defeated"));
+
+    const auto after_extra_tick = simulation.Tick();
+    const auto after_summary = simulation.Summary();
+    CHECK_EQ(after_extra_tick.snapshot_tick, defeated_snapshot.snapshot_tick);
+    CHECK_EQ(after_extra_tick.state_hash, defeated_snapshot.state_hash);
+    CHECK_EQ(after_summary.final_state_hash, defeated_summary.final_state_hash);
+    CHECK_EQ(after_summary.final_tick, defeated_summary.final_tick);
+    CHECK_EQ(after_summary.input_count, defeated_summary.input_count);
+    CHECK_EQ(after_summary.mode_action_count, defeated_summary.mode_action_count);
+    CHECK_EQ(after_summary.event_count, defeated_summary.event_count);
+    CHECK_EQ(after_extra_tick.mode_state.at("boss_current_hp"), std::string("0"));
+    CHECK_EQ(after_extra_tick.mode_state.at("boss_damage_total"), std::string("10"));
+    CHECK_EQ(after_extra_tick.mode_state.at("pending_input_tick_count"), std::string("0"));
+    CHECK_EQ(after_extra_tick.mode_state.at("pending_mode_action_tick_count"), std::string("0"));
+    CHECK_EQ(after_extra_tick.mode_state.at("bullet_count"), std::string("0"));
+    return true;
+}
+
 bool TestBossModeResultSubmissionRequiresBossProjection() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489640000;
@@ -6555,6 +6638,7 @@ int main() {
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
         {"InstanceBossResultStateMutualExclusion", TestInstanceBossResultStateMutualExclusion},
+        {"BossDefeatFreezesAuthoritativeState", TestBossDefeatFreezesAuthoritativeState},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
         {"WorldBossResultSubmissionRequiresPersistentProjection", TestWorldBossResultSubmissionRequiresPersistentProjection},
         {"TransferCardAuditIdsRejectEscapedStrings", TestTransferCardAuditIdsRejectEscapedStrings},
