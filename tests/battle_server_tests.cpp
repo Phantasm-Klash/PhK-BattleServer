@@ -5617,6 +5617,9 @@ bool TestServerAuthoritativeInputAndSnapshot() {
         {"forged-reward", "{\"reward\":\"card_pack\"}"},
         {"forged-inventory", "{\"inventory\":{\"card_id\":\"c001\"}}"},
         {"forged-wallet", "{\"wallet\":{\"currency\":9999}}"},
+        {"forged-boss-current-hp", "{\"current_hp\":0}"},
+        {"forged-boss-max-hp", "{\"max_hp\":1}"},
+        {"forged-boss-hp-delta", "{\"hp_delta\":-999}"},
         {"forged-settlement", "{\"settlement\":{\"rank\":1}}"},
     };
     for (const auto& forbidden_payload : forbidden_authority_payloads) {
