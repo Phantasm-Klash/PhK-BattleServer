@@ -797,6 +797,10 @@ def main() -> int:
         or "HasExpectedAeadNonceShape" not in protocol_impl
         or "nonce_replay" not in protocol_impl
         or "encrypted_payload_type_invalid" not in protocol_impl
+        or '"current_hp"' not in protocol_impl
+        or '"max_hp"' not in protocol_impl
+        or '"hp_delta"' not in protocol_impl
+        or '"boss_max_hp"' not in protocol_impl
     ):
         print("protocol dispatcher missing encrypted packet key/nonce/ciphertext/tag/payload/replay shape guards", file=sys.stderr)
         return 1
