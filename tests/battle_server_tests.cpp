@@ -3536,6 +3536,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         std::string("transfer_card_authority_cooldown_mismatch")
     );
 
+    auto unknown_transfer_field = built.signed_result;
+    unknown_transfer_field.result.mode_result_json = ReplaceFirst(
+        unknown_transfer_field.result.mode_result_json,
+        "}",
+        ",\"last_transfer_damage_claim\":\"client-authored\"}"
+    );
+    const auto unknown_transfer_field_result = server.SubmitBattleResult(unknown_transfer_field);
+    CHECK_TRUE(!unknown_transfer_field_result.ok);
+    CHECK_EQ(unknown_transfer_field_result.reason, std::string("transfer_result_field_unknown"));
+
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
     CHECK_TRUE(!accepted.duplicate);
