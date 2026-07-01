@@ -116,6 +116,12 @@ public:
     DispatchResult DispatchEncrypted(const BattleEncryptedPacket& packet);
 
 private:
+    DispatchResult DispatchWithPayloadValidation(
+        const BattlePacketHeader& header,
+        const std::vector<std::uint8_t>& plaintext_payload,
+        bool validate_plaintext_mode_action
+    );
+
     std::map<std::string, std::uint64_t> last_seq_by_player_;
     std::map<std::string, std::uint64_t> last_tick_by_match_;
     std::set<std::string> seen_encrypted_nonces_;

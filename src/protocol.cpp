@@ -2,6 +2,8 @@
 
 #include "phk/battle/ticket.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <sstream>
 
@@ -26,6 +28,150 @@ bool HasExpectedAeadTagShape(const std::vector<std::uint8_t>& auth_tag) {
 
 bool HasExpectedAeadNonceShape(const std::string& nonce_hex) {
     return nonce_hex.size() == 24 && IsHex(nonce_hex);
+}
+
+std::string LowerAscii(std::string_view value) {
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lowered;
+}
+
+bool LooksLikeJsonObject(std::string_view value) {
+    auto first = value.begin();
+    while (first != value.end() && std::isspace(static_cast<unsigned char>(*first))) {
+        ++first;
+    }
+    auto last = value.end();
+    while (last != first && std::isspace(static_cast<unsigned char>(*(last - 1)))) {
+        --last;
+    }
+    return first != last && *first == '{' && *(last - 1) == '}';
+}
+
+bool ContainsClientAuthoredAuthorityField(std::string_view payload_json) {
+    const std::string lowered = LowerAscii(payload_json);
+    for (const std::string_view needle : {
+        "x_milli",
+        "y_milli",
+        "position",
+        "damage",
+        "boss_hp",
+        "boss_current_hp",
+        "boss_damage",
+        "score",
+        "rank",
+        "reward",
+        "inventory",
+        "wallet",
+        "currency",
+        "grant",
+        "item_id",
+        "balance",
+        "database",
+        "steam_inventory",
+        "result_hash",
+        "battle_result",
+        "settlement",
+    }) {
+        if (lowered.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsAllowedModeActionType(std::string_view action_type) {
+    return action_type == "cast_card" ||
+        action_type == "select_round_card" ||
+        action_type == "transfer_card" ||
+        action_type == "ready" ||
+        action_type == "reconnect";
+}
+
+std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return "";
+    }
+    const auto string_start = value_start + prefix.size();
+    std::string decoded;
+    for (std::size_t index = string_start; index < payload_json.size(); ++index) {
+        const char ch = payload_json[index];
+        if (ch == '"') {
+            return decoded;
+        }
+        if (ch != '\\') {
+            decoded.push_back(ch);
+            continue;
+        }
+        ++index;
+        if (index >= payload_json.size()) {
+            return "";
+        }
+        const char escaped = payload_json[index];
+        switch (escaped) {
+            case '"':
+            case '\\':
+            case '/':
+                decoded.push_back(escaped);
+                break;
+            case 'b':
+                decoded.push_back('\b');
+                break;
+            case 'f':
+                decoded.push_back('\f');
+                break;
+            case 'n':
+                decoded.push_back('\n');
+                break;
+            case 'r':
+                decoded.push_back('\r');
+                break;
+            case 't':
+                decoded.push_back('\t');
+                break;
+            default:
+                return "";
+        }
+    }
+    return "";
+}
+
+bool JsonBoolFieldIsTrue(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return false;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    return payload_json.substr(token_start, 4) == "true";
+}
+
+bool ValidatePlaintextModeActionPayload(std::string_view payload_json, std::string& reason) {
+    if (payload_json.empty() || !LooksLikeJsonObject(payload_json)) {
+        return true;
+    }
+    const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
+    if (!action_type.empty() && !IsAllowedModeActionType(action_type)) {
+        reason = "mode_action_type_unsupported";
+        return false;
+    }
+    if (JsonBoolFieldIsTrue(payload_json, "client_result_authoritative")) {
+        reason = "mode_action_client_result_forbidden";
+        return false;
+    }
+    if (ContainsClientAuthoredAuthorityField(payload_json)) {
+        reason = "mode_action_authority_field_forbidden";
+        return false;
+    }
+    return true;
 }
 
 std::uint64_t HashAppend(std::uint64_t hash, std::string_view value) {
@@ -60,6 +206,14 @@ DispatchResult BattleDispatcher::Dispatch(
     const BattlePacketHeader& header,
     const std::vector<std::uint8_t>& plaintext_payload
 ) {
+    return DispatchWithPayloadValidation(header, plaintext_payload, true);
+}
+
+DispatchResult BattleDispatcher::DispatchWithPayloadValidation(
+    const BattlePacketHeader& header,
+    const std::vector<std::uint8_t>& plaintext_payload,
+    bool validate_plaintext_mode_action
+) {
     DispatchResult result;
     result.payload_type = header.payload_type;
 
@@ -82,6 +236,12 @@ DispatchResult BattleDispatcher::Dispatch(
     if (header.payload_type == BattlePayloadType::Unspecified) {
         result.reason = "payload_type_missing";
         return result;
+    }
+    if (validate_plaintext_mode_action && header.payload_type == BattlePayloadType::ModeAction) {
+        const std::string payload_json(plaintext_payload.begin(), plaintext_payload.end());
+        if (!ValidatePlaintextModeActionPayload(payload_json, result.reason)) {
+            return result;
+        }
     }
     if (RequiresEncryptedPacketShape(header.payload_type)) {
         if (header.key_id.empty()) {
@@ -159,7 +319,7 @@ DispatchResult BattleDispatcher::DispatchEncrypted(const BattleEncryptedPacket& 
             return result;
         }
 
-        DispatchResult dispatched = Dispatch(packet.header, packet.ciphertext);
+        DispatchResult dispatched = DispatchWithPayloadValidation(packet.header, packet.ciphertext, false);
         if (!dispatched.ok) {
             return dispatched;
         }
@@ -172,7 +332,7 @@ DispatchResult BattleDispatcher::DispatchEncrypted(const BattleEncryptedPacket& 
         return dispatched;
     }
 
-    DispatchResult dispatched = Dispatch(packet.header, packet.ciphertext);
+    DispatchResult dispatched = DispatchWithPayloadValidation(packet.header, packet.ciphertext, false);
     if (dispatched.ok && dispatched.response_kind == "input_empty_payload") {
         dispatched.response_kind = "input_encrypted";
     } else if (dispatched.ok && dispatched.response_kind == "mode_action_empty_payload") {
