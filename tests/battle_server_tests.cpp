@@ -1581,7 +1581,7 @@ bool TestFallbackInputReplayAudit() {
 bool TestReadyModeActionLifecycleState() {
     phk::battle::SimulationConfig config;
     config.match_id = "match-ready";
-    config.mode_id = "pvp_duel";
+    config.mode_id = "instance_boss";
     config.spawn_period_ticks = 1000;
     phk::battle::BattleSimulation simulation(config);
     CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
@@ -1663,6 +1663,31 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(reconnected_snapshot.mode_state.at("connected_player_count"), std::string("2"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("ready_player_count"), std::string("1"));
     CHECK_EQ(reconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
+    return true;
+}
+
+bool TestReadyModeActionRejectsNonBossModes() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-ready-pvp";
+    config.mode_id = "pvp_duel";
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", -20000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p2", 20000, 0));
+
+    auto ready = MakeModeAction(1);
+    ready.match_id = config.match_id;
+    ready.player_id = "p1";
+    ready.tick = 1;
+    ready.seq = 1;
+    ready.action_id = "ready-pvp-forbidden";
+    ready.action_type = "ready";
+    ready.payload_json = "{\"ready\":true}";
+    const auto ready_result = simulation.AcceptModeAction(ready);
+    CHECK_TRUE(!ready_result.ok);
+    CHECK_EQ(ready_result.reason, std::string("ready_mode_unsupported"));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Tick().mode_state.at("ready_player_count"), std::string("0"));
     return true;
 }
 
@@ -6350,8 +6375,9 @@ int main() {
 		{"BattleResultSubmission", TestBattleResultSubmission},
 		{"BuildSignedBattleResultCallback", TestBuildSignedBattleResultCallback},
 		{"SimulationDeterminism", TestSimulationDeterminism},
-		{"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
+        {"FallbackInputReplayAudit", TestFallbackInputReplayAudit},
         {"ReadyModeActionLifecycleState", TestReadyModeActionLifecycleState},
+        {"ReadyModeActionRejectsNonBossModes", TestReadyModeActionRejectsNonBossModes},
         {"BattleRoyaleSelectRoundCardPayloadBoundary", TestBattleRoyaleSelectRoundCardPayloadBoundary},
         {"ModeActionPayloadSizeLimit", TestModeActionPayloadSizeLimit},
 		{"BossTransferCardValidation", TestBossTransferCardValidation},

@@ -785,6 +785,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         }
     }
     if (action.action_type == "ready") {
+        if (!IsBossMode(config_.mode_id)) {
+            result.code = InputValidationCode::InvalidModeAction;
+            result.reason = "ready_mode_unsupported";
+            return result;
+        }
         const auto ready = ExtractJsonBoolField(action.payload_json, "ready");
         if (!ready.has_value()) {
             result.code = InputValidationCode::InvalidModeAction;
