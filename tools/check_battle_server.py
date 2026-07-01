@@ -933,6 +933,9 @@ def main() -> int:
         or "tampered_fixture_bullet" not in tests_text
         or "tampered_fixture_mode_state" not in tests_text
         or "tampered_fixture_authority" not in tests_text
+        or "tampered_boss_hp_summary" not in tests_text
+        or "tampered_boss_damage_summary" not in tests_text
+        or "boss_damage_by_player.at(\"p1\")" not in tests_text
         or "CanonicalBattleResultPayload(built.signed_result.result)" not in tests_text
         or "DevBattleResultSignatureHex(built.signed_result.result, config.server_id)" not in tests_text
         or "BuildSignedBattleResult(\"match-001\")" not in tests_text

@@ -72,7 +72,12 @@ struct ReplaySummary {
     std::uint64_t event_count = 0;
     std::uint64_t last_mode_action_tick = 0;
     std::uint64_t last_mode_action_seq = 0;
+    std::uint64_t boss_max_hp = 0;
+    std::uint64_t boss_current_hp = 0;
+    std::uint64_t boss_damage_total = 0;
+    std::uint64_t boss_defeated_tick = 0;
     std::vector<std::string> player_ids;
+    std::map<std::string, std::uint64_t> boss_damage_by_player;
     std::map<std::string, std::string> boss_spawn_slot_by_player;
     std::map<std::string, std::string> boss_fire_target_by_player;
     std::vector<std::string> input_trace;
