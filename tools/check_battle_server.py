@@ -659,10 +659,25 @@ def main() -> int:
     ):
         print("server implementation missing Boss pending-config counts on configure, ticket registration, cancellation, and retirement lifecycle paths", file=sys.stderr)
         return 1
+    if not require_substrings(
+        "server implementation missing explicit match lifecycle status query",
+        server_impl,
+        [
+            "BattleServer::MatchLifecycleStatus",
+            'return "active"',
+            'return "settled"',
+            'return "retired"',
+            'return "cancelled"',
+            'return "pending_boss_config"',
+            'return "unknown"',
+        ],
+    ):
+        return 1
 
     server_header = (ROOT / "include" / "phk" / "battle" / "server.hpp").read_text(encoding="utf-8")
     if (
         "encrypted_dispatch_accepted" not in server_header
+        or "MatchLifecycleStatus" not in server_header
         or "active_sessions_before" not in server_header
         or "active_matches_before" not in server_header
         or "active_sessions_after" not in server_header
@@ -788,6 +803,11 @@ def main() -> int:
         or "first_boss_ticket.pending_boss_configs_after" not in tests_text
         or "cancelled_pending.pending_boss_configs_after" not in tests_text
         or "retired.pending_boss_configs_after" not in tests_text
+        or 'MatchLifecycleStatus("match-001")' not in tests_text
+        or 'std::string("pending_boss_config")' not in tests_text
+        or 'std::string("settled")' not in tests_text
+        or 'std::string("retired")' not in tests_text
+        or 'std::string("cancelled")' not in tests_text
     ):
         print("protocol/server tests missing header-bound development nonce or Boss pending-config lifecycle coverage", file=sys.stderr)
         return 1
