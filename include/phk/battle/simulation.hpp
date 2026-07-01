@@ -216,6 +216,9 @@ private:
         std::string color = "red";
     };
 
+    [[nodiscard]] std::pair<std::int32_t, std::int32_t> BossSpawnPointForIndex(
+        std::size_t player_index
+    ) const;
     [[nodiscard]] std::uint64_t MixSeed(std::uint64_t value) const;
     [[nodiscard]] bool BossReadyToStartForTick(std::uint64_t tick) const;
     [[nodiscard]] bool BattleInputEnabledForTick(std::uint64_t tick) const;

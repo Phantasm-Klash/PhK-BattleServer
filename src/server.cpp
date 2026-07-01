@@ -1,7 +1,6 @@
 #include "phk/battle/server.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -1551,21 +1550,7 @@ std::pair<std::int32_t, std::int32_t> BattleServer::InitialPlayerPosition(
     const std::string& mode_id,
     std::size_t player_index
 ) const {
-    if (IsBossMode(mode_id)) {
-        constexpr std::int32_t kBossSpawnRadiusMilli = 60000;
-        constexpr std::array<std::pair<std::int32_t, std::int32_t>, 8> kBossSpawnPoints = {{
-            {0, -kBossSpawnRadiusMilli},
-            {kBossSpawnRadiusMilli, 0},
-            {0, kBossSpawnRadiusMilli},
-            {-kBossSpawnRadiusMilli, 0},
-            {42426, -42426},
-            {42426, 42426},
-            {-42426, 42426},
-            {-42426, -42426},
-        }};
-        return kBossSpawnPoints[player_index % kBossSpawnPoints.size()];
-    }
-
+    (void)mode_id;
     if (player_index == 0) {
         return {-20000, 0};
     }
