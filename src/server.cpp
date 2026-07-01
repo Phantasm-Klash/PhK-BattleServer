@@ -1164,6 +1164,18 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
         options.required_boss_defeated_tick = std::stoull(mode_state.at("boss_defeated_tick"));
         options.required_boss_clear_status = mode_state.at("boss_clear_status");
         options.required_boss_result_disposition = mode_state.at("boss_result_disposition");
+        const auto world_damage_delta = mode_state.find("boss_world_persistent_damage_delta");
+        if (world_damage_delta != mode_state.end()) {
+            options.required_boss_world_persistent_damage_delta = std::stoull(world_damage_delta->second);
+        }
+        const auto world_hp_after_delta = mode_state.find("boss_world_persistent_hp_after_delta");
+        if (world_hp_after_delta != mode_state.end()) {
+            options.required_boss_world_persistent_hp_after_delta = std::stoull(world_hp_after_delta->second);
+        }
+        const auto world_announcement = mode_state.find("boss_world_defeat_announcement_required");
+        if (world_announcement != mode_state.end()) {
+            options.required_boss_world_defeat_announcement_required = std::stoull(world_announcement->second);
+        }
         const auto instance_survivors = mode_state.find("boss_instance_surviving_player_count");
         if (instance_survivors != mode_state.end()) {
             options.required_boss_instance_surviving_player_count = std::stoull(instance_survivors->second);

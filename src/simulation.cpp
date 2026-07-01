@@ -1017,6 +1017,9 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
             (instance_boss && replay_final_snapshot ? "failed" : "running");
         if (config_.mode_id == "world_boss") {
             snapshot.mode_state["boss_result_disposition"] = "world_damage_report";
+            snapshot.mode_state["boss_world_persistent_damage_delta"] = std::to_string(boss_damage_total_);
+            snapshot.mode_state["boss_world_persistent_hp_after_delta"] = std::to_string(boss_current_hp_);
+            snapshot.mode_state["boss_world_defeat_announcement_required"] = BoolToken(boss_defeated);
         } else {
             snapshot.mode_state["boss_result_disposition"] = instance_clear_credit ?
                 "instance_cleared" :
@@ -1596,6 +1599,21 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
     const auto boss_result_disposition = fixture.final_snapshot.mode_state.find("boss_result_disposition");
     if (boss_result_disposition != fixture.final_snapshot.mode_state.end()) {
         json += ",\"boss_result_disposition\":" + JsonString(boss_result_disposition->second);
+    }
+    const auto boss_world_persistent_damage_delta =
+        fixture.final_snapshot.mode_state.find("boss_world_persistent_damage_delta");
+    if (boss_world_persistent_damage_delta != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_world_persistent_damage_delta\":" + boss_world_persistent_damage_delta->second;
+    }
+    const auto boss_world_persistent_hp_after_delta =
+        fixture.final_snapshot.mode_state.find("boss_world_persistent_hp_after_delta");
+    if (boss_world_persistent_hp_after_delta != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_world_persistent_hp_after_delta\":" + boss_world_persistent_hp_after_delta->second;
+    }
+    const auto boss_world_defeat_announcement_required =
+        fixture.final_snapshot.mode_state.find("boss_world_defeat_announcement_required");
+    if (boss_world_defeat_announcement_required != fixture.final_snapshot.mode_state.end()) {
+        json += ",\"boss_world_defeat_announcement_required\":" + boss_world_defeat_announcement_required->second;
     }
     const auto boss_instance_surviving_player_count =
         fixture.final_snapshot.mode_state.find("boss_instance_surviving_player_count");

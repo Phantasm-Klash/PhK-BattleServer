@@ -2456,6 +2456,9 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_clear_status"), std::string("running"));
     CHECK_EQ(damaged_snapshot.mode_state.at("boss_result_disposition"), std::string("world_damage_report"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_persistent_damage_delta"), std::string("20"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_persistent_hp_after_delta"), std::string("80"));
+    CHECK_EQ(damaged_snapshot.mode_state.at("boss_world_defeat_announcement_required"), std::string("0"));
 
     CHECK_TRUE(world_simulation.SetPlayerConnected("p2", false).ok);
     auto disconnected_input = p2_shoot;
@@ -2474,6 +2477,9 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_damage_p2"), std::string("10"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("connected_player_count"), std::string("3"));
     CHECK_EQ(disconnected_damage_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_persistent_damage_delta"), std::string("30"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_persistent_hp_after_delta"), std::string("70"));
+    CHECK_EQ(disconnected_damage_snapshot.mode_state.at("boss_world_defeat_announcement_required"), std::string("0"));
 
     phk::battle::SimulationConfig instance_config;
     instance_config.match_id = "match-instance-boss-damage";
@@ -2514,6 +2520,10 @@ bool TestBossModeAuthoritativeDamageState() {
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_clear_status"), std::string("cleared"));
     CHECK_EQ(defeated_snapshot.mode_state.at("boss_result_disposition"), std::string("instance_cleared"));
+    CHECK_TRUE(
+        defeated_snapshot.mode_state.find("boss_world_persistent_damage_delta") ==
+        defeated_snapshot.mode_state.end()
+    );
     CHECK_EQ(instance_simulation.Summary().event_count, static_cast<std::uint64_t>(5));
     bool saw_boss_defeated_event = false;
     for (const auto& trace : instance_simulation.Summary().event_trace) {
@@ -2533,6 +2543,44 @@ bool TestBossModeAuthoritativeDamageState() {
 }
 
 bool TestBossModeResultProjection() {
+    phk::battle::SimulationConfig world_config;
+    world_config.match_id = "match-world-boss-result";
+    world_config.mode_id = "world_boss";
+    world_config.spawn_period_ticks = 1000;
+    world_config.boss_max_hp = 10;
+    phk::battle::BattleSimulation world_simulation(world_config);
+    CHECK_TRUE(AddBossFixturePlayers(world_simulation));
+    auto world_shoot = MakeInput("p1", 1, 1, 0);
+    world_shoot.match_id = world_config.match_id;
+    world_shoot.shoot = true;
+    CHECK_TRUE(world_simulation.AcceptInput(world_shoot).ok);
+    CHECK_TRUE(AcceptBossReadyActions(
+        world_simulation,
+        world_config.match_id,
+        1,
+        2,
+        1,
+        1,
+        1,
+        "world-result-projection-ready"
+    ));
+    CHECK_EQ(world_simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
+    const auto world_mode_result_json = phk::battle::DevModeResultJsonFromReplayFixture(
+        world_simulation.BuildReplayFixture("user-world-boss")
+    );
+    CHECK_TRUE(world_mode_result_json.find("\"boss_scope\":\"world_persistent\"") != std::string::npos);
+    CHECK_TRUE(
+        world_mode_result_json.find("\"boss_result_disposition\":\"world_damage_report\"") !=
+        std::string::npos
+    );
+    CHECK_TRUE(world_mode_result_json.find("\"boss_world_persistent_damage_delta\":10") != std::string::npos);
+    CHECK_TRUE(world_mode_result_json.find("\"boss_world_persistent_hp_after_delta\":0") != std::string::npos);
+    CHECK_TRUE(
+        world_mode_result_json.find("\"boss_world_defeat_announcement_required\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(world_mode_result_json.find("boss_instance_result_state") == std::string::npos);
+
     phk::battle::SimulationConfig instance_config;
     instance_config.match_id = "match-instance-boss-result";
     instance_config.mode_id = "instance_boss";
@@ -3347,6 +3395,110 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
     CHECK_TRUE(!accepted.duplicate);
+    return true;
+}
+
+bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489640000;
+    phk::battle::BattleServer server(config);
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-001";
+    boss_config.mode_id = "world_boss";
+    boss_config.boss_instance_id = "world-boss-result-001";
+    boss_config.boss_max_hp = 10;
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-world-result-1",
+        "user-world-result-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899fa01"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-world-result-2",
+        "user-world-result-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899fa02"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-world-result-3",
+        "user-world-result-3",
+        "p3",
+        "world_boss",
+        "00112233445566778899fa03"
+    )).ok);
+    CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+        "ticket-world-result-4",
+        "user-world-result-4",
+        "p4",
+        "world_boss",
+        "00112233445566778899fa04"
+    )).ok);
+
+    CHECK_TRUE(server.AcceptInput(MakeInput("p1", 1, 1, 0)).ok);
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index + 1);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = index == 1 ? 2 : 1;
+        ready.action_id = "world-result-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+    CHECK_EQ(server.TickMatch("match-001").mode_state.at("boss_clear_status"), std::string("cleared"));
+    const auto built = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built.ok);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_world_persistent_damage_delta\":10") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_world_persistent_hp_after_delta\":0") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"boss_world_defeat_announcement_required\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("boss_instance_result_state") == std::string::npos);
+    CHECK_TRUE(server.SubmitBattleResult(built.signed_result).ok);
+
+    auto wrong_delta = built.signed_result;
+    wrong_delta.result.mode_result_json = ReplaceFirst(
+        wrong_delta.result.mode_result_json,
+        "\"boss_world_persistent_damage_delta\":10",
+        "\"boss_world_persistent_damage_delta\":0"
+    );
+    const auto wrong_delta_result = server.SubmitBattleResult(wrong_delta);
+    CHECK_TRUE(!wrong_delta_result.ok);
+    CHECK_EQ(wrong_delta_result.reason, std::string("boss_world_persistent_damage_delta_mismatch"));
+
+    auto wrong_hp = built.signed_result;
+    wrong_hp.result.mode_result_json = ReplaceFirst(
+        wrong_hp.result.mode_result_json,
+        "\"boss_world_persistent_hp_after_delta\":0",
+        "\"boss_world_persistent_hp_after_delta\":10"
+    );
+    const auto wrong_hp_result = server.SubmitBattleResult(wrong_hp);
+    CHECK_TRUE(!wrong_hp_result.ok);
+    CHECK_EQ(wrong_hp_result.reason, std::string("boss_world_persistent_hp_after_delta_mismatch"));
+
+    auto wrong_announcement = built.signed_result;
+    wrong_announcement.result.mode_result_json = ReplaceFirst(
+        wrong_announcement.result.mode_result_json,
+        "\"boss_world_defeat_announcement_required\":1",
+        "\"boss_world_defeat_announcement_required\":0"
+    );
+    const auto wrong_announcement_result = server.SubmitBattleResult(wrong_announcement);
+    CHECK_TRUE(!wrong_announcement_result.ok);
+    CHECK_EQ(
+        wrong_announcement_result.reason,
+        std::string("boss_world_defeat_announcement_required_mismatch")
+    );
     return true;
 }
 
@@ -5567,6 +5719,7 @@ int main() {
         {"BossModeResultProjection", TestBossModeResultProjection},
         {"InstanceBossResultStateMutualExclusion", TestInstanceBossResultStateMutualExclusion},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
+        {"WorldBossResultSubmissionRequiresPersistentProjection", TestWorldBossResultSubmissionRequiresPersistentProjection},
         {"TransferCardAuditIdsRejectEscapedStrings", TestTransferCardAuditIdsRejectEscapedStrings},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
