@@ -44,8 +44,24 @@ VerificationResult TicketVerifier::Verify(
         Fail(result, "ticket_identity_missing");
         return result;
     }
+    if (!IsValidAuditToken(ticket.ticket_id)) {
+        Fail(result, "ticket_id_invalid");
+        return result;
+    }
+    if (!IsValidAuditToken(ticket.match_id)) {
+        Fail(result, "match_id_invalid");
+        return result;
+    }
+    if (!IsValidAuditToken(ticket.user_id)) {
+        Fail(result, "user_id_invalid");
+        return result;
+    }
     if (!IsValidAuditToken(ticket.player_id)) {
         Fail(result, "player_id_invalid");
+        return result;
+    }
+    if (!IsValidAuditToken(ticket.mode_id)) {
+        Fail(result, "mode_id_invalid");
         return result;
     }
     if (ticket.battle_server_id.empty() || ticket.endpoint.empty()) {

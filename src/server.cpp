@@ -586,7 +586,16 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         session.mode_id,
         simulation_it->second.PlayerCount()
     );
-    simulation_it->second.AddPlayer(session.player_id, initial_position.first, initial_position.second);
+    if (!simulation_it->second.AddPlayer(session.player_id, initial_position.first, initial_position.second)) {
+        sessions_by_ticket_.erase(session.ticket_id);
+        result.reason = "player_registration_rejected";
+        result.session = session;
+        result.created_match = false;
+        if (simulation_it->second.PlayerCount() == 0) {
+            simulations_by_match_.erase(simulation_it);
+        }
+        return finish();
+    }
 
     result.ok = true;
     result.reason = "ok";
