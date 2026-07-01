@@ -286,6 +286,14 @@ def check_cpp_manifest() -> bool:
     return True
 
 
+def require_substrings(label: str, text: str, needles: list[str]) -> bool:
+    missing = [needle for needle in needles if needle not in text]
+    if missing:
+        print(f"{label} missing: {', '.join(missing)}", file=sys.stderr)
+        return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build", action="store_true", help="Configure, build, and run CTest.")
@@ -398,6 +406,19 @@ def main() -> int:
         return 1
 
     simulation_impl = (ROOT / "src" / "simulation.cpp").read_text(encoding="utf-8")
+    if not require_substrings(
+        "simulation implementation missing instance Boss result-state projection",
+        simulation_impl,
+        [
+            '"boss_instance_surviving_player_count"',
+            '"boss_instance_clear_credit"',
+            '"boss_instance_result_state"',
+            "instance_clear_credit ?",
+            "connected_player_count > 0",
+            "instance_failed",
+        ],
+    ):
+        return 1
     if (
         "CanonicalStateHash" not in simulation_impl
         or "IsReconnectModeAction" not in simulation_impl
@@ -494,6 +515,19 @@ def main() -> int:
         return 1
 
     server_impl = (ROOT / "src" / "server.cpp").read_text(encoding="utf-8")
+    if not require_substrings(
+        "server implementation missing instance Boss result-state verifier binding",
+        server_impl,
+        [
+            "options.required_boss_instance_surviving_player_count",
+            "options.required_boss_instance_clear_credit",
+            "options.required_boss_instance_result_state",
+            'mode_state.find("boss_instance_surviving_player_count")',
+            'mode_state.find("boss_instance_clear_credit")',
+            'mode_state.find("boss_instance_result_state")',
+        ],
+    ):
+        return 1
     if (
         "match_mode_ruleset_mismatch" not in server_impl
         or "boss_config_already_pending" not in server_impl
@@ -643,6 +677,19 @@ def main() -> int:
         return 1
 
     result_impl = (ROOT / "src" / "result.cpp").read_text(encoding="utf-8")
+    if not require_substrings(
+        "result boundary missing instance Boss result-state verification",
+        result_impl,
+        [
+            "boss_instance_surviving_player_count_mismatch",
+            "boss_instance_clear_credit_mismatch",
+            "boss_instance_result_state_mismatch",
+            "ContainsJsonUintField(\n            result.mode_result_json,\n            \"boss_instance_surviving_player_count\"",
+            "ContainsJsonUintField(\n            result.mode_result_json,\n            \"boss_instance_clear_credit\"",
+            "ContainsJsonStringField(\n            result.mode_result_json,\n            \"boss_instance_result_state\"",
+        ],
+    ):
+        return 1
     if (
         "ruleset_version_mismatch" not in result_impl
         or "reward_projection_json" not in result_impl
@@ -787,6 +834,26 @@ def main() -> int:
         return 1
 
     tests_text = (ROOT / "tests" / "battle_server_tests.cpp").read_text(encoding="utf-8")
+    if not require_substrings(
+        "battle server tests missing instance Boss result-state audit coverage",
+        tests_text,
+        [
+            "TestInstanceBossResultStateMutualExclusion",
+            "boss_instance_surviving_player_count",
+            "boss_instance_clear_credit",
+            "boss_instance_result_state",
+            "std::string(\"4\")",
+            "std::string(\"0\")",
+            "std::string(\"1\")",
+            "std::string(\"cleared\")",
+            "std::string(\"failed\")",
+            "boss_instance_surviving_player_count_mismatch",
+            "boss_instance_clear_credit_mismatch",
+            "boss_instance_result_state_mismatch",
+            "match-instance-boss-no-survivor",
+        ],
+    ):
+        return 1
     if (
         "MakeAuthoritativeReplay60Config" not in tests_text
         or "BattlePayloadType::HandshakeAccept" not in tests_text
