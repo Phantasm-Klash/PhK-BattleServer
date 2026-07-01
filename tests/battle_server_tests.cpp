@@ -3098,6 +3098,20 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         std::string("boss_world_persistent_result_field_forbidden")
     );
 
+    auto instance_with_unknown_boss_field = built.signed_result;
+    instance_with_unknown_boss_field.result.mode_result_json = ReplaceFirst(
+        instance_with_unknown_boss_field.result.mode_result_json,
+        "}",
+        ",\"boss_extra_clear_credit\":1}"
+    );
+    const auto instance_with_unknown_boss_field_result =
+        server.SubmitBattleResult(instance_with_unknown_boss_field);
+    CHECK_TRUE(!instance_with_unknown_boss_field_result.ok);
+    CHECK_EQ(
+        instance_with_unknown_boss_field_result.reason,
+        std::string("boss_result_field_unknown")
+    );
+
     auto wrong_scope = built.signed_result;
     wrong_scope.result.mode_result_json = ReplaceJsonStringField(
         wrong_scope.result.mode_result_json,
@@ -3635,6 +3649,16 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
         wrong_announcement_key_result.reason,
         std::string("boss_world_defeat_announcement_key_mismatch")
     );
+
+    auto unknown_boss_field = built.signed_result;
+    unknown_boss_field.result.mode_result_json = ReplaceFirst(
+        unknown_boss_field.result.mode_result_json,
+        "}",
+        ",\"boss_reward_tier\":\"client-authored\"}"
+    );
+    const auto unknown_boss_field_result = server.SubmitBattleResult(unknown_boss_field);
+    CHECK_TRUE(!unknown_boss_field_result.ok);
+    CHECK_EQ(unknown_boss_field_result.reason, std::string("boss_result_field_unknown"));
     return true;
 }
 

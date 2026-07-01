@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 #include "phk/battle/ticket.hpp"
@@ -158,6 +159,139 @@ bool ContainsBossOnlyResultField(const std::string& json) {
         ContainsJsonField(json, "transfer_card_count") ||
         ContainsJsonField(json, "transfer_card_edges_material") ||
         ContainsJsonFieldWithPrefix(json, "last_transfer_");
+}
+
+std::vector<std::string> JsonObjectFieldNames(const std::string& json) {
+    std::vector<std::string> fields;
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    std::string current_string;
+    bool capturing_field = false;
+
+    for (std::size_t index = 0; index < json.size(); ++index) {
+        const char ch = json[index];
+        if (in_string) {
+            if (escaped) {
+                if (capturing_field) {
+                    current_string.push_back(ch);
+                }
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = false;
+                if (capturing_field) {
+                    std::size_t cursor = index + 1;
+                    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) {
+                        ++cursor;
+                    }
+                    if (cursor < json.size() && json[cursor] == ':') {
+                        fields.push_back(current_string);
+                    }
+                    capturing_field = false;
+                    current_string.clear();
+                }
+                continue;
+            }
+            if (capturing_field) {
+                current_string.push_back(ch);
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+            capturing_field = depth == 1;
+            current_string.clear();
+            continue;
+        }
+        if (ch == '{') {
+            ++depth;
+            continue;
+        }
+        if (ch == '}') {
+            --depth;
+            if (depth <= 0) {
+                break;
+            }
+        }
+    }
+    return fields;
+}
+
+bool IsKnownBossResultField(
+    const std::string& field_name,
+    const BattleResultVerificationOptions& options
+) {
+    static const std::set<std::string> kKnownBossFields = {
+        "boss_scope",
+        "boss_completion_policy",
+        "boss_instance_id",
+        "boss_season_id",
+        "boss_phase_id",
+        "boss_friendly_fire_policy",
+        "boss_min_players",
+        "boss_max_players",
+        "boss_registered_player_count",
+        "boss_layout_player_count",
+        "boss_start_ready",
+        "boss_ready_player_count",
+        "boss_all_registered_connected",
+        "boss_all_registered_ready",
+        "boss_ready_to_start",
+        "boss_roster_locked",
+        "boss_lifecycle_state",
+        "boss_max_hp",
+        "boss_current_hp",
+        "boss_damage_total",
+        "boss_defeated",
+        "boss_defeated_tick",
+        "boss_clear_status",
+        "boss_result_disposition",
+        "boss_world_persistent_damage_delta",
+        "boss_world_persistent_hp_after_delta",
+        "boss_world_defeat_announcement_required",
+        "boss_world_defeat_announcement_key",
+        "boss_instance_surviving_player_count",
+        "boss_instance_clear_credit",
+        "boss_instance_result_state",
+    };
+    if (kKnownBossFields.find(field_name) != kKnownBossFields.end()) {
+        return true;
+    }
+    for (const auto& item : options.required_boss_damage_by_player) {
+        if (field_name == "boss_damage_" + item.first) {
+            return true;
+        }
+    }
+    for (const auto& item : options.required_boss_spawn_slot_by_player) {
+        if (field_name == "boss_player_" + item.first + "_spawn_slot") {
+            return true;
+        }
+    }
+    for (const auto& item : options.required_boss_fire_target_by_player) {
+        if (field_name == "boss_player_" + item.first + "_fire_target") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ContainsUnknownBossResultField(
+    const std::string& json,
+    const BattleResultVerificationOptions& options
+) {
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (field_name.rfind("boss_", 0) == 0 && !IsKnownBossResultField(field_name, options)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string JsonEscape(std::string_view value) {
@@ -365,6 +499,11 @@ BattleResultVerification BattleResultVerifier::Verify(
     }
     if (!IsBossMode(result.mode_id) && ContainsBossOnlyResultField(result.mode_result_json)) {
         Fail(verification, "boss_result_field_forbidden_for_mode");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        ContainsUnknownBossResultField(result.mode_result_json, options)) {
+        Fail(verification, "boss_result_field_unknown");
         return verification;
     }
     if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
