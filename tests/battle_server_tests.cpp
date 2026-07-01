@@ -4309,6 +4309,10 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_EQ(summary_after_settle_mutations.input_count, settled_summary.input_count);
     CHECK_EQ(summary_after_settle_mutations.event_count, settled_summary.event_count);
     CHECK_EQ(summary_after_settle_mutations.final_state_hash, settled_summary.final_state_hash);
+    const auto replay_record_after_settle = server.BuildReplayRecord("match-001", "user-alice", "stage-dev");
+    CHECK_TRUE(replay_record_after_settle.ok);
+    CHECK_EQ(replay_record_after_settle.replay_record.match_id, std::string("match-001"));
+    CHECK_EQ(replay_record_after_settle.replay_record.settlement.result.result_hash, built_result.signed_result.result.result_hash);
 
     const auto retired = server.RetireMatch("match-001");
     CHECK_TRUE(retired.ok);
@@ -4337,9 +4341,15 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto input_after_retire = server.AcceptInput(MakeInput("p1", 2, 2, 1u << 3));
     CHECK_TRUE(!input_after_retire.ok);
     CHECK_EQ(input_after_retire.reason, std::string("match_unknown"));
+    const auto result_build_after_retire = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!result_build_after_retire.ok);
+    CHECK_EQ(result_build_after_retire.reason, std::string("match_retired"));
+    const auto replay_record_after_retire = server.BuildReplayRecord("match-001", "user-alice", "stage-dev");
+    CHECK_TRUE(!replay_record_after_retire.ok);
+    CHECK_EQ(replay_record_after_retire.reason, std::string("match_retired"));
     const auto duplicate_result_after_retire = server.SubmitBattleResult(built_result.signed_result);
     CHECK_TRUE(!duplicate_result_after_retire.ok);
-    CHECK_EQ(duplicate_result_after_retire.reason, std::string("match_unknown"));
+    CHECK_EQ(duplicate_result_after_retire.reason, std::string("match_retired"));
     const auto handshake_after_retire_result = server.AcceptHandshake(handshake_after_settle);
     CHECK_TRUE(!handshake_after_retire_result.ok);
     CHECK_EQ(handshake_after_retire_result.reason, std::string("match_retired"));

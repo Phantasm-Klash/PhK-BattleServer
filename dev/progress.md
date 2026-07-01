@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Retired Replay Export Boundary
+
+- Settled-but-live matches remain readable for `BuildReplayRecord`, so Nakama/Go can export compact replay/settlement audit material before cleanup.
+- After `RetireMatch` removes the simulation, signed-result build, replay-record export, and duplicate result submission now return `match_retired` instead of falling through to `match_unknown`; CTest covers the lifecycle.
+- This is in-memory lifecycle/audit material only. It does not persist replay rows, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-07-01 Ready Mode Scope Boundary
 
 - `ready` mode actions are now Boss-room lifecycle intents only; non-Boss matches reject them as `ready_mode_unsupported` before replay/hash state changes.

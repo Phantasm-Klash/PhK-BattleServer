@@ -1043,9 +1043,11 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
     BuildSignedBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
-            ? "match_cancelled"
-            : "match_unknown";
+        result.reason = result_hash_by_match_.find(match_id) != result_hash_by_match_.end()
+            ? "match_retired"
+            : (cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown");
         return result;
     }
     if (!BossMatchReadyForResult(simulation_it->second)) {
@@ -1092,9 +1094,11 @@ BuildReplayRecordResult BattleServer::BuildReplayRecord(
     BuildReplayRecordResult result;
     const auto simulation_it = simulations_by_match_.find(match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
-            ? "match_cancelled"
-            : "match_unknown";
+        result.reason = result_hash_by_match_.find(match_id) != result_hash_by_match_.end()
+            ? "match_retired"
+            : (cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown");
         return result;
     }
 
@@ -1134,9 +1138,11 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     SubmitBattleResultResult result;
     const auto simulation_it = simulations_by_match_.find(signed_result.result.match_id);
     if (simulation_it == simulations_by_match_.end()) {
-        result.reason = cancelled_match_ids_.find(signed_result.result.match_id) != cancelled_match_ids_.end()
-            ? "match_cancelled"
-            : "match_unknown";
+        result.reason = result_hash_by_match_.find(signed_result.result.match_id) != result_hash_by_match_.end()
+            ? "match_retired"
+            : (cancelled_match_ids_.find(signed_result.result.match_id) != cancelled_match_ids_.end()
+                ? "match_cancelled"
+                : "match_unknown");
         return result;
     }
     if (!BossMatchReadyForResult(simulation_it->second)) {
