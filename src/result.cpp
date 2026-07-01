@@ -294,6 +294,45 @@ bool ContainsUnknownBossResultField(
     return false;
 }
 
+bool IsKnownTransferResultField(const std::string& field_name) {
+    static const std::set<std::string> kKnownTransferFields = {
+        "transfer_card_count",
+        "transfer_card_edges_material",
+        "last_transfer_card_instance_id",
+        "last_transfer_from_player_id",
+        "last_transfer_to_player_id",
+        "last_transfer_authority_owner_player_id",
+        "last_transfer_authority_mode_allowed",
+        "last_transfer_authority_cost_paid",
+        "last_transfer_authority_cooldown_ready",
+    };
+    return kKnownTransferFields.find(field_name) != kKnownTransferFields.end();
+}
+
+bool IsTransferResultField(const std::string& field_name) {
+    return field_name == "transfer_card_count" ||
+        field_name == "transfer_card_edges_material" ||
+        field_name.rfind("last_transfer_", 0) == 0;
+}
+
+bool ContainsTransferResultField(const std::string& json) {
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (IsTransferResultField(field_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ContainsUnknownTransferResultField(const std::string& json) {
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (IsTransferResultField(field_name) && !IsKnownTransferResultField(field_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string JsonEscape(std::string_view value) {
     std::ostringstream out;
     for (const unsigned char ch : value) {
@@ -504,6 +543,14 @@ BattleResultVerification BattleResultVerifier::Verify(
     if (options.require_boss_result_fields &&
         ContainsUnknownBossResultField(result.mode_result_json, options)) {
         Fail(verification, "boss_result_field_unknown");
+        return verification;
+    }
+    if (!options.require_transfer_result_fields && ContainsTransferResultField(result.mode_result_json)) {
+        Fail(verification, "transfer_result_field_forbidden");
+        return verification;
+    }
+    if (options.require_transfer_result_fields && ContainsUnknownTransferResultField(result.mode_result_json)) {
+        Fail(verification, "transfer_result_field_unknown");
         return verification;
     }
     if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
