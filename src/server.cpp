@@ -995,6 +995,9 @@ BattleSnapshot BattleServer::MatchSnapshot(const std::string& match_id) const {
                 : "match_unknown"
         );
     }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return simulation_it->second.Snapshot("match_settled");
+    }
     return simulation_it->second.Snapshot();
 }
 
@@ -1011,6 +1014,9 @@ BattleSnapshot BattleServer::ReconnectSnapshot(
                 ? "match_cancelled"
                 : "match_unknown"
         );
+    }
+    if (result_hash_by_match_.find(match_id) != result_hash_by_match_.end()) {
+        return simulation_it->second.Snapshot("match_settled");
     }
     if (!SessionExistsForPlayer(sessions_by_ticket_, match_id, player_id)) {
         BattleSnapshot snapshot;
