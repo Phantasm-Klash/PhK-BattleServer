@@ -929,6 +929,7 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
 BattleSnapshot BattleSimulation::Tick() {
     const std::uint64_t tick_to_apply = current_tick_ + 1;
     const auto pending_it = pending_inputs_by_tick_.find(tick_to_apply);
+    const bool battle_input_enabled = BattleInputEnabledForTick(tick_to_apply);
 
     for (auto& item : players_) {
         PlayerState& player = item.second;
@@ -940,12 +941,21 @@ BattleSnapshot BattleSimulation::Tick() {
             const auto input_it = pending_it->second.find(player.player_id);
             if (input_it != pending_it->second.end()) {
                 input = input_it->second;
-                player.last_input = input;
+                if (battle_input_enabled) {
+                    player.last_input = input;
+                }
             } else {
-                AccumulateFallbackInput(player, input);
+                if (battle_input_enabled) {
+                    AccumulateFallbackInput(player, input);
+                }
             }
         } else {
-            AccumulateFallbackInput(player, input);
+            if (battle_input_enabled) {
+                AccumulateFallbackInput(player, input);
+            }
+        }
+        if (!battle_input_enabled) {
+            continue;
         }
         ApplyInput(player, input, tick_to_apply);
     }
@@ -1283,6 +1293,10 @@ bool BattleSimulation::BossReadyToStartForTick(std::uint64_t tick) const {
         }
     }
     return true;
+}
+
+bool BattleSimulation::BattleInputEnabledForTick(std::uint64_t tick) const {
+    return !IsBossMode(config_.mode_id) || boss_combat_started_ || BossReadyToStartForTick(tick);
 }
 
 std::string BattleSimulation::CanonicalStateHash() const {
