@@ -876,6 +876,20 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!mutating_projection_result.ok);
     CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
 
+    auto trailing_projection = valid_result;
+    trailing_projection.result.reward_projection_json =
+        trailing_projection.result.reward_projection_json + ",\"grant_currency\":100";
+    const auto trailing_projection_result = server.SubmitBattleResult(trailing_projection);
+    CHECK_TRUE(!trailing_projection_result.ok);
+    CHECK_EQ(trailing_projection_result.reason, std::string("reward_projection_json_invalid"));
+
+    auto trailing_mode_result = valid_result;
+    trailing_mode_result.result.mode_result_json =
+        trailing_mode_result.result.mode_result_json + ",\"inventory_grant\":100";
+    const auto trailing_mode_result_result = server.SubmitBattleResult(trailing_mode_result);
+    CHECK_TRUE(!trailing_mode_result_result.ok);
+    CHECK_EQ(trailing_mode_result_result.reason, std::string("mode_result_json_invalid"));
+
     auto mutating_mode_result = valid_result;
     mutating_mode_result.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
@@ -2996,9 +3010,12 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
 
     auto instance_with_world_fields = built.signed_result;
-    instance_with_world_fields.result.mode_result_json =
-        instance_with_world_fields.result.mode_result_json +
-        ",\"boss_world_persistent_damage_delta\":20,\"boss_world_persistent_hp_after_delta\":980,\"boss_world_defeat_announcement_required\":0";
+    instance_with_world_fields.result.mode_result_json = ReplaceFirst(
+        instance_with_world_fields.result.mode_result_json,
+        "}",
+        ",\"boss_world_persistent_damage_delta\":20,\"boss_world_persistent_hp_after_delta\":980,"
+        "\"boss_world_defeat_announcement_required\":0}"
+    );
     const auto instance_with_world_fields_result = server.SubmitBattleResult(instance_with_world_fields);
     CHECK_TRUE(!instance_with_world_fields_result.ok);
     CHECK_EQ(
@@ -3645,9 +3662,12 @@ bool TestBossModeResultRequiresStartableRoom() {
     const auto built = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(built.ok);
     auto world_with_instance_fields = built.signed_result;
-    world_with_instance_fields.result.mode_result_json =
-        world_with_instance_fields.result.mode_result_json +
-        ",\"boss_instance_surviving_player_count\":4,\"boss_instance_clear_credit\":1,\"boss_instance_result_state\":\"cleared\"";
+    world_with_instance_fields.result.mode_result_json = ReplaceFirst(
+        world_with_instance_fields.result.mode_result_json,
+        "}",
+        ",\"boss_instance_surviving_player_count\":4,\"boss_instance_clear_credit\":1,"
+        "\"boss_instance_result_state\":\"cleared\"}"
+    );
     const auto world_with_instance_fields_result = server.SubmitBattleResult(world_with_instance_fields);
     CHECK_TRUE(!world_with_instance_fields_result.ok);
     CHECK_EQ(

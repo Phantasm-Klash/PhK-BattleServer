@@ -96,6 +96,59 @@ bool ContainsJsonFieldWithPrefix(const std::string& json, std::string_view field
     return false;
 }
 
+bool LooksLikeSingleJsonObject(std::string_view json) {
+    std::size_t cursor = 0;
+    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) {
+        ++cursor;
+    }
+    if (cursor >= json.size() || json[cursor] != '{') {
+        return false;
+    }
+
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (; cursor < json.size(); ++cursor) {
+        const char ch = json[cursor];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+            continue;
+        }
+        if (ch == '{') {
+            ++depth;
+            continue;
+        }
+        if (ch == '}') {
+            --depth;
+            if (depth < 0) {
+                return false;
+            }
+            if (depth == 0) {
+                ++cursor;
+                while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) {
+                    ++cursor;
+                }
+                return cursor == json.size();
+            }
+        }
+    }
+    return false;
+}
+
 bool IsBossMode(std::string_view mode_id) {
     return mode_id == "world_boss" || mode_id == "instance_boss";
 }
@@ -300,6 +353,14 @@ BattleResultVerification BattleResultVerifier::Verify(
     }
     if (result.player_ids.empty() || !SameStringSet(result.player_ids, options.required_player_ids)) {
         Fail(verification, "player_ids_mismatch");
+        return verification;
+    }
+    if (!result.mode_result_json.empty() && !LooksLikeSingleJsonObject(result.mode_result_json)) {
+        Fail(verification, "mode_result_json_invalid");
+        return verification;
+    }
+    if (!result.reward_projection_json.empty() && !LooksLikeSingleJsonObject(result.reward_projection_json)) {
+        Fail(verification, "reward_projection_json_invalid");
         return verification;
     }
     if (!IsBossMode(result.mode_id) && ContainsBossOnlyResultField(result.mode_result_json)) {
