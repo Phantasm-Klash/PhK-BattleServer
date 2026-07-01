@@ -957,6 +957,14 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!mutating_projection_result.ok);
     CHECK_EQ(mutating_projection_result.reason, std::string("reward_projection_mutation_forbidden"));
 
+    auto unknown_projection = valid_result;
+    unknown_projection.result.reward_projection_json =
+        "{\"source\":\"phk-battle-server\",\"projection_only\":true,"
+        "\"settlement_authority\":\"nakama-go\",\"client_preview\":\"accepted\"}";
+    const auto unknown_projection_result = server.SubmitBattleResult(unknown_projection);
+    CHECK_TRUE(!unknown_projection_result.ok);
+    CHECK_EQ(unknown_projection_result.reason, std::string("reward_projection_field_unknown"));
+
     auto trailing_projection = valid_result;
     trailing_projection.result.reward_projection_json =
         trailing_projection.result.reward_projection_json + ",\"grant_currency\":100";

@@ -716,6 +716,8 @@ def main() -> int:
         or "LooksLikeSingleJsonObject" not in result_impl
         or "mode_result_json_invalid" not in result_impl
         or "reward_projection_json_invalid" not in result_impl
+        or "reward_projection_field_unknown" not in result_impl
+        or "ContainsUnknownRewardProjectionField" not in result_impl
         or "result_hash_mismatch" not in result_impl
         or "replay_id_mismatch" not in result_impl
         or "event_cursor_mismatch" not in result_impl
