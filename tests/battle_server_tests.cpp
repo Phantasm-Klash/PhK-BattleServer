@@ -302,6 +302,36 @@ bool TestTicketVerifier() {
     const auto missing_identity_result = verifier.Verify(missing_identity, options);
     CHECK_TRUE(!missing_identity_result.ok);
     CHECK_EQ(missing_identity_result.reason, std::string("ticket_identity_missing"));
+
+    auto invalid_ticket_id = MakeTicket();
+    invalid_ticket_id.ticket.ticket_id = "ticket:forged";
+    const auto invalid_ticket_id_result = verifier.Verify(invalid_ticket_id, options);
+    CHECK_TRUE(!invalid_ticket_id_result.ok);
+    CHECK_EQ(invalid_ticket_id_result.reason, std::string("ticket_id_invalid"));
+
+    auto invalid_match_id = MakeTicket();
+    invalid_match_id.ticket.match_id = "match/forged";
+    const auto invalid_match_id_result = verifier.Verify(invalid_match_id, options);
+    CHECK_TRUE(!invalid_match_id_result.ok);
+    CHECK_EQ(invalid_match_id_result.reason, std::string("match_id_invalid"));
+
+    auto invalid_user_id = MakeTicket();
+    invalid_user_id.ticket.user_id = "user:forged";
+    const auto invalid_user_id_result = verifier.Verify(invalid_user_id, options);
+    CHECK_TRUE(!invalid_user_id_result.ok);
+    CHECK_EQ(invalid_user_id_result.reason, std::string("user_id_invalid"));
+
+    auto invalid_player_id = MakeTicket();
+    invalid_player_id.ticket.player_id = "p1:forged";
+    const auto invalid_player_id_result = verifier.Verify(invalid_player_id, options);
+    CHECK_TRUE(!invalid_player_id_result.ok);
+    CHECK_EQ(invalid_player_id_result.reason, std::string("player_id_invalid"));
+
+    auto invalid_mode_id = MakeTicket();
+    invalid_mode_id.ticket.mode_id = "mode/forged";
+    const auto invalid_mode_id_result = verifier.Verify(invalid_mode_id, options);
+    CHECK_TRUE(!invalid_mode_id_result.ok);
+    CHECK_EQ(invalid_mode_id_result.reason, std::string("mode_id_invalid"));
     return true;
 }
 
