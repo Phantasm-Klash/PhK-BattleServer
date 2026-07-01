@@ -567,6 +567,11 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "player_unknown";
         return result;
     }
+    if (IsBossMode(config_.mode_id) && players_.size() < kBossModeMinPlayers) {
+        result.code = InputValidationCode::BossMinPlayersNotMet;
+        result.reason = "boss_min_players_not_met";
+        return result;
+    }
     if (!player_it->second.connected) {
         result.code = InputValidationCode::PlayerDisconnected;
         result.reason = "player_disconnected";
@@ -2281,6 +2286,8 @@ std::string InputValidationCodeName(InputValidationCode code) {
             return "mode_action_duplicate";
         case InputValidationCode::ReadyAlreadySet:
             return "ready_already_set";
+        case InputValidationCode::BossMinPlayersNotMet:
+            return "boss_min_players_not_met";
     }
     return "unknown";
 }

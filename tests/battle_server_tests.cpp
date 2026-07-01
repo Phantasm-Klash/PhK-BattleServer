@@ -1325,8 +1325,12 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Config().tick_rate_hz, phk::battle::kBattleTickRateHz);
     CHECK_TRUE(first.AddPlayer("p1", -20000, 0));
     CHECK_TRUE(first.AddPlayer("p2", 20000, 0));
+    CHECK_TRUE(first.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(first.AddPlayer("p4", -60000, 0));
     CHECK_TRUE(second.AddPlayer("p1", -20000, 0));
     CHECK_TRUE(second.AddPlayer("p2", 20000, 0));
+    CHECK_TRUE(second.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(second.AddPlayer("p4", -60000, 0));
 
     auto invalid_direction = MakeInput("p1", 1, 1, 0x10u);
     const auto invalid_direction_result = first.AcceptInput(invalid_direction);
@@ -1458,7 +1462,7 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(transfer_self_result.reason, std::string("transfer_card_self_forbidden"));
 
     auto transfer_unknown = transfer_missing;
-    transfer_unknown.payload_json = "{\"target_player_id\":\"p3\",\"card_instance_id\":\"card-unknown\"}";
+    transfer_unknown.payload_json = "{\"target_player_id\":\"p9\",\"card_instance_id\":\"card-unknown\"}";
     const auto transfer_unknown_result = first.AcceptModeAction(transfer_unknown);
     CHECK_TRUE(!transfer_unknown_result.ok);
     CHECK_EQ(transfer_unknown_result.reason, std::string("transfer_card_target_unknown"));
@@ -1488,10 +1492,10 @@ bool TestSimulationDeterminism() {
     }
 
     CHECK_EQ(first_snapshot.snapshot_tick, static_cast<std::uint64_t>(3));
-    CHECK_EQ(first_snapshot.players.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(first_snapshot.players.size(), static_cast<std::size_t>(4));
     CHECK_EQ(first_snapshot.bullets_delta.size(), static_cast<std::size_t>(0));
     CHECK_EQ(first_snapshot.mode_state.at("mode_id"), std::string("world_boss"));
-    CHECK_EQ(first_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(first_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(first_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("ruleset_version"), std::string(phk::v1::kRulesetVersion));
@@ -2705,6 +2709,41 @@ bool TestBossPreCombatInputDoesNotAdvanceBattleState() {
     CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(4));
     CHECK_TRUE(simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
+    return true;
+}
+
+bool TestBossInputRequiresMinimumRoster() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-boss-min-roster-input";
+    config.mode_id = "world_boss";
+    config.spawn_period_ticks = 1000;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(simulation.AddPlayer("p1", 0, -60000));
+
+    auto early_input = MakeInput("p1", 1, 1, 0);
+    early_input.match_id = config.match_id;
+    early_input.shoot = true;
+    const auto early_result = simulation.AcceptInput(early_input);
+    CHECK_TRUE(!early_result.ok);
+    CHECK_TRUE(early_result.code == phk::battle::InputValidationCode::BossMinPlayersNotMet);
+    CHECK_EQ(early_result.reason, std::string("boss_min_players_not_met"));
+
+    const auto waiting_snapshot = simulation.Tick();
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("pending_input_record_count"), std::string("0"));
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(0));
+
+    CHECK_TRUE(simulation.AddPlayer("p2", 60000, 0));
+    CHECK_TRUE(simulation.AddPlayer("p3", 0, 60000));
+    CHECK_TRUE(simulation.AddPlayer("p4", -60000, 0));
+    auto accepted_input = early_input;
+    accepted_input.tick = 2;
+    accepted_input.seq = 1;
+    const auto accepted_result = simulation.AcceptInput(accepted_input);
+    CHECK_TRUE(accepted_result.ok);
+    CHECK_EQ(accepted_result.reason, std::string("ok"));
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(1));
     return true;
 }
 
@@ -6687,6 +6726,7 @@ int main() {
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
         {"BossReadyToStartRequiresAllReadyPlayers", TestBossReadyToStartRequiresAllReadyPlayers},
         {"BossPreCombatInputDoesNotAdvanceBattleState", TestBossPreCombatInputDoesNotAdvanceBattleState},
+        {"BossInputRequiresMinimumRoster", TestBossInputRequiresMinimumRoster},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},

@@ -43,6 +43,7 @@ enum class InputValidationCode {
     EventCursorAhead,
     DuplicateModeAction,
     ReadyAlreadySet,
+    BossMinPlayersNotMet,
 };
 
 struct InputValidationResult {
