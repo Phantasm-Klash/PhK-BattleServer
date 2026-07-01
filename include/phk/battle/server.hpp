@@ -171,11 +171,12 @@ class BattleServer {
 public:
 	explicit BattleServer(BattleServerConfig config);
 
-    [[nodiscard]] const BattleServerConfig& Config() const;
+	[[nodiscard]] const BattleServerConfig& Config() const;
 	[[nodiscard]] std::size_t ActiveSessionCount() const;
-    [[nodiscard]] std::size_t ActiveMatchCount() const;
+	[[nodiscard]] std::size_t ActiveMatchCount() const;
+	[[nodiscard]] std::string MatchLifecycleStatus(const std::string& match_id) const;
 
-    ConfigureBossMatchResult ConfigureBossMatch(BossMatchConfig boss_config);
+	ConfigureBossMatchResult ConfigureBossMatch(BossMatchConfig boss_config);
 	RegisterTicketResult RegisterTicket(const SignedBattleTicket& signed_ticket);
 	BattleHandshakeAccept AcceptHandshake(const BattleHandshakeHello& hello);
 	DispatchResult Dispatch(const BattlePacketHeader& header, const std::vector<std::uint8_t>& plaintext_payload);

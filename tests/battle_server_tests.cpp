@@ -4169,8 +4169,10 @@ bool TestSettledMatchRetirementLifecycle() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489650000;
     phk::battle::BattleServer server(config);
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("unknown"));
     CHECK_TRUE(server.RegisterTicket(MakeTicket()).ok);
     CHECK_TRUE(server.RegisterTicket(MakeTicketForBob()).ok);
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("active"));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
 
@@ -4192,6 +4194,7 @@ bool TestSettledMatchRetirementLifecycle() {
     const auto submitted = server.SubmitBattleResult(built_result.signed_result);
     CHECK_TRUE(submitted.ok);
     CHECK_TRUE(!submitted.duplicate);
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("settled"));
     const auto settled_summary = server.MatchReplaySummary("match-001");
 
     phk::battle::BattleHandshakeHello handshake_after_settle;
@@ -4335,6 +4338,7 @@ bool TestSettledMatchRetirementLifecycle() {
     CHECK_TRUE(!retired.already_retired);
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("retired"));
 
     const auto snapshot_after_retire = server.MatchSnapshot("match-001");
     CHECK_EQ(snapshot_after_retire.snapshot_kind, std::string("match_unknown"));
@@ -4401,6 +4405,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     boss_config.mode_id = "world_boss";
     boss_config.boss_instance_id = "world-boss-cancel-001";
     CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+    CHECK_EQ(server.MatchLifecycleStatus("match-boss-cancel"), std::string("pending_boss_config"));
     const auto cancelled_pending = server.CancelMatch("match-boss-cancel");
     CHECK_TRUE(cancelled_pending.ok);
     CHECK_EQ(cancelled_pending.reason, std::string("ok"));
@@ -4419,6 +4424,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_EQ(cancelled_pending.active_sessions_after, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.active_matches_after, static_cast<std::size_t>(0));
     CHECK_EQ(cancelled_pending.pending_boss_configs_after, static_cast<std::size_t>(0));
+    CHECK_EQ(server.MatchLifecycleStatus("match-boss-cancel"), std::string("cancelled"));
 
     const auto reconfigure_cancelled = server.ConfigureBossMatch(boss_config);
     CHECK_TRUE(!reconfigure_cancelled.ok);
@@ -4443,6 +4449,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     const auto summary_before_cancel = server.MatchReplaySummary("match-001");
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(2));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(1));
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("active"));
 
     const auto cancelled = server.CancelMatch("match-001");
     CHECK_TRUE(cancelled.ok);
@@ -4465,6 +4472,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     CHECK_EQ(cancelled.pending_boss_configs_after, static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveSessionCount(), static_cast<std::size_t>(0));
     CHECK_EQ(server.ActiveMatchCount(), static_cast<std::size_t>(0));
+    CHECK_EQ(server.MatchLifecycleStatus("match-001"), std::string("cancelled"));
 
     const auto cancelled_again = server.CancelMatch("match-001");
     CHECK_TRUE(cancelled_again.ok);
@@ -4536,6 +4544,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     const auto missing_cancel = server.CancelMatch("missing-match");
     CHECK_TRUE(!missing_cancel.ok);
     CHECK_EQ(missing_cancel.reason, std::string("match_unknown"));
+    CHECK_EQ(server.MatchLifecycleStatus("missing-match"), std::string("unknown"));
 
     phk::battle::BattleServer settled_server(config);
     CHECK_TRUE(settled_server.RegisterTicket(MakeTicket()).ok);
@@ -4546,6 +4555,7 @@ bool TestUnsettledMatchCancellationLifecycle() {
     const auto built_result = settled_server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(built_result.ok);
     CHECK_TRUE(settled_server.SubmitBattleResult(built_result.signed_result).ok);
+    CHECK_EQ(settled_server.MatchLifecycleStatus("match-001"), std::string("settled"));
     const auto cancel_settled = settled_server.CancelMatch("match-001");
     CHECK_TRUE(!cancel_settled.ok);
     CHECK_EQ(cancel_settled.reason, std::string("match_settled"));

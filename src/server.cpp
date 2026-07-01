@@ -347,6 +347,27 @@ std::size_t BattleServer::ActiveMatchCount() const {
     return simulations_by_match_.size();
 }
 
+std::string BattleServer::MatchLifecycleStatus(const std::string& match_id) const {
+    if (cancelled_match_ids_.find(match_id) != cancelled_match_ids_.end()) {
+        return "cancelled";
+    }
+    const bool has_active_match = simulations_by_match_.find(match_id) != simulations_by_match_.end();
+    const bool has_result = result_hash_by_match_.find(match_id) != result_hash_by_match_.end();
+    if (has_active_match && has_result) {
+        return "settled";
+    }
+    if (has_active_match) {
+        return "active";
+    }
+    if (has_result) {
+        return "retired";
+    }
+    if (pending_boss_config_by_match_.find(match_id) != pending_boss_config_by_match_.end()) {
+        return "pending_boss_config";
+    }
+    return "unknown";
+}
+
 ConfigureBossMatchResult BattleServer::ConfigureBossMatch(BossMatchConfig boss_config) {
     ConfigureBossMatchResult result;
     result.active_sessions_before = sessions_by_ticket_.size();
