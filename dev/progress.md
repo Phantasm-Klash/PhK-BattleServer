@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Instance Boss Result-State Checker Gate
+
+- `tools/check_battle_server.py` now explicitly gates instance Boss result-state projection, server verifier binding, result-verifier mismatch reasons, and CTest tamper coverage for surviving-player count, clear credit, and final result state.
+- This keeps the documented defeat-required instance Boss settlement audit fields from drifting out of `mode_result_json` or `SubmitBattleResult` while full protobuf result bindings remain pending.
+- This remains checker/audit coverage only. The C++ battle server still does not persist Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-06-30 Mode Action JSON String Decode Boundary
 
 - Development mode-action JSON string extraction now decodes standard JSON escapes for string intent fields before validating Boss `transfer_card` authority.
