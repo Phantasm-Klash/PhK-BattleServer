@@ -2032,6 +2032,112 @@ bool TestBossTransferCardRevalidatesConnectedPlayersAtTick() {
         accepted_snapshot.mode_state.at("transfer_card_edges_material"),
         std::string("boss-card-revalidate:p1>p2:p1:1:1:1;")
     );
+
+    phk::battle::BattleServer source_disconnected_server(config);
+    CHECK_TRUE(source_disconnected_server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-source-revalidate-1",
+        "user-boss-transfer-source-revalidate-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899bd01"
+    )).ok);
+    CHECK_TRUE(source_disconnected_server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-source-revalidate-2",
+        "user-boss-transfer-source-revalidate-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899bd02"
+    )).ok);
+    phk::battle::TransferableCardState source_card;
+    source_card.card_instance_id = "boss-card-source-revalidate";
+    source_card.owner_player_id = "p1";
+    CHECK_TRUE(source_disconnected_server.ConfigureTransferableCard("match-001", source_card));
+
+    auto source_transfer = MakeModeAction(1);
+    source_transfer.match_id = "match-001";
+    source_transfer.player_id = "p1";
+    source_transfer.tick = 1;
+    source_transfer.seq = 1;
+    source_transfer.action_id = "action-boss-transfer-source-revalidate";
+    source_transfer.action_type = "transfer_card";
+    source_transfer.payload_json =
+        "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-source-revalidate\"}";
+    CHECK_TRUE(source_disconnected_server.AcceptModeAction(source_transfer).ok);
+
+    CHECK_TRUE(source_disconnected_server.SetPlayerConnected("match-001", "p1", false).ok);
+    const auto source_rejected_snapshot = source_disconnected_server.TickMatch("match-001");
+    CHECK_EQ(source_rejected_snapshot.mode_state.at("mode_action_count"), std::string("0"));
+    CHECK_TRUE(
+        source_rejected_snapshot.mode_state.find("transfer_card_count") ==
+        source_rejected_snapshot.mode_state.end()
+    );
+
+    CHECK_TRUE(source_disconnected_server.SetPlayerConnected("match-001", "p1", true).ok);
+    auto source_retry = source_transfer;
+    source_retry.tick = 2;
+    source_retry.seq = 2;
+    source_retry.action_id = "action-boss-transfer-source-revalidate-retry";
+    CHECK_TRUE(source_disconnected_server.AcceptModeAction(source_retry).ok);
+    const auto source_accepted_snapshot = source_disconnected_server.TickMatch("match-001");
+    CHECK_EQ(source_accepted_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        source_accepted_snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-source-revalidate:p1>p2:p1:1:1:1;")
+    );
+
+    phk::battle::BattleServer cooldown_server(config);
+    CHECK_TRUE(cooldown_server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-cooldown-revalidate-1",
+        "user-boss-transfer-cooldown-revalidate-1",
+        "p1",
+        "world_boss",
+        "00112233445566778899be01"
+    )).ok);
+    CHECK_TRUE(cooldown_server.RegisterTicket(MakeModeTicket(
+        "ticket-boss-transfer-cooldown-revalidate-2",
+        "user-boss-transfer-cooldown-revalidate-2",
+        "p2",
+        "world_boss",
+        "00112233445566778899be02"
+    )).ok);
+    phk::battle::TransferableCardState cooldown_card;
+    cooldown_card.card_instance_id = "boss-card-cooldown-revalidate";
+    cooldown_card.owner_player_id = "p1";
+    CHECK_TRUE(cooldown_server.ConfigureTransferableCard("match-001", cooldown_card));
+
+    auto cooldown_transfer = MakeModeAction(1);
+    cooldown_transfer.match_id = "match-001";
+    cooldown_transfer.player_id = "p1";
+    cooldown_transfer.tick = 1;
+    cooldown_transfer.seq = 1;
+    cooldown_transfer.action_id = "action-boss-transfer-cooldown-revalidate";
+    cooldown_transfer.action_type = "transfer_card";
+    cooldown_transfer.payload_json =
+        "{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-cooldown-revalidate\"}";
+    CHECK_TRUE(cooldown_server.AcceptModeAction(cooldown_transfer).ok);
+
+    cooldown_card.cooldown_ready = false;
+    CHECK_TRUE(cooldown_server.ConfigureTransferableCard("match-001", cooldown_card));
+    const auto cooldown_rejected_snapshot = cooldown_server.TickMatch("match-001");
+    CHECK_EQ(cooldown_rejected_snapshot.mode_state.at("mode_action_count"), std::string("0"));
+    CHECK_TRUE(
+        cooldown_rejected_snapshot.mode_state.find("transfer_card_count") ==
+        cooldown_rejected_snapshot.mode_state.end()
+    );
+
+    cooldown_card.cooldown_ready = true;
+    CHECK_TRUE(cooldown_server.ConfigureTransferableCard("match-001", cooldown_card));
+    auto cooldown_retry = cooldown_transfer;
+    cooldown_retry.tick = 2;
+    cooldown_retry.seq = 2;
+    cooldown_retry.action_id = "action-boss-transfer-cooldown-revalidate-retry";
+    CHECK_TRUE(cooldown_server.AcceptModeAction(cooldown_retry).ok);
+    const auto cooldown_accepted_snapshot = cooldown_server.TickMatch("match-001");
+    CHECK_EQ(cooldown_accepted_snapshot.mode_state.at("transfer_card_count"), std::string("1"));
+    CHECK_EQ(
+        cooldown_accepted_snapshot.mode_state.at("transfer_card_edges_material"),
+        std::string("boss-card-cooldown-revalidate:p1>p2:p1:1:1:1;")
+    );
     return true;
 }
 

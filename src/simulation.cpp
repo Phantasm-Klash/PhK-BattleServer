@@ -1950,13 +1950,22 @@ bool BattleSimulation::ApplyTransferCardModeAction(const BattleModeAction& actio
         reject_queued_transfer();
         return false;
     }
+    const auto latest_card_it = transferable_cards_.find(card_instance_id);
+    if (latest_card_it == transferable_cards_.end() ||
+        latest_card_it->second.owner_player_id != action.player_id ||
+        !latest_card_it->second.mode_allowed ||
+        !latest_card_it->second.cost_paid ||
+        !latest_card_it->second.cooldown_ready) {
+        reject_queued_transfer();
+        return false;
+    }
 
     transferred_card_edges_[card_instance_id] = {action.player_id, target_player_id};
     last_transfer_card_instance_id_ = card_instance_id;
     last_transfer_from_player_id_ = action.player_id;
     last_transfer_to_player_id_ = target_player_id;
-    last_transfer_card_authority_ = authority_it->second;
-    transferred_card_authority_by_card_instance_id_[card_instance_id] = authority_it->second;
+    last_transfer_card_authority_ = latest_card_it->second;
+    transferred_card_authority_by_card_instance_id_[card_instance_id] = latest_card_it->second;
     pending_transfer_card_authority_by_action_id_.erase(authority_it);
     ++transfer_card_count_;
     return true;
