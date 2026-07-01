@@ -1328,6 +1328,41 @@ std::string CanonicalReplayInputStreamSummaryRecord(
     return out.str();
 }
 
+std::string CanonicalReplaySummaryPayload(const ReplaySummary& summary) {
+    std::ostringstream out;
+    out << summary.match_id << '|'
+        << summary.mode_id << '|'
+        << summary.ruleset_version << '|'
+        << summary.input_stream_hash << '|'
+        << summary.event_stream_hash << '|'
+        << summary.final_state_hash << '|'
+        << summary.match_seed << '|'
+        << summary.final_tick << '|'
+        << summary.input_count << '|'
+        << summary.fallback_input_count << '|'
+        << summary.neutral_fallback_count << '|'
+        << summary.held_input_fallback_count << '|'
+        << summary.mode_action_count << '|'
+        << summary.event_count << '|'
+        << summary.last_mode_action_id << '|'
+        << summary.last_mode_action_type << '|'
+        << summary.last_mode_action_player_id << '|'
+        << summary.last_mode_action_tick << '|'
+        << summary.last_mode_action_seq << '|';
+    for (const auto& player_id : summary.player_ids) {
+        out << player_id << ',';
+    }
+    out << '|';
+    for (const auto& trace : summary.input_trace) {
+        out << trace << '\n';
+    }
+    out << '|';
+    for (const auto& trace : summary.event_trace) {
+        out << trace << '\n';
+    }
+    return out.str();
+}
+
 std::string DevReplayInputStreamSummaryHash(
     const ReplayInputStreamSummaryRecord& record
 ) {
@@ -1351,6 +1386,7 @@ std::string CanonicalReplayFixturePayload(const ReplayFixture& fixture) {
         << fixture.match_seed << '|'
         << fixture.event_cursor << '|'
         << (fixture.server_authoritative ? "1" : "0") << '|'
+        << CanonicalReplaySummaryPayload(fixture.summary) << '|'
         << CanonicalReplayInputStreamSummaryRecord(fixture.replay_summary_record) << '|'
         << CanonicalSnapshotPayload(fixture.final_snapshot) << '|';
     for (const auto& player_id : fixture.player_ids) {

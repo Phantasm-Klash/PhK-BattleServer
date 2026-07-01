@@ -872,13 +872,13 @@ def main() -> int:
         or "DevReplayInputStreamSummaryHash(summary_record)" not in tests_text
         or "sha256:dev-fnv64-28cdfb99face4a10" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
-        or "sha256:dev-fnv64-31691f363321149c" not in tests_text
+        or "sha256:dev-fnv64-2c262f6238f44d85" not in tests_text
         or "ReplayRecordBridgeBoundary" not in tests_text
         or "BuildReplayRecord(\"match-001\"" not in tests_text
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
         or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-08219ff97786a5bf" not in tests_text
+        or "sha256:dev-fnv64-44e1dd01038e8be2" not in tests_text
         or "final_snapshot_tick_mismatch" not in tests_text
         or "final_snapshot_kind_mismatch" not in tests_text
         or "final_snapshot_state_hash_mismatch" not in tests_text
@@ -906,7 +906,7 @@ def main() -> int:
         or "ModeResultJsonForSummary" in tests_text
         or "MakeBattleResultForSummary" in tests_text
         or "sha256:dev-fnv64-19959dc47479580d" not in tests_text
-        or "sha256:dev-fnv64-939e7eb9c028b0d4" not in tests_text
+        or "sha256:dev-fnv64-8cc2b33bdda688c3" not in tests_text
         or "sha256:dev-fnv64-e6fb6a98c2e6844d" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text
         or "replay_fixture_hash_mismatch" not in tests_text
