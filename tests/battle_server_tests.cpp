@@ -5017,9 +5017,63 @@ bool TestDispatcher() {
     CHECK_EQ(mode_action_result.response_kind, std::string("mode_action"));
     CHECK_EQ(phk::battle::PayloadTypeName(phk::battle::BattlePayloadType::ModeAction), std::string("mode_action"));
 
+    phk::battle::BattlePacketHeader typed_mode_action = mode_action;
+    typed_mode_action.seq = phk::v1::kBattleModeActionSeq + 1;
+    typed_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
+    RefreshDevAeadNonce(typed_mode_action);
+    const std::string allowed_action_payload =
+        "{\"action_type\":\"transfer_card\",\"card_instance_id\":\"card-001\",\"target_player_id\":\"p2\"}";
+    const auto typed_mode_action_result = dispatcher.Dispatch(
+        typed_mode_action,
+        std::vector<std::uint8_t>(allowed_action_payload.begin(), allowed_action_payload.end())
+    );
+    CHECK_TRUE(typed_mode_action_result.ok);
+    CHECK_EQ(typed_mode_action_result.response_kind, std::string("mode_action"));
+
+    phk::battle::BattlePacketHeader forged_result_action = mode_action;
+    forged_result_action.seq = phk::v1::kBattleModeActionSeq + 2;
+    forged_result_action.tick = phk::v1::kBattleModeActionTick + 2;
+    RefreshDevAeadNonce(forged_result_action);
+    const std::string forged_result_payload =
+        "{\"action_type\":\"ready\",\"client_result_authoritative\":true}";
+    const auto forged_result_action_result = dispatcher.Dispatch(
+        forged_result_action,
+        std::vector<std::uint8_t>(forged_result_payload.begin(), forged_result_payload.end())
+    );
+    CHECK_TRUE(!forged_result_action_result.ok);
+    CHECK_EQ(forged_result_action_result.reason, std::string("mode_action_client_result_forbidden"));
+
+    phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
+    const std::string forged_damage_payload =
+        "{\"action_type\":\"ready\",\"boss_damage\":9999}";
+    const auto forged_damage_action_result = dispatcher.Dispatch(
+        forged_damage_action,
+        std::vector<std::uint8_t>(forged_damage_payload.begin(), forged_damage_payload.end())
+    );
+    CHECK_TRUE(!forged_damage_action_result.ok);
+    CHECK_EQ(forged_damage_action_result.reason, std::string("mode_action_authority_field_forbidden"));
+
+    const std::string unsupported_action_payload =
+        "{\"action_type\":\"grant_reward\",\"target_player_id\":\"p2\"}";
+    const auto unsupported_mode_action_result = dispatcher.Dispatch(
+        forged_damage_action,
+        std::vector<std::uint8_t>(unsupported_action_payload.begin(), unsupported_action_payload.end())
+    );
+    CHECK_TRUE(!unsupported_mode_action_result.ok);
+    CHECK_EQ(unsupported_mode_action_result.reason, std::string("mode_action_type_unsupported"));
+
+    phk::battle::BattlePacketHeader retry_after_rejected_action = forged_damage_action;
+    const std::string retry_payload = "{\"action_type\":\"ready\",\"ready\":true}";
+    const auto retry_after_rejected_action_result = dispatcher.Dispatch(
+        retry_after_rejected_action,
+        std::vector<std::uint8_t>(retry_payload.begin(), retry_payload.end())
+    );
+    CHECK_TRUE(retry_after_rejected_action_result.ok);
+    CHECK_EQ(retry_after_rejected_action_result.response_kind, std::string("mode_action"));
+
     phk::battle::BattlePacketHeader empty_mode_action = mode_action;
-    empty_mode_action.seq = phk::v1::kBattleModeActionSeq + 1;
-    empty_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
+    empty_mode_action.seq = phk::v1::kBattleModeActionSeq + 3;
+    empty_mode_action.tick = phk::v1::kBattleModeActionTick + 3;
     RefreshDevAeadNonce(empty_mode_action);
     const auto empty_mode_action_result = dispatcher.Dispatch(empty_mode_action, {});
     CHECK_TRUE(empty_mode_action_result.ok);
@@ -5034,7 +5088,7 @@ bool TestDispatcher() {
     CHECK_EQ(nonce_mismatch_result.reason, std::string("nonce_mismatch"));
 
     phk::battle::BattlePacketHeader forbidden = ping;
-    forbidden.seq = phk::v1::kBattleModeActionSeq + 2;
+    forbidden.seq = phk::v1::kBattleModeActionSeq + 4;
     forbidden.payload_type = phk::battle::BattlePayloadType::Result;
     const auto forbidden_result = dispatcher.Dispatch(forbidden, {});
     CHECK_TRUE(!forbidden_result.ok);
@@ -5139,9 +5193,19 @@ bool TestEncryptedPacketAdapterShape() {
     CHECK_TRUE(!event_packet_result.ok);
     CHECK_EQ(event_packet_result.reason, std::string("encrypted_payload_type_invalid"));
 
+    auto mode_ciphertext_packet = packet;
+    mode_ciphertext_packet.header.player_id = "p2";
+    mode_ciphertext_packet.header.seq = 7;
+    mode_ciphertext_packet.header.payload_type = phk::battle::BattlePayloadType::ModeAction;
+    RefreshDevAeadNonce(mode_ciphertext_packet.header);
+    mode_ciphertext_packet.ciphertext = {'{', '"', 'd', 'a', 'm', 'a', 'g', 'e', '"', ':', '9', '}'};
+    const auto mode_ciphertext_result = dispatcher.DispatchEncrypted(mode_ciphertext_packet);
+    CHECK_TRUE(mode_ciphertext_result.ok);
+    CHECK_EQ(mode_ciphertext_result.response_kind, std::string("mode_action"));
+
     auto nonce_mismatch = packet;
     nonce_mismatch.header.player_id = "p2";
-    nonce_mismatch.header.seq = 7;
+    nonce_mismatch.header.seq = 8;
     nonce_mismatch.header.nonce_hex = RepeatHex('e', 24);
     const auto nonce_mismatch_result = dispatcher.DispatchEncrypted(nonce_mismatch);
     CHECK_TRUE(!nonce_mismatch_result.ok);
