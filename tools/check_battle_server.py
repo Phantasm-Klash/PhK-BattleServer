@@ -540,6 +540,7 @@ def main() -> int:
         or "pending_boss_configs_before = pending_boss_config_by_match_.size()" not in server_impl
         or "pending_boss_configs_after = pending_boss_config_by_match_.size()" not in server_impl
         or "SessionExistsForPlayer" not in server_impl
+        or "std::max(static_cast<std::uint32_t>(kBossModeMinPlayers), config.max_players)" not in server_impl
         or "static_cast<std::uint32_t>(kBossModeMaxPlayers)" not in server_impl
         or "BattleServer::IsPlayerConnected" not in server_impl
         or "options.required_ruleset_version" not in server_impl
@@ -1020,6 +1021,8 @@ def main() -> int:
         or "boss_friendly_fire_policy_mismatch" not in tests_text
         or "boss_registered_player_count" not in tests_text
         or "boss_registered_player_count_mismatch" not in tests_text
+        or "ticket-boss-min-cap-5" not in tests_text
+        or "small_boss_snapshot.mode_state.at(\"boss_start_ready\")" not in tests_text
         or "boss_all_registered_connected" not in tests_text
         or "boss_all_registered_connected_mismatch" not in tests_text
         or "boss_all_registered_ready" not in tests_text
