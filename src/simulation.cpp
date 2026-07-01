@@ -621,6 +621,15 @@ InputValidationResult BattleSimulation::AcceptInput(const BattleInput& input) {
     }
 
     pending_inputs_by_tick_[input.tick][input.player_id] = input;
+    std::uint64_t pending_input_records = 0;
+    for (const auto& item : pending_inputs_by_tick_) {
+        pending_input_records += item.second.size();
+    }
+    input_buffer_peak_tick_count_ = std::max<std::uint64_t>(
+        input_buffer_peak_tick_count_,
+        pending_inputs_by_tick_.size()
+    );
+    input_buffer_peak_record_count_ = std::max(input_buffer_peak_record_count_, pending_input_records);
     players_[input.player_id].last_seq = input.seq;
     AccumulateAcceptedInput(input);
     return result;
@@ -891,6 +900,18 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
         pending_transfer_card_authority_by_action_id_[action.action_id] = transferable_cards_.at(card_instance_id);
     }
     pending_mode_actions_by_tick_[action.tick].push_back(action);
+    std::uint64_t pending_mode_action_records = 0;
+    for (const auto& item : pending_mode_actions_by_tick_) {
+        pending_mode_action_records += item.second.size();
+    }
+    mode_action_buffer_peak_tick_count_ = std::max<std::uint64_t>(
+        mode_action_buffer_peak_tick_count_,
+        pending_mode_actions_by_tick_.size()
+    );
+    mode_action_buffer_peak_record_count_ = std::max(
+        mode_action_buffer_peak_record_count_,
+        pending_mode_action_records
+    );
     return result;
 }
 
@@ -949,6 +970,24 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["neutral_fallback_count"] = std::to_string(neutral_fallback_count_);
     snapshot.mode_state["held_input_fallback_count"] = std::to_string(held_input_fallback_count_);
     snapshot.mode_state["mode_action_count"] = std::to_string(mode_action_count_);
+    std::uint64_t pending_input_records = 0;
+    for (const auto& item : pending_inputs_by_tick_) {
+        pending_input_records += item.second.size();
+    }
+    std::uint64_t pending_mode_action_records = 0;
+    for (const auto& item : pending_mode_actions_by_tick_) {
+        pending_mode_action_records += item.second.size();
+    }
+    snapshot.mode_state["pending_input_tick_count"] = std::to_string(pending_inputs_by_tick_.size());
+    snapshot.mode_state["pending_input_record_count"] = std::to_string(pending_input_records);
+    snapshot.mode_state["input_buffer_peak_tick_count"] = std::to_string(input_buffer_peak_tick_count_);
+    snapshot.mode_state["input_buffer_peak_record_count"] = std::to_string(input_buffer_peak_record_count_);
+    snapshot.mode_state["pending_mode_action_tick_count"] = std::to_string(pending_mode_actions_by_tick_.size());
+    snapshot.mode_state["pending_mode_action_record_count"] = std::to_string(pending_mode_action_records);
+    snapshot.mode_state["mode_action_buffer_peak_tick_count"] =
+        std::to_string(mode_action_buffer_peak_tick_count_);
+    snapshot.mode_state["mode_action_buffer_peak_record_count"] =
+        std::to_string(mode_action_buffer_peak_record_count_);
     std::size_t connected_player_count = 0;
     for (const auto& item : players_) {
         if (item.second.connected) {
@@ -1496,6 +1535,22 @@ std::string DevModeResultJsonFromReplayFixture(const ReplayFixture& fixture) {
         std::to_string(summary.held_input_fallback_count) +
         ",\"mode_action_count\":" +
         std::to_string(summary.mode_action_count) +
+        ",\"pending_input_tick_count\":" +
+        fixture.final_snapshot.mode_state.at("pending_input_tick_count") +
+        ",\"pending_input_record_count\":" +
+        fixture.final_snapshot.mode_state.at("pending_input_record_count") +
+        ",\"input_buffer_peak_tick_count\":" +
+        fixture.final_snapshot.mode_state.at("input_buffer_peak_tick_count") +
+        ",\"input_buffer_peak_record_count\":" +
+        fixture.final_snapshot.mode_state.at("input_buffer_peak_record_count") +
+        ",\"pending_mode_action_tick_count\":" +
+        fixture.final_snapshot.mode_state.at("pending_mode_action_tick_count") +
+        ",\"pending_mode_action_record_count\":" +
+        fixture.final_snapshot.mode_state.at("pending_mode_action_record_count") +
+        ",\"mode_action_buffer_peak_tick_count\":" +
+        fixture.final_snapshot.mode_state.at("mode_action_buffer_peak_tick_count") +
+        ",\"mode_action_buffer_peak_record_count\":" +
+        fixture.final_snapshot.mode_state.at("mode_action_buffer_peak_record_count") +
         ",\"input_trace_count\":" +
         std::to_string(summary.input_trace.size()) +
         ",\"event_trace_count\":" +

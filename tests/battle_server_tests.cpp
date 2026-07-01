@@ -767,6 +767,32 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_mode_action_count_result.ok);
     CHECK_EQ(wrong_mode_action_count_result.reason, std::string("mode_action_count_mismatch"));
 
+    auto wrong_input_buffer_peak = valid_result;
+    wrong_input_buffer_peak.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"input_buffer_peak_record_count\":0",
+        "\"input_buffer_peak_record_count\":999"
+    );
+    const auto wrong_input_buffer_peak_result = server.SubmitBattleResult(wrong_input_buffer_peak);
+    CHECK_TRUE(!wrong_input_buffer_peak_result.ok);
+    CHECK_EQ(
+        wrong_input_buffer_peak_result.reason,
+        std::string("input_buffer_peak_record_count_mismatch")
+    );
+
+    auto wrong_mode_action_buffer_peak = valid_result;
+    wrong_mode_action_buffer_peak.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"mode_action_buffer_peak_record_count\":1",
+        "\"mode_action_buffer_peak_record_count\":999"
+    );
+    const auto wrong_mode_action_buffer_peak_result = server.SubmitBattleResult(wrong_mode_action_buffer_peak);
+    CHECK_TRUE(!wrong_mode_action_buffer_peak_result.ok);
+    CHECK_EQ(
+        wrong_mode_action_buffer_peak_result.reason,
+        std::string("mode_action_buffer_peak_record_count_mismatch")
+    );
+
     auto wrong_event_trace_count = valid_result;
     wrong_event_trace_count.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
@@ -983,8 +1009,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "846e2b5d5946007b657364544e56b65a46789d4b43676c39277dd64238782218"
-            "00594781850328ffe15e80787a13dedec263b96f6f2494bda368f26664354a9c"
+            "1b7d7a029113c4cbfc82b2f986247aaadd87ebf07b353089be8d24e77045e668"
+            "97689626bcd0ed4f786dcf1db1e1a32e59730814a6f2590d3a78410b9c030eec"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -997,12 +1023,16 @@ bool TestBuildSignedBattleResultCallback() {
             "{\"battle_result_owner\":\"cpp\",\"event_cursor\":0,\"final_tick\":1,\"tick_rate_hz\":60,"
             "\"match_seed\":16031087345790602692,\"input_count\":2,"
             "\"fallback_input_count\":0,\"neutral_fallback_count\":0,\"held_input_fallback_count\":0,"
-            "\"mode_action_count\":0,\"input_trace_count\":2,\"event_trace_count\":0,"
+            "\"mode_action_count\":0,\"pending_input_tick_count\":0,\"pending_input_record_count\":0,"
+            "\"input_buffer_peak_tick_count\":1,\"input_buffer_peak_record_count\":2,"
+            "\"pending_mode_action_tick_count\":0,\"pending_mode_action_record_count\":0,"
+            "\"mode_action_buffer_peak_tick_count\":0,\"mode_action_buffer_peak_record_count\":0,"
+            "\"input_trace_count\":2,\"event_trace_count\":0,"
             "\"input_stream_hash\":\"fnv64:6b09da7d62e0941e\","
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"replay_summary_hash\":\"sha256:dev-fnv64-e6fb6a98c2e6844d\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-8cc2b33bdda688c3\","
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-1a447e81498cd322\","
             "\"final_snapshot_tick\":1,\"final_snapshot_kind\":\"replay_final\","
             "\"final_snapshot_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"final_snapshot_event_cursor\":0}|1782489630000"
@@ -1136,8 +1166,16 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-8cc2b33bdda688c3\""
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-1a447e81498cd322\""
         ) != std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"input_buffer_peak_record_count\":2") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find("\"mode_action_buffer_peak_record_count\":0") !=
+        std::string::npos
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
@@ -4167,6 +4205,14 @@ bool TestAuthoritativeReplay60TickFixture() {
     CHECK_EQ(first.Snapshot().mode_state.at("mode_id"), std::string("pvp_duel"));
     CHECK_EQ(first.Snapshot().mode_state.at("accepted_input_count"), std::string("120"));
     CHECK_EQ(first.Snapshot().mode_state.at("fallback_input_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("pending_input_tick_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("pending_input_record_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("input_buffer_peak_tick_count"), std::string("1"));
+    CHECK_EQ(first.Snapshot().mode_state.at("input_buffer_peak_record_count"), std::string("2"));
+    CHECK_EQ(first.Snapshot().mode_state.at("pending_mode_action_tick_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("pending_mode_action_record_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("mode_action_buffer_peak_tick_count"), std::string("0"));
+    CHECK_EQ(first.Snapshot().mode_state.at("mode_action_buffer_peak_record_count"), std::string("0"));
     const auto reconnect_snapshot = first.ReconnectSnapshot("p1", first_summary.event_count - 1);
     CHECK_EQ(reconnect_snapshot.snapshot_kind, std::string("reconnect"));
     CHECK_EQ(reconnect_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
@@ -4258,6 +4304,14 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.final_snapshot.mode_state.at("match_seed"), std::to_string(config.match_seed));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("accepted_input_count"), std::string("120"));
     CHECK_EQ(fixture.final_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("pending_input_tick_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("pending_input_record_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("input_buffer_peak_tick_count"), std::string("1"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("input_buffer_peak_record_count"), std::string("2"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("pending_mode_action_tick_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("pending_mode_action_record_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("mode_action_buffer_peak_tick_count"), std::string("0"));
+    CHECK_EQ(fixture.final_snapshot.mode_state.at("mode_action_buffer_peak_record_count"), std::string("0"));
     CHECK_EQ(fixture.final_snapshot.players.size(), static_cast<std::size_t>(2));
     CHECK_EQ(fixture.final_snapshot.bullets_delta.size(), static_cast<std::size_t>(10));
     CHECK_TRUE(fixture.result_hash.rfind("sha256:dev-fnv64-", 0) == 0);
@@ -4308,13 +4362,15 @@ bool TestReplayFixtureBoundary() {
     CHECK_TRUE(canonical_fixture_payload.find("|player=p1,92500,-90000,1,0;player=p2,-105000,90000,1,0;|") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("bullet=b10,upsert,48000,2665,3000,0,4000,basic_radial,blue;") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("mode=accepted_input_count=120;") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("mode=input_buffer_peak_record_count=2;") != std::string::npos);
+    CHECK_TRUE(canonical_fixture_payload.find("mode=pending_input_record_count=0;") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("mode=mode_id=pvp_duel;") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("|p1,p2,|") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("input|p1|tick=1|seq=1") != std::string::npos);
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-2c262f6238f44d85")
+        std::string("sha256:dev-fnv64-7d04e303cfa04846")
     );
     auto tampered_fixture_summary_count = fixture;
     tampered_fixture_summary_count.summary.input_count += 1;
@@ -4517,7 +4573,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-44e1dd01038e8be2")
+        std::string("sha256:dev-fnv64-2fccbb0e314d3d54")
     );
 
     auto tampered_stream = built.replay_record;

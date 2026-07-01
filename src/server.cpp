@@ -1158,6 +1158,18 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_neutral_fallback_count = summary.neutral_fallback_count;
     options.required_held_input_fallback_count = summary.held_input_fallback_count;
     options.required_mode_action_count = summary.mode_action_count;
+    const auto& mode_state = replay_fixture.final_snapshot.mode_state;
+    options.required_pending_input_tick_count = std::stoull(mode_state.at("pending_input_tick_count"));
+    options.required_pending_input_record_count = std::stoull(mode_state.at("pending_input_record_count"));
+    options.required_input_buffer_peak_tick_count = std::stoull(mode_state.at("input_buffer_peak_tick_count"));
+    options.required_input_buffer_peak_record_count = std::stoull(mode_state.at("input_buffer_peak_record_count"));
+    options.required_pending_mode_action_tick_count = std::stoull(mode_state.at("pending_mode_action_tick_count"));
+    options.required_pending_mode_action_record_count =
+        std::stoull(mode_state.at("pending_mode_action_record_count"));
+    options.required_mode_action_buffer_peak_tick_count =
+        std::stoull(mode_state.at("mode_action_buffer_peak_tick_count"));
+    options.required_mode_action_buffer_peak_record_count =
+        std::stoull(mode_state.at("mode_action_buffer_peak_record_count"));
     options.required_input_trace_count = summary.input_trace.size();
     options.required_event_trace_count = summary.event_trace.size();
     options.required_input_stream_hash = summary.input_stream_hash;
@@ -1170,7 +1182,6 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     options.required_final_snapshot_state_hash = replay_fixture.final_snapshot.state_hash;
     options.required_final_snapshot_event_cursor = replay_fixture.final_snapshot.event_cursor;
     options.require_replay_counter_fields = true;
-    const auto& mode_state = replay_fixture.final_snapshot.mode_state;
     const auto boss_scope = mode_state.find("boss_scope");
     if (boss_scope != mode_state.end()) {
         options.require_boss_result_fields = true;
