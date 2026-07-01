@@ -1243,6 +1243,12 @@ ReplaySummary BattleSimulation::Summary() const {
     summary.event_count = event_count_;
     for (const auto& item : players_) {
         summary.player_ids.push_back(item.first);
+        if (IsBossMode(config_.mode_id)) {
+            const PlayerState& player = item.second;
+            summary.boss_spawn_slot_by_player[item.first] =
+                BossSpawnSlotName(player.x_milli, player.y_milli);
+            summary.boss_fire_target_by_player[item.first] = "boss_center";
+        }
     }
     summary.input_trace = input_trace_;
     summary.event_trace = event_trace_;
@@ -1491,6 +1497,14 @@ std::string CanonicalReplaySummaryPayload(const ReplaySummary& summary) {
         << summary.last_mode_action_seq << '|';
     for (const auto& player_id : summary.player_ids) {
         out << player_id << ',';
+    }
+    out << '|';
+    for (const auto& item : summary.boss_spawn_slot_by_player) {
+        out << "boss_spawn=" << item.first << ':' << item.second << ';';
+    }
+    out << '|';
+    for (const auto& item : summary.boss_fire_target_by_player) {
+        out << "boss_fire=" << item.first << ':' << item.second << ';';
     }
     out << '|';
     for (const auto& trace : summary.input_trace) {
@@ -1888,6 +1902,14 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.event_count);
     for (const auto& player_id : summary.player_ids) {
         hash = HashAppend(hash, player_id);
+    }
+    for (const auto& item : summary.boss_spawn_slot_by_player) {
+        hash = HashAppend(hash, item.first);
+        hash = HashAppend(hash, item.second);
+    }
+    for (const auto& item : summary.boss_fire_target_by_player) {
+        hash = HashAppend(hash, item.first);
+        hash = HashAppend(hash, item.second);
     }
     for (const auto& item : summary.input_trace) {
         hash = HashAppend(hash, item);
