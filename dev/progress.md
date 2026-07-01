@@ -2,6 +2,11 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Retired Encrypted Dispatch Boundary
+
+- CTest now covers encrypted client-to-server dispatch after `RetireMatch`, ensuring retired rooms reject late KCP/AEAD scaffold packets as `match_retired`.
+- This is in-memory lifecycle/network-boundary audit material only. It does not persist replay rows, Boss HP, rewards, inventory, wallet, Steam state, or business database state.
+
 ## 2026-07-01 Cancelled Result Submission Boundary
 
 - CTest now covers cancelling an active match after a development signed result was built, then rejecting that stale result submission as `match_cancelled`.
