@@ -57,6 +57,56 @@ bool ContainsJsonField(const std::string& json, std::string_view field_name) {
     return false;
 }
 
+bool ContainsJsonFieldWithPrefix(const std::string& json, std::string_view field_prefix) {
+    std::size_t offset = json.find('"');
+    while (offset != std::string::npos) {
+        std::string field_name;
+        bool escaped = false;
+        std::size_t cursor = offset + 1;
+        for (; cursor < json.size(); ++cursor) {
+            const char ch = json[cursor];
+            if (escaped) {
+                field_name.push_back(ch);
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '"') {
+                break;
+            }
+            field_name.push_back(ch);
+        }
+        if (cursor >= json.size()) {
+            return false;
+        }
+        std::size_t after_name = cursor + 1;
+        while (after_name < json.size() && std::isspace(static_cast<unsigned char>(json[after_name]))) {
+            ++after_name;
+        }
+        if (after_name < json.size() &&
+            json[after_name] == ':' &&
+            field_name.rfind(std::string(field_prefix), 0) == 0) {
+            return true;
+        }
+        offset = json.find('"', cursor + 1);
+    }
+    return false;
+}
+
+bool IsBossMode(std::string_view mode_id) {
+    return mode_id == "world_boss" || mode_id == "instance_boss";
+}
+
+bool ContainsBossOnlyResultField(const std::string& json) {
+    return ContainsJsonFieldWithPrefix(json, "boss_") ||
+        ContainsJsonField(json, "transfer_card_count") ||
+        ContainsJsonField(json, "transfer_card_edges_material") ||
+        ContainsJsonFieldWithPrefix(json, "last_transfer_");
+}
+
 std::string JsonEscape(std::string_view value) {
     std::ostringstream out;
     for (const unsigned char ch : value) {
@@ -250,6 +300,10 @@ BattleResultVerification BattleResultVerifier::Verify(
     }
     if (result.player_ids.empty() || !SameStringSet(result.player_ids, options.required_player_ids)) {
         Fail(verification, "player_ids_mismatch");
+        return verification;
+    }
+    if (!IsBossMode(result.mode_id) && ContainsBossOnlyResultField(result.mode_result_json)) {
+        Fail(verification, "boss_result_field_forbidden_for_mode");
         return verification;
     }
     if ((options.required_event_cursor > 0 || options.require_replay_counter_fields) &&
