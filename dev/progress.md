@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Replay Summary Fallback Counters
+
+- Bound neutral and held fallback-input counters into `ReplayInputStreamSummaryRecord` and its canonical development hash, so the dependency-light replay summary records the same input-window audit counters used by signed result verification.
+- CTest coverage now checks the record mirrors authoritative fallback counters and that tampering held fallback count changes the canonical record/hash.
+- This remains replay/audit material only. It does not write inventory, rewards, wallet, Steam state, or business database state.
+
 ## 2026-07-01 World Boss Announcement Idempotency Key
 
 - World Boss final snapshots and development signed-result projection now include `boss_world_defeat_announcement_key`, derived from server-owned Boss instance/season/phase identity and defeated tick only when the Boss is defeated.

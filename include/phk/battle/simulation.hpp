@@ -82,6 +82,9 @@ struct ReplayInputStreamSummaryRecord {
     std::string owner_user_id;
     std::string match_id;
     std::uint64_t input_count = 0;
+    std::uint64_t fallback_input_count = 0;
+    std::uint64_t neutral_fallback_count = 0;
+    std::uint64_t held_input_fallback_count = 0;
     std::uint64_t event_count = 0;
     std::string input_stream_hash;
     std::string event_stream_hash;
