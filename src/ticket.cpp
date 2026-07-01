@@ -12,6 +12,15 @@ bool IsEmpty(const std::string& value) {
     return value.empty();
 }
 
+bool IsAllowedAuditTokenChar(char ch) {
+    const auto byte = static_cast<unsigned char>(ch);
+    return std::isalnum(byte) || ch == '_' || ch == '-' || ch == '.';
+}
+
+bool IsValidAuditToken(std::string_view value) {
+    return !value.empty() && std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
+}
+
 void Fail(VerificationResult& result, std::string reason) {
     result.ok = false;
     result.reason = std::move(reason);
@@ -33,6 +42,10 @@ VerificationResult TicketVerifier::Verify(
     if (IsEmpty(ticket.ticket_id) || IsEmpty(ticket.match_id) || IsEmpty(ticket.user_id) ||
         IsEmpty(ticket.player_id) || IsEmpty(ticket.mode_id)) {
         Fail(result, "ticket_identity_missing");
+        return result;
+    }
+    if (!IsValidAuditToken(ticket.player_id)) {
+        Fail(result, "player_id_invalid");
         return result;
     }
     if (ticket.battle_server_id.empty() || ticket.endpoint.empty()) {
