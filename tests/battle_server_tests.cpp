@@ -2982,6 +2982,17 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         std::string::npos
     );
 
+    auto instance_with_world_fields = built.signed_result;
+    instance_with_world_fields.result.mode_result_json =
+        instance_with_world_fields.result.mode_result_json +
+        ",\"boss_world_persistent_damage_delta\":20,\"boss_world_persistent_hp_after_delta\":980,\"boss_world_defeat_announcement_required\":0";
+    const auto instance_with_world_fields_result = server.SubmitBattleResult(instance_with_world_fields);
+    CHECK_TRUE(!instance_with_world_fields_result.ok);
+    CHECK_EQ(
+        instance_with_world_fields_result.reason,
+        std::string("boss_world_persistent_result_field_forbidden")
+    );
+
     auto wrong_scope = built.signed_result;
     wrong_scope.result.mode_result_json = ReplaceJsonStringField(
         wrong_scope.result.mode_result_json,
@@ -3618,7 +3629,18 @@ bool TestBossModeResultRequiresStartableRoom() {
     const auto ready_snapshot = server.TickMatch("match-001");
     CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_EQ(ready_snapshot.mode_state.at("boss_lifecycle_state"), std::string("start_ready"));
-    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
+    const auto built = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(built.ok);
+    auto world_with_instance_fields = built.signed_result;
+    world_with_instance_fields.result.mode_result_json =
+        world_with_instance_fields.result.mode_result_json +
+        ",\"boss_instance_surviving_player_count\":4,\"boss_instance_clear_credit\":1,\"boss_instance_result_state\":\"cleared\"";
+    const auto world_with_instance_fields_result = server.SubmitBattleResult(world_with_instance_fields);
+    CHECK_TRUE(!world_with_instance_fields_result.ok);
+    CHECK_EQ(
+        world_with_instance_fields_result.reason,
+        std::string("boss_instance_result_field_forbidden")
+    );
     return true;
 }
 
