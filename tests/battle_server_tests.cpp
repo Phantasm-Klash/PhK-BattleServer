@@ -2462,13 +2462,14 @@ bool TestBossReadyToStartRequiresAllReadyPlayers() {
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
-    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_registered_player_count"), std::string("4"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_player_count"), std::string("3"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_connected"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("all_players_ready"), std::string("0"));
-    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
     return true;
 }
@@ -3962,11 +3963,32 @@ bool TestBossRosterLocksAfterReadyToStart() {
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p4", false).ok);
     const auto disconnected_snapshot = server.MatchSnapshot("match-001");
-    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("connected_player_count"), std::string("3"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("disconnected_player_count"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_connected"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_all_registered_ready"), std::string("0"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_start_ready"), std::string("1"));
+    CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
     const auto disconnected_result = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(disconnected_result.ok);
+    CHECK_TRUE(
+        disconnected_result.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        disconnected_result.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":1") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        disconnected_result.signed_result.result.mode_result_json.find("\"connected_player_count\":3") !=
+        std::string::npos
+    );
+    CHECK_TRUE(
+        disconnected_result.signed_result.result.mode_result_json.find("\"disconnected_player_count\":1") !=
+        std::string::npos
+    );
     CHECK_TRUE(
         disconnected_result.signed_result.result.mode_result_json.find("\"boss_roster_locked\":1") !=
         std::string::npos
