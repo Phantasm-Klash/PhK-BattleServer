@@ -772,6 +772,36 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_tick_rate_result.ok);
     CHECK_EQ(wrong_tick_rate_result.reason, std::string("tick_rate_hz_mismatch"));
 
+    auto wrong_fallback_input_count = valid_result;
+    wrong_fallback_input_count.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"fallback_input_count\":" + std::to_string(summary.fallback_input_count),
+        "\"fallback_input_count\":999"
+    );
+    const auto wrong_fallback_input_count_result = server.SubmitBattleResult(wrong_fallback_input_count);
+    CHECK_TRUE(!wrong_fallback_input_count_result.ok);
+    CHECK_EQ(wrong_fallback_input_count_result.reason, std::string("fallback_input_count_mismatch"));
+
+    auto wrong_neutral_fallback_count = valid_result;
+    wrong_neutral_fallback_count.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"neutral_fallback_count\":" + std::to_string(summary.neutral_fallback_count),
+        "\"neutral_fallback_count\":999"
+    );
+    const auto wrong_neutral_fallback_count_result = server.SubmitBattleResult(wrong_neutral_fallback_count);
+    CHECK_TRUE(!wrong_neutral_fallback_count_result.ok);
+    CHECK_EQ(wrong_neutral_fallback_count_result.reason, std::string("neutral_fallback_count_mismatch"));
+
+    auto wrong_held_fallback_count = valid_result;
+    wrong_held_fallback_count.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"held_input_fallback_count\":" + std::to_string(summary.held_input_fallback_count),
+        "\"held_input_fallback_count\":999"
+    );
+    const auto wrong_held_fallback_count_result = server.SubmitBattleResult(wrong_held_fallback_count);
+    CHECK_TRUE(!wrong_held_fallback_count_result.ok);
+    CHECK_EQ(wrong_held_fallback_count_result.reason, std::string("held_input_fallback_count_mismatch"));
+
     auto wrong_mode_action_count = valid_result;
     wrong_mode_action_count.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
