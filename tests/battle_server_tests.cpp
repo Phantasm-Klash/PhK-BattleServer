@@ -3153,10 +3153,24 @@ bool TestBossModeResultProjection() {
     CHECK_EQ(simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
 
     const auto fixture = simulation.BuildReplayFixture("user-boss");
+    CHECK_EQ(fixture.summary.boss_max_hp, static_cast<std::uint64_t>(20));
+    CHECK_EQ(fixture.summary.boss_current_hp, static_cast<std::uint64_t>(0));
+    CHECK_EQ(fixture.summary.boss_damage_total, static_cast<std::uint64_t>(20));
+    CHECK_EQ(fixture.summary.boss_defeated_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(fixture.summary.boss_damage_by_player.at("p1"), static_cast<std::uint64_t>(10));
+    CHECK_EQ(fixture.summary.boss_damage_by_player.at("p2"), static_cast<std::uint64_t>(10));
+    CHECK_EQ(fixture.summary.boss_damage_by_player.at("p3"), static_cast<std::uint64_t>(0));
+    CHECK_EQ(fixture.summary.boss_damage_by_player.at("p4"), static_cast<std::uint64_t>(0));
     CHECK_EQ(fixture.summary.boss_spawn_slot_by_player.at("p1"), std::string("north"));
     CHECK_EQ(fixture.summary.boss_fire_target_by_player.at("p1"), std::string("boss_center"));
     CHECK_EQ(fixture.summary.boss_spawn_slot_by_player.at("p2"), std::string("east"));
     CHECK_EQ(fixture.summary.boss_fire_target_by_player.at("p2"), std::string("boss_center"));
+    auto tampered_boss_hp_summary = fixture.summary;
+    tampered_boss_hp_summary.boss_current_hp = 1;
+    CHECK_TRUE(ExpectedDevResultHash(tampered_boss_hp_summary) != fixture.result_hash);
+    auto tampered_boss_damage_summary = fixture.summary;
+    tampered_boss_damage_summary.boss_damage_by_player["p1"] += 1;
+    CHECK_TRUE(ExpectedDevResultHash(tampered_boss_damage_summary) != fixture.result_hash);
     auto tampered_boss_summary = fixture.summary;
     tampered_boss_summary.boss_spawn_slot_by_player["p1"] = "south";
     CHECK_TRUE(ExpectedDevResultHash(tampered_boss_summary) != fixture.result_hash);

@@ -1250,6 +1250,13 @@ ReplaySummary BattleSimulation::Summary() const {
             summary.boss_fire_target_by_player[item.first] = "boss_center";
         }
     }
+    if (IsBossMode(config_.mode_id)) {
+        summary.boss_max_hp = boss_max_hp_;
+        summary.boss_current_hp = boss_current_hp_;
+        summary.boss_damage_total = boss_damage_total_;
+        summary.boss_defeated_tick = boss_defeated_tick_;
+        summary.boss_damage_by_player = boss_damage_by_player_;
+    }
     summary.input_trace = input_trace_;
     summary.event_trace = event_trace_;
     if (has_last_mode_action_) {
@@ -1499,6 +1506,19 @@ std::string CanonicalReplaySummaryPayload(const ReplaySummary& summary) {
         out << player_id << ',';
     }
     out << '|';
+    if (!summary.boss_spawn_slot_by_player.empty() ||
+        !summary.boss_damage_by_player.empty() ||
+        summary.boss_max_hp != 0 ||
+        summary.boss_damage_total != 0) {
+        out << summary.boss_max_hp << '|'
+            << summary.boss_current_hp << '|'
+            << summary.boss_damage_total << '|'
+            << summary.boss_defeated_tick << '|';
+        for (const auto& item : summary.boss_damage_by_player) {
+            out << "boss_damage=" << item.first << ':' << item.second << ';';
+        }
+        out << '|';
+    }
     for (const auto& item : summary.boss_spawn_slot_by_player) {
         out << "boss_spawn=" << item.first << ':' << item.second << ';';
     }
@@ -1902,6 +1922,19 @@ std::string DevResultHashFromReplaySummary(const ReplaySummary& summary) {
     hash = HashAppend(hash, summary.event_count);
     for (const auto& player_id : summary.player_ids) {
         hash = HashAppend(hash, player_id);
+    }
+    if (!summary.boss_spawn_slot_by_player.empty() ||
+        !summary.boss_damage_by_player.empty() ||
+        summary.boss_max_hp != 0 ||
+        summary.boss_damage_total != 0) {
+        hash = HashAppend(hash, summary.boss_max_hp);
+        hash = HashAppend(hash, summary.boss_current_hp);
+        hash = HashAppend(hash, summary.boss_damage_total);
+        hash = HashAppend(hash, summary.boss_defeated_tick);
+        for (const auto& item : summary.boss_damage_by_player) {
+            hash = HashAppend(hash, item.first);
+            hash = HashAppend(hash, item.second);
+        }
     }
     for (const auto& item : summary.boss_spawn_slot_by_player) {
         hash = HashAppend(hash, item.first);
