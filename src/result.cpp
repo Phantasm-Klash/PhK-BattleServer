@@ -556,6 +556,36 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "boss_result_disposition_mismatch");
         return verification;
     }
+    if (options.require_boss_result_fields &&
+        result.mode_id == "world_boss" &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_world_persistent_damage_delta",
+            options.required_boss_world_persistent_damage_delta
+        )) {
+        Fail(verification, "boss_world_persistent_damage_delta_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        result.mode_id == "world_boss" &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_world_persistent_hp_after_delta",
+            options.required_boss_world_persistent_hp_after_delta
+        )) {
+        Fail(verification, "boss_world_persistent_hp_after_delta_mismatch");
+        return verification;
+    }
+    if (options.require_boss_result_fields &&
+        result.mode_id == "world_boss" &&
+        !ContainsJsonUintField(
+            result.mode_result_json,
+            "boss_world_defeat_announcement_required",
+            options.required_boss_world_defeat_announcement_required
+        )) {
+        Fail(verification, "boss_world_defeat_announcement_required_mismatch");
+        return verification;
+    }
     if (options.require_boss_result_fields && !options.required_boss_instance_result_state.empty()) {
         if (!ContainsJsonUintField(
             result.mode_result_json,
