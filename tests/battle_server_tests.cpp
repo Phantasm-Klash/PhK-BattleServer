@@ -1481,9 +1481,9 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().input_stream_hash, second.Summary().input_stream_hash);
     CHECK_EQ(first.Summary().event_stream_hash, second.Summary().event_stream_hash);
     CHECK_EQ(first.Summary().final_state_hash, first_snapshot.state_hash);
-    CHECK_EQ(first.Summary().fallback_input_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first.Summary().fallback_input_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first.Summary().neutral_fallback_count, static_cast<std::uint64_t>(0));
-    CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(4));
+    CHECK_EQ(first.Summary().held_input_fallback_count, static_cast<std::uint64_t>(0));
     CHECK_EQ(first.Summary().mode_action_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(first.Summary().event_count, static_cast<std::uint64_t>(2));
     CHECK_EQ(first.Summary().last_mode_action_id, transfer.action_id);
@@ -1494,10 +1494,10 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first.Summary().last_mode_action_id, second.Summary().last_mode_action_id);
     CHECK_TRUE(first.Summary().input_trace == second.Summary().input_trace);
     CHECK_TRUE(first.Summary().event_trace == second.Summary().event_trace);
-    CHECK_EQ(first.Summary().input_trace.size(), static_cast<std::size_t>(6));
+    CHECK_EQ(first.Summary().input_trace.size(), static_cast<std::size_t>(2));
     CHECK_EQ(first.Summary().event_trace.size(), static_cast<std::size_t>(2));
     CHECK_TRUE(first.Summary().input_trace[0].find("input|p1|tick=1|seq=1") != std::string::npos);
-    CHECK_TRUE(first.Summary().input_trace[2].find("fallback|held|p1|tick=2") != std::string::npos);
+    CHECK_TRUE(first.Summary().input_trace[1].find("input|p2|tick=1|seq=1") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[0].find("mode_action|p1|tick=2|seq=2") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("mode_action|p1|tick=2|seq=3") != std::string::npos);
     CHECK_TRUE(first.Summary().event_trace[1].find("|card=boss-card-001|from=p1|to=p2") != std::string::npos);
@@ -1523,9 +1523,9 @@ bool TestSimulationDeterminism() {
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_cost_paid"), std::string("1"));
     CHECK_EQ(first_snapshot.mode_state.at("last_transfer_authority_cooldown_ready"), std::string("1"));
     CHECK_EQ(first_snapshot.mode_state.at("accepted_input_count"), std::string("2"));
-    CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("4"));
+    CHECK_EQ(first_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("neutral_fallback_count"), std::string("0"));
-    CHECK_EQ(first_snapshot.mode_state.at("held_input_fallback_count"), std::string("4"));
+    CHECK_EQ(first_snapshot.mode_state.at("held_input_fallback_count"), std::string("0"));
     CHECK_EQ(first_snapshot.mode_state.at("mode_action_count"), std::string("2"));
     return true;
 }
@@ -2602,6 +2602,67 @@ bool TestBossReadyToStartRequiresAllReadyPlayers() {
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
+    return true;
+}
+
+bool TestBossPreCombatInputDoesNotAdvanceBattleState() {
+    phk::battle::SimulationConfig config;
+    config.match_id = "match-boss-pre-combat-input";
+    config.mode_id = "world_boss";
+    config.spawn_period_ticks = 1;
+    config.boss_max_hp = 100;
+    phk::battle::BattleSimulation simulation(config);
+    CHECK_TRUE(AddBossFixturePlayers(simulation));
+
+    auto p1_shoot = MakeInput("p1", 1, 1, 1u << 3);
+    p1_shoot.match_id = config.match_id;
+    p1_shoot.shoot = true;
+    CHECK_TRUE(simulation.AcceptInput(p1_shoot).ok);
+
+    const auto waiting_snapshot = simulation.Tick();
+    CHECK_EQ(waiting_snapshot.snapshot_tick, static_cast<std::uint64_t>(1));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_lifecycle_state"), std::string("waiting_for_ready"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_current_hp"), std::string("100"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("boss_damage_total"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.mode_state.at("fallback_input_count"), std::string("0"));
+    CHECK_EQ(waiting_snapshot.bullets_delta.size(), static_cast<std::size_t>(0));
+    CHECK_EQ(waiting_snapshot.players[0].player_id, std::string("p1"));
+    CHECK_EQ(waiting_snapshot.players[0].x_milli, 0);
+    CHECK_EQ(waiting_snapshot.players[0].y_milli, -60000);
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(1));
+    CHECK_EQ(simulation.Summary().fallback_input_count, static_cast<std::uint64_t>(0));
+    CHECK_EQ(simulation.Summary().event_count, static_cast<std::uint64_t>(0));
+
+    CHECK_TRUE(AcceptBossReadyActions(
+        simulation,
+        config.match_id,
+        2,
+        2,
+        1,
+        1,
+        1,
+        "boss-pre-combat-ready"
+    ));
+    auto p1_combat_shoot = p1_shoot;
+    p1_combat_shoot.tick = 2;
+    p1_combat_shoot.seq = 3;
+    CHECK_TRUE(simulation.AcceptInput(p1_combat_shoot).ok);
+
+    const auto combat_snapshot = simulation.Tick();
+    CHECK_EQ(combat_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
+    CHECK_EQ(combat_snapshot.mode_state.at("boss_combat_started"), std::string("1"));
+    CHECK_EQ(combat_snapshot.mode_state.at("boss_current_hp"), std::string("90"));
+    CHECK_EQ(combat_snapshot.mode_state.at("boss_damage_total"), std::string("10"));
+    CHECK_EQ(combat_snapshot.mode_state.at("boss_damage_p1"), std::string("10"));
+    CHECK_EQ(combat_snapshot.mode_state.at("fallback_input_count"), std::string("3"));
+    CHECK_EQ(combat_snapshot.bullets_delta.size(), static_cast<std::size_t>(8));
+    CHECK_EQ(combat_snapshot.players[0].player_id, std::string("p1"));
+    CHECK_EQ(combat_snapshot.players[0].x_milli, 2500);
+    CHECK_EQ(combat_snapshot.players[0].y_milli, -60000);
+    CHECK_EQ(simulation.Summary().input_count, static_cast<std::uint64_t>(2));
+    CHECK_EQ(simulation.Summary().mode_action_count, static_cast<std::uint64_t>(4));
+    CHECK_TRUE(simulation.Summary().event_trace.back().find("pattern=boss_center_radial") != std::string::npos);
     return true;
 }
 
@@ -6431,6 +6492,7 @@ int main() {
         {"BossSimulationRejectsNinthPlayer", TestBossSimulationRejectsNinthPlayer},
         {"BossStartReadinessTracksConnectedPlayers", TestBossStartReadinessTracksConnectedPlayers},
         {"BossReadyToStartRequiresAllReadyPlayers", TestBossReadyToStartRequiresAllReadyPlayers},
+        {"BossPreCombatInputDoesNotAdvanceBattleState", TestBossPreCombatInputDoesNotAdvanceBattleState},
 		{"BossModeBulletPattern", TestBossModeBulletPattern},
         {"BossModeAuthoritativeDamageState", TestBossModeAuthoritativeDamageState},
         {"BossModeResultProjection", TestBossModeResultProjection},
