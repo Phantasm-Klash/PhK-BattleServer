@@ -3112,6 +3112,20 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         std::string("boss_result_field_unknown")
     );
 
+    auto instance_with_unknown_transfer_field = built.signed_result;
+    instance_with_unknown_transfer_field.result.mode_result_json = ReplaceFirst(
+        instance_with_unknown_transfer_field.result.mode_result_json,
+        "}",
+        ",\"last_transfer_reward_preview\":\"client-authored\"}"
+    );
+    const auto instance_with_unknown_transfer_field_result =
+        server.SubmitBattleResult(instance_with_unknown_transfer_field);
+    CHECK_TRUE(!instance_with_unknown_transfer_field_result.ok);
+    CHECK_EQ(
+        instance_with_unknown_transfer_field_result.reason,
+        std::string("transfer_result_field_unknown")
+    );
+
     auto wrong_scope = built.signed_result;
     wrong_scope.result.mode_result_json = ReplaceJsonStringField(
         wrong_scope.result.mode_result_json,
@@ -3522,6 +3536,16 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         std::string("transfer_card_authority_cooldown_mismatch")
     );
 
+    auto unknown_transfer_field = built.signed_result;
+    unknown_transfer_field.result.mode_result_json = ReplaceFirst(
+        unknown_transfer_field.result.mode_result_json,
+        "}",
+        ",\"last_transfer_damage_claim\":\"client-authored\"}"
+    );
+    const auto unknown_transfer_field_result = server.SubmitBattleResult(unknown_transfer_field);
+    CHECK_TRUE(!unknown_transfer_field_result.ok);
+    CHECK_EQ(unknown_transfer_field_result.reason, std::string("transfer_result_field_unknown"));
+
     const auto accepted = server.SubmitBattleResult(built.signed_result);
     CHECK_TRUE(accepted.ok);
     CHECK_TRUE(!accepted.duplicate);
@@ -3659,6 +3683,16 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
     const auto unknown_boss_field_result = server.SubmitBattleResult(unknown_boss_field);
     CHECK_TRUE(!unknown_boss_field_result.ok);
     CHECK_EQ(unknown_boss_field_result.reason, std::string("boss_result_field_unknown"));
+
+    auto forged_transfer_field = built.signed_result;
+    forged_transfer_field.result.mode_result_json = ReplaceFirst(
+        forged_transfer_field.result.mode_result_json,
+        "}",
+        ",\"last_transfer_card_instance_id\":\"client-authored\"}"
+    );
+    const auto forged_transfer_field_result = server.SubmitBattleResult(forged_transfer_field);
+    CHECK_TRUE(!forged_transfer_field_result.ok);
+    CHECK_EQ(forged_transfer_field_result.reason, std::string("transfer_result_field_forbidden"));
     return true;
 }
 
