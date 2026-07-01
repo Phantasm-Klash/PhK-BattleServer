@@ -175,6 +175,7 @@ public:
     [[nodiscard]] std::size_t BulletCount() const;
     [[nodiscard]] std::uint64_t AcceptedInputCount() const;
     [[nodiscard]] bool IsPlayerConnected(const std::string& player_id) const;
+    [[nodiscard]] bool BossRosterReadyToLock() const;
 
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     bool ConfigureTransferableCard(TransferableCardState card);

@@ -469,6 +469,11 @@ bool BattleSimulation::IsPlayerConnected(const std::string& player_id) const {
     return player_it != players_.end() && player_it->second.connected;
 }
 
+bool BattleSimulation::BossRosterReadyToLock() const {
+    return IsBossMode(config_.mode_id) &&
+        (boss_combat_started_ || BossReadyToStartForTick(current_tick_ + 1));
+}
+
 bool BattleSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
     if (!IsValidAuditToken(player_id) || players_.find(player_id) != players_.end()) {
         return false;

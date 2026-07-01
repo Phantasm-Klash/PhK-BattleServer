@@ -1564,7 +1564,7 @@ void BattleServer::UpdateBossRosterLock(
     const std::string& match_id,
     const BattleSimulation& simulation
 ) {
-    if (IsBossMode(simulation.Config().mode_id) && BossMatchReadyForResult(simulation)) {
+    if (simulation.BossRosterReadyToLock()) {
         boss_roster_locked_match_ids_.insert(match_id);
     }
 }

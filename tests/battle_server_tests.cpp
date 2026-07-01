@@ -4351,6 +4351,59 @@ bool TestBossRosterLocksAfterReadyToStart() {
     return true;
 }
 
+bool TestBossRosterLocksOnPendingReadyWindow() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489646100;
+    phk::battle::BattleServer server(config);
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
+            "ticket-pending-roster-lock-" + std::to_string(index),
+            "user-pending-roster-lock-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            "00112233445566778899fc0" + std::to_string(index)
+        )).ok);
+    }
+
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index);
+        ready.match_id = "match-001";
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "boss-pending-roster-lock-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+
+    const auto pending_snapshot = server.MatchSnapshot("match-001");
+    CHECK_EQ(pending_snapshot.mode_state.at("boss_combat_started"), std::string("0"));
+    CHECK_EQ(pending_snapshot.mode_state.at("boss_roster_locked"), std::string("0"));
+    CHECK_EQ(pending_snapshot.mode_state.at("pending_mode_action_record_count"), std::string("4"));
+
+    const auto late_join = server.RegisterTicket(MakeModeTicket(
+        "ticket-pending-roster-lock-late",
+        "user-pending-roster-lock-late",
+        "p5",
+        "world_boss",
+        "00112233445566778899fc05"
+    ));
+    CHECK_TRUE(!late_join.ok);
+    CHECK_EQ(late_join.reason, std::string("boss_roster_locked"));
+    CHECK_EQ(late_join.active_sessions_before, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.active_sessions_after, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.match_session_count_before, static_cast<std::size_t>(4));
+    CHECK_EQ(late_join.match_session_count_after, static_cast<std::size_t>(4));
+
+    const auto ready_snapshot = server.TickMatch("match-001");
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
+    CHECK_EQ(ready_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
+    CHECK_EQ(ready_snapshot.players.size(), static_cast<std::size_t>(4));
+    return true;
+}
+
 bool TestSettledMatchRetirementLifecycle() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489650000;
@@ -6644,6 +6697,7 @@ int main() {
         {"TransferCardAuditIdsRejectEscapedStrings", TestTransferCardAuditIdsRejectEscapedStrings},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
+        {"BossRosterLocksOnPendingReadyWindow", TestBossRosterLocksOnPendingReadyWindow},
         {"SettledMatchRetirementLifecycle", TestSettledMatchRetirementLifecycle},
         {"UnsettledMatchCancellationLifecycle", TestUnsettledMatchCancellationLifecycle},
 		{"AuthoritativeReplay60TickFixture", TestAuthoritativeReplay60TickFixture},
