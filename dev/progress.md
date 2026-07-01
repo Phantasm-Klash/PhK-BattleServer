@@ -2,6 +2,11 @@
 
 Status date: 2026-06-30
 
+## 2026-07-01 Ready Mode Scope Boundary
+
+- `ready` mode actions are now Boss-room lifecycle intents only; non-Boss matches reject them as `ready_mode_unsupported` before replay/hash state changes.
+- CTest/checker coverage now keeps the Boss ready payload validation while adding a PvP rejection regression, preserving the C++ battle boundary as in-memory room lifecycle authority only.
+
 ## 2026-07-01 Boss Roster-Lock Readiness Projection
 
 - Boss snapshots now keep `boss_start_ready` and `boss_ready_to_start` asserted after combat has started, matching the roster-locked lifecycle while still reporting live connected/ready counts separately for disconnect audit.
