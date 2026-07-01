@@ -352,6 +352,8 @@ bool TestProtocolManifest() {
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Reconnect), 7);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::Result), 8);
     CHECK_EQ(static_cast<int>(phk::battle::BattlePayloadType::ModeAction), 9);
+    const auto PayloadTypeUnknown = static_cast<phk::battle::BattlePayloadType>(255);
+    CHECK_EQ(phk::battle::PayloadTypeName(PayloadTypeUnknown), std::string("unspecified"));
     CHECK_EQ(std::string(phk::v1::kBattleModeActionActionType), std::string("select_round_card"));
     CHECK_EQ(
         std::string(phk::v1::kBattleModeActionPayloadJson),
@@ -1102,8 +1104,8 @@ bool TestBuildSignedBattleResultCallback() {
     CHECK_EQ(
         built.signed_result.signature_hex,
         std::string(
-            "cdb3a00593f3f60cecae670e9ee3402d0ba92e17a9d28a4e2aa3f520b4c1d46f"
-            "51c883e16836cd8870c34aea732617a98fbe11f37e1561caaeb8d8fc8904abeb"
+            "d50d1beefb0728e5b61254e5f017dec41302aa0110e5bd27f407e2f805f673065"
+            "921ffcacf4a00613a2738c1c45ab64097178ddce52894a3781cc6d3da394a82"
         )
     );
     CHECK_TRUE(built.signed_result.server_authoritative);
@@ -1125,7 +1127,7 @@ bool TestBuildSignedBattleResultCallback() {
             "\"event_stream_hash\":\"fnv64:14650fb0739d0383\","
             "\"final_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"replay_summary_hash\":\"sha256:dev-fnv64-e8a3d7f2ad39b1d1\","
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-daa9b3b4432c4836\","
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-9e77178bf0907b46\","
             "\"final_snapshot_tick\":1,\"final_snapshot_kind\":\"replay_final\","
             "\"final_snapshot_state_hash\":\"fnv64:72a3385f1a7c7fe3\","
             "\"final_snapshot_event_cursor\":0}|1782489630000"
@@ -1259,7 +1261,7 @@ bool TestBuildSignedBattleResultCallback() {
     );
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find(
-            "\"replay_fixture_hash\":\"sha256:dev-fnv64-daa9b3b4432c4836\""
+            "\"replay_fixture_hash\":\"sha256:dev-fnv64-9e77178bf0907b46\""
         ) != std::string::npos
     );
     CHECK_TRUE(
@@ -3151,6 +3153,13 @@ bool TestBossModeResultProjection() {
     CHECK_EQ(simulation.Tick().mode_state.at("boss_clear_status"), std::string("cleared"));
 
     const auto fixture = simulation.BuildReplayFixture("user-boss");
+    CHECK_EQ(fixture.summary.boss_spawn_slot_by_player.at("p1"), std::string("north"));
+    CHECK_EQ(fixture.summary.boss_fire_target_by_player.at("p1"), std::string("boss_center"));
+    CHECK_EQ(fixture.summary.boss_spawn_slot_by_player.at("p2"), std::string("east"));
+    CHECK_EQ(fixture.summary.boss_fire_target_by_player.at("p2"), std::string("boss_center"));
+    auto tampered_boss_summary = fixture.summary;
+    tampered_boss_summary.boss_spawn_slot_by_player["p1"] = "south";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_boss_summary) != fixture.result_hash);
     const auto mode_result_json = phk::battle::DevModeResultJsonFromReplayFixture(fixture);
     CHECK_TRUE(mode_result_json.find("\"battle_result_owner\":\"cpp\"") != std::string::npos);
     CHECK_TRUE(mode_result_json.find("\"boss_scope\":\"instance_match\"") != std::string::npos);
@@ -5010,6 +5019,8 @@ bool TestReplayFixtureBoundary() {
     CHECK_EQ(fixture.player_ids[0], std::string("p1"));
     CHECK_EQ(fixture.player_ids[1], std::string("p2"));
     CHECK_TRUE(fixture.summary.player_ids == fixture.player_ids);
+    CHECK_TRUE(fixture.summary.boss_spawn_slot_by_player.empty());
+    CHECK_TRUE(fixture.summary.boss_fire_target_by_player.empty());
     CHECK_EQ(fixture.tick_rate_hz, phk::battle::kBattleTickRateHz);
     CHECK_EQ(fixture.match_seed, config.match_seed);
     CHECK_EQ(fixture.event_cursor, fixture.summary.event_count);
@@ -5065,6 +5076,9 @@ bool TestReplayFixtureBoundary() {
     auto tampered_summary_players = fixture.summary;
     tampered_summary_players.player_ids = {"p1"};
     CHECK_TRUE(ExpectedDevResultHash(tampered_summary_players) != fixture.result_hash);
+    auto tampered_summary_boss_spawn = fixture.summary;
+    tampered_summary_boss_spawn.boss_spawn_slot_by_player["p1"] = "north";
+    CHECK_TRUE(ExpectedDevResultHash(tampered_summary_boss_spawn) != fixture.result_hash);
     CHECK_EQ(fixture.final_snapshot.snapshot_kind, std::string("replay_final"));
     CHECK_EQ(fixture.final_snapshot.snapshot_tick, static_cast<std::uint64_t>(60));
     CHECK_EQ(fixture.final_snapshot.state_hash, fixture.summary.final_state_hash);
@@ -5153,7 +5167,7 @@ bool TestReplayFixtureBoundary() {
     CHECK_TRUE(canonical_fixture_payload.find("bullet_spawn|tick=60") != std::string::npos);
     CHECK_EQ(
         phk::battle::DevReplayFixtureHash(fixture),
-        std::string("sha256:dev-fnv64-68fd71b68340171a")
+        std::string("sha256:dev-fnv64-e223cb92b199d91a")
     );
     auto tampered_fixture_summary_count = fixture;
     tampered_fixture_summary_count.summary.input_count += 1;
@@ -5359,7 +5373,7 @@ bool TestReplayRecordBridgeBoundary() {
     );
     CHECK_EQ(
         built.replay_record_hash,
-        std::string("sha256:dev-fnv64-a54db0d5f5da97ba")
+        std::string("sha256:dev-fnv64-8f4392ac01c56b3f")
     );
 
     auto tampered_stream = built.replay_record;

@@ -73,6 +73,8 @@ struct ReplaySummary {
     std::uint64_t last_mode_action_tick = 0;
     std::uint64_t last_mode_action_seq = 0;
     std::vector<std::string> player_ids;
+    std::map<std::string, std::string> boss_spawn_slot_by_player;
+    std::map<std::string, std::string> boss_fire_target_by_player;
     std::vector<std::string> input_trace;
     std::vector<std::string> event_trace;
 };
