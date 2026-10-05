@@ -20,6 +20,11 @@
 namespace phk::battle {
 namespace {
 
+// Standard KCP segment overhead: conv(4) + cmd(1) + frg(1) + wnd(2) + ts(4) +
+// sn(4) + una(4) + len(4) = 24 bytes. Upstream ikcp keeps this as an internal
+// constant in ikcp.c rather than exposing it from ikcp.h, so we restate it here.
+constexpr std::size_t kKcpSegmentOverheadBytes = 24;
+
 std::string SockaddrToKey(const sockaddr_in& addr) {
     char ip[INET_ADDRSTRLEN] = {0};
     if (::inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip)) == nullptr) {
@@ -298,7 +303,7 @@ int KcpServerEndpoint::Poll(int timeout_ms) {
         if (n <= 0) {
             break;
         }
-        if (n < IKCP_OVERHEAD) {
+        if (n < static_cast<ssize_t>(kKcpSegmentOverheadBytes)) {
             continue;
         }
 
