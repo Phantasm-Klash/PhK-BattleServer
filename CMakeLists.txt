@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 project(PhKBattleServer
     VERSION 0.1.0
     DESCRIPTION "Open-source C++ battle server core for Phantasm Klash"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 option(PHK_BATTLE_BUILD_TESTS "Build PhK BattleServer tests" ON)
@@ -20,18 +20,25 @@ add_library(phk_battle_core
     src/boss_race.cpp
     src/handshake.cpp
     src/kcp_endpoint.cpp
+    src/kcp_server_endpoint.cpp
+    src/match_lifecycle.cpp
     src/protocol.cpp
     src/result.cpp
     src/server.cpp
     src/simulation.cpp
     src/ticket.cpp
+    third_party/ikcp/ikcp.c
 )
 
 target_include_directories(phk_battle_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ikcp
         ${PHK_PROTOCOL_CPP_INCLUDE_DIR}
 )
+
+# Vendored third-party C code: keep it warning-free from our own -Wall flags.
+set_source_files_properties(third_party/ikcp/ikcp.c PROPERTIES COMPILE_OPTIONS "-w")
 
 target_compile_features(phk_battle_core PUBLIC cxx_std_17)
 
@@ -59,4 +66,10 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_boss_race_tests PRIVATE phk_battle_core)
     add_test(NAME phk_boss_race_tests COMMAND phk_boss_race_tests)
+
+    add_executable(phk_battle_lifecycle_tests
+        tests/battle_server_lifecycle_tests.cpp
+    )
+    target_link_libraries(phk_battle_lifecycle_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_battle_lifecycle_tests COMMAND phk_battle_lifecycle_tests)
 endif()
