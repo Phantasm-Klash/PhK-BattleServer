@@ -7,14 +7,43 @@ project(PhKBattleServer
 )
 
 option(PHK_BATTLE_BUILD_TESTS "Build PhK BattleServer tests" ON)
-set(PHK_PROTOCOL_CPP_INCLUDE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/../PhK-Protocol/gen/cpp"
-    CACHE PATH "Path to generated PhK-Protocol C++ manifest include root"
+
+# Resolve the generated PhK-Protocol C++ manifest include root.
+#
+# Priority:
+#   1. Explicit override (-DPHK_PROTOCOL_CPP_INCLUDE_OVERRIDE=<path>).
+#   2. Monorepo sibling ../PhK-Protocol/gen/cpp (canonical, always fresh).
+#   3. Vendored copy third_party/phk-protocol/gen/cpp (self-contained; used by
+#      GitHub Actions and any consumer without a PhK-Protocol checkout).
+set(PHK_PROTOCOL_CPP_INCLUDE_OVERRIDE "" CACHE PATH
+    "Optional explicit path to the generated PhK-Protocol C++ manifest include root"
 )
 
-if(NOT EXISTS "${PHK_PROTOCOL_CPP_INCLUDE_DIR}/phk/v1/manifest.hpp")
-    message(FATAL_ERROR "Missing PhK-Protocol C++ manifest. Run PhK-Protocol/tools/export_cpp_manifest.py")
+set(_phk_protocol_candidates "")
+if(PHK_PROTOCOL_CPP_INCLUDE_OVERRIDE)
+    list(APPEND _phk_protocol_candidates "${PHK_PROTOCOL_CPP_INCLUDE_OVERRIDE}")
 endif()
+list(APPEND _phk_protocol_candidates
+    "${CMAKE_CURRENT_SOURCE_DIR}/../PhK-Protocol/gen/cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/phk-protocol/gen/cpp"
+)
+
+set(PHK_PROTOCOL_CPP_INCLUDE_DIR "")
+foreach(_phk_candidate IN LISTS _phk_protocol_candidates)
+    if(EXISTS "${_phk_candidate}/phk/v1/manifest.hpp")
+        set(PHK_PROTOCOL_CPP_INCLUDE_DIR "${_phk_candidate}")
+        break()
+    endif()
+endforeach()
+
+if(NOT PHK_PROTOCOL_CPP_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "Missing PhK-Protocol C++ manifest (phk/v1/manifest.hpp). "
+        "Checked: ${_phk_protocol_candidates}. "
+        "Run PhK-Protocol/tools/export_cpp_manifest.py, or re-vendor "
+        "third_party/phk-protocol/gen/cpp.")
+endif()
+message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 
 add_library(phk_battle_core
     src/boss_race.cpp

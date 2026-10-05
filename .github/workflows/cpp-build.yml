@@ -1,0 +1,73 @@
+name: C++ Build & Test
+
+# Self-contained C++ build: the required PhK-Protocol manifest is vendored in
+# third_party/phk-protocol/gen/cpp, so no sibling PhK-Protocol checkout is
+# needed. See third_party/phk-protocol/README.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/cpp-build.yml"
+  pull_request:
+    paths:
+      - "apps/**"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/cpp-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: cmake build + ctest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          cmake --version
+          ninja --version
+
+      - name: Verify self-contained sources
+        run: |
+          set -euo pipefail
+          # The vendored manifest must be committed.
+          test -f third_party/phk-protocol/gen/cpp/phk/v1/manifest.hpp
+          # A sibling PhK-Protocol checkout must not be required.
+          if [ -e ../PhK-Protocol ]; then
+            echo "unexpected sibling PhK-Protocol checkout" >&2
+            exit 1
+          fi
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja | tee configure.log
+
+      - name: Assert vendored manifest was used
+        run: |
+          set -euo pipefail
+          grep -q "third_party/phk-protocol/gen/cpp" configure.log
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
