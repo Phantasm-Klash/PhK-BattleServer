@@ -17,6 +17,7 @@ if(NOT EXISTS "${PHK_PROTOCOL_CPP_INCLUDE_DIR}/phk/v1/manifest.hpp")
 endif()
 
 add_library(phk_battle_core
+    src/boss_race.cpp
     src/handshake.cpp
     src/kcp_endpoint.cpp
     src/protocol.cpp
@@ -52,4 +53,10 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_battle_tests PRIVATE phk_battle_core)
     add_test(NAME phk_battle_tests COMMAND phk_battle_tests)
+
+    add_executable(phk_boss_race_tests
+        tests/boss_race_tests.cpp
+    )
+    target_link_libraries(phk_boss_race_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_boss_race_tests COMMAND phk_boss_race_tests)
 endif()
