@@ -121,13 +121,27 @@ bool IsValidOptionalBossIdentityField(const std::string& value) {
             std::all_of(value.begin(), value.end(), IsAllowedBossIdentityChar));
 }
 
-bool BossMatchReadyForResult(const BattleSimulation& simulation) {
+std::string BossMatchResultBlockReason(const BattleSimulation& simulation) {
     if (!IsBossMode(simulation.Config().mode_id)) {
-        return true;
+        return "";
     }
     const auto mode_state = simulation.Snapshot().mode_state;
     const auto combat_started = mode_state.find("boss_combat_started");
-    return combat_started != mode_state.end() && combat_started->second == "1";
+    if (combat_started == mode_state.end() || combat_started->second != "1") {
+        return "boss_match_not_startable";
+    }
+    if (simulation.Config().mode_id != "instance_boss") {
+        return "";
+    }
+    const auto boss_defeated = mode_state.find("boss_defeated");
+    if (boss_defeated != mode_state.end() && boss_defeated->second == "1") {
+        return "";
+    }
+    const auto connected_player_count = mode_state.find("connected_player_count");
+    if (connected_player_count != mode_state.end() && connected_player_count->second == "0") {
+        return "";
+    }
+    return "instance_boss_not_terminal";
 }
 
 InputValidationResult UnknownPlayerResult() {
@@ -1076,8 +1090,9 @@ BuildSignedBattleResultResult BattleServer::BuildSignedBattleResult(const std::s
                 : "match_unknown");
         return result;
     }
-    if (!BossMatchReadyForResult(simulation_it->second)) {
-        result.reason = "boss_match_not_startable";
+    const std::string boss_result_block = BossMatchResultBlockReason(simulation_it->second);
+    if (!boss_result_block.empty()) {
+        result.reason = boss_result_block;
         return result;
     }
 
@@ -1171,8 +1186,9 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
                 : "match_unknown");
         return result;
     }
-    if (!BossMatchReadyForResult(simulation_it->second)) {
-        result.reason = "boss_match_not_startable";
+    const std::string boss_result_block = BossMatchResultBlockReason(simulation_it->second);
+    if (!boss_result_block.empty()) {
+        result.reason = boss_result_block;
         return result;
     }
 

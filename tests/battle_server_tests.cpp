@@ -3454,6 +3454,11 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489640000;
     phk::battle::BattleServer server(config);
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-001";
+    boss_config.mode_id = "instance_boss";
+    boss_config.boss_max_hp = 20;
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
     CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
         "ticket-instance-result-1",
         "user-instance-result-1",
@@ -3543,6 +3548,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         built.signed_result.result.mode_result_json.find("\"boss_season_id\":\"season-local-s0\"") !=
         std::string::npos
     );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"boss_phase_id\":\"phase-1\"") !=
         std::string::npos
@@ -3566,8 +3572,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
     CHECK_TRUE(
@@ -3589,17 +3595,17 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"failed\"") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_failed\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"boss_instance_surviving_player_count\":4") !=
         std::string::npos
     );
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_instance_clear_credit\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_instance_clear_credit\":1") != std::string::npos);
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"boss_instance_result_state\":\"failed\"") !=
+        built.signed_result.result.mode_result_json.find("\"boss_instance_result_state\":\"cleared\"") !=
         std::string::npos
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":2") != std::string::npos);
@@ -3857,7 +3863,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_max_hp = built.signed_result;
     wrong_max_hp.result.mode_result_json = ReplaceFirst(
         wrong_max_hp.result.mode_result_json,
-        "\"boss_max_hp\":1000",
+        "\"boss_max_hp\":20",
         "\"boss_max_hp\":1"
     );
     const auto wrong_max_hp_result = server.SubmitBattleResult(wrong_max_hp);
@@ -3867,8 +3873,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_current_hp = built.signed_result;
     wrong_current_hp.result.mode_result_json = ReplaceFirst(
         wrong_current_hp.result.mode_result_json,
-        "\"boss_current_hp\":980",
-        "\"boss_current_hp\":0"
+        "\"boss_current_hp\":0",
+        "\"boss_current_hp\":1"
     );
     const auto wrong_current_hp_result = server.SubmitBattleResult(wrong_current_hp);
     CHECK_TRUE(!wrong_current_hp_result.ok);
@@ -3917,8 +3923,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(
         wrong_defeated.result.mode_result_json,
-        "\"boss_defeated\":0",
-        "\"boss_defeated\":1"
+        "\"boss_defeated\":1",
+        "\"boss_defeated\":0"
     );
     const auto wrong_defeated_result = server.SubmitBattleResult(wrong_defeated);
     CHECK_TRUE(!wrong_defeated_result.ok);
@@ -3927,8 +3933,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_defeated_tick = built.signed_result;
     wrong_defeated_tick.result.mode_result_json = ReplaceFirst(
         wrong_defeated_tick.result.mode_result_json,
-        "\"boss_defeated_tick\":0",
-        "\"boss_defeated_tick\":1"
+        "\"boss_defeated_tick\":1",
+        "\"boss_defeated_tick\":2"
     );
     const auto wrong_defeated_tick_result = server.SubmitBattleResult(wrong_defeated_tick);
     CHECK_TRUE(!wrong_defeated_tick_result.ok);
@@ -3938,7 +3944,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_clear_status.result.mode_result_json = ReplaceJsonStringField(
         wrong_clear_status.result.mode_result_json,
         "boss_clear_status",
-        "cleared"
+        "failed"
     );
     const auto wrong_clear_status_result = server.SubmitBattleResult(wrong_clear_status);
     CHECK_TRUE(!wrong_clear_status_result.ok);
@@ -3948,7 +3954,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_disposition.result.mode_result_json = ReplaceJsonStringField(
         wrong_disposition.result.mode_result_json,
         "boss_result_disposition",
-        "instance_cleared"
+        "instance_failed"
     );
     const auto wrong_disposition_result = server.SubmitBattleResult(wrong_disposition);
     CHECK_TRUE(!wrong_disposition_result.ok);
@@ -3970,8 +3976,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_instance_clear_credit = built.signed_result;
     wrong_instance_clear_credit.result.mode_result_json = ReplaceFirst(
         wrong_instance_clear_credit.result.mode_result_json,
-        "\"boss_instance_clear_credit\":0",
-        "\"boss_instance_clear_credit\":1"
+        "\"boss_instance_clear_credit\":1",
+        "\"boss_instance_clear_credit\":0"
     );
     const auto wrong_instance_clear_credit_result = server.SubmitBattleResult(wrong_instance_clear_credit);
     CHECK_TRUE(!wrong_instance_clear_credit_result.ok);
@@ -3984,7 +3990,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_instance_result_state.result.mode_result_json = ReplaceJsonStringField(
         wrong_instance_result_state.result.mode_result_json,
         "boss_instance_result_state",
-        "cleared"
+        "failed"
     );
     const auto wrong_instance_result_state_result = server.SubmitBattleResult(wrong_instance_result_state);
     CHECK_TRUE(!wrong_instance_result_state_result.ok);
@@ -4437,36 +4443,13 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
     const auto disconnected_result = server.BuildSignedBattleResult("match-001");
-    CHECK_TRUE(disconnected_result.ok);
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"connected_player_count\":3") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"disconnected_player_count\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_roster_locked\":1") !=
-        std::string::npos
-    );
-    auto wrong_roster_lock = disconnected_result.signed_result;
-    wrong_roster_lock.result.mode_result_json = ReplaceFirst(
-        wrong_roster_lock.result.mode_result_json,
-        "\"boss_roster_locked\":1",
-        "\"boss_roster_locked\":0"
-    );
-    const auto wrong_roster_lock_result = server.SubmitBattleResult(wrong_roster_lock);
-    CHECK_TRUE(!wrong_roster_lock_result.ok);
-    CHECK_EQ(wrong_roster_lock_result.reason, std::string("boss_roster_locked_mismatch"));
+    CHECK_TRUE(!disconnected_result.ok);
+    CHECK_EQ(disconnected_result.reason, std::string("instance_boss_not_terminal"));
+    phk::battle::SignedBattleResult stale_incomplete_result;
+    stale_incomplete_result.result.match_id = "match-001";
+    const auto stale_incomplete_submit = server.SubmitBattleResult(stale_incomplete_result);
+    CHECK_TRUE(!stale_incomplete_submit.ok);
+    CHECK_EQ(stale_incomplete_submit.reason, std::string("instance_boss_not_terminal"));
     const auto disconnected_late_join = server.RegisterTicket(MakeModeTicket(
         "ticket-roster-lock-disconnected-late",
         "user-roster-lock-disconnected-late",
@@ -4495,7 +4478,44 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_EQ(snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
-    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
+    const auto incomplete_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!incomplete_result.ok);
+    CHECK_EQ(incomplete_result.reason, std::string("instance_boss_not_terminal"));
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.SetPlayerConnected("match-001", "p" + std::to_string(index), false).ok);
+    }
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("0"));
+    const auto all_disconnected_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(all_disconnected_result.ok);
+    CHECK_EQ(all_disconnected_result.reason, std::string("ok"));
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_clear_status\":\"failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_result_disposition\":\"instance_failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_surviving_player_count\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_clear_credit\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_result_state\":\"failed\""
+        ) != std::string::npos
+    );
+    const auto all_disconnected_submit = server.SubmitBattleResult(all_disconnected_result.signed_result);
+    CHECK_TRUE(all_disconnected_submit.ok);
+    CHECK_EQ(all_disconnected_submit.reason, std::string("ok"));
     return true;
 }
 
