@@ -4481,6 +4481,18 @@ bool TestBossRosterLocksAfterReadyToStart() {
     const auto incomplete_result = server.BuildSignedBattleResult("match-001");
     CHECK_TRUE(!incomplete_result.ok);
     CHECK_EQ(incomplete_result.reason, std::string("instance_boss_not_terminal"));
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.SetPlayerConnected("match-001", "p" + std::to_string(index), false).ok);
+    }
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("0"));
+    const auto all_disconnected_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!all_disconnected_result.ok);
+    CHECK_EQ(all_disconnected_result.reason, std::string("instance_boss_not_terminal"));
+    phk::battle::SignedBattleResult stale_all_disconnected_result;
+    stale_all_disconnected_result.result.match_id = "match-001";
+    const auto all_disconnected_submit = server.SubmitBattleResult(stale_all_disconnected_result);
+    CHECK_TRUE(!all_disconnected_submit.ok);
+    CHECK_EQ(all_disconnected_submit.reason, std::string("instance_boss_not_terminal"));
     return true;
 }
 

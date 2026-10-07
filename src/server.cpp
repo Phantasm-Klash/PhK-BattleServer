@@ -137,10 +137,6 @@ std::string BossMatchResultBlockReason(const BattleSimulation& simulation) {
     if (boss_defeated != mode_state.end() && boss_defeated->second == "1") {
         return "";
     }
-    const auto connected_player_count = mode_state.find("connected_player_count");
-    if (connected_player_count != mode_state.end() && connected_player_count->second == "0") {
-        return "";
-    }
     return "instance_boss_not_terminal";
 }
 
