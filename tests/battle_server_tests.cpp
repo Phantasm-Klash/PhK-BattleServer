@@ -4486,13 +4486,36 @@ bool TestBossRosterLocksAfterReadyToStart() {
     }
     CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("0"));
     const auto all_disconnected_result = server.BuildSignedBattleResult("match-001");
-    CHECK_TRUE(!all_disconnected_result.ok);
-    CHECK_EQ(all_disconnected_result.reason, std::string("instance_boss_not_terminal"));
-    phk::battle::SignedBattleResult stale_all_disconnected_result;
-    stale_all_disconnected_result.result.match_id = "match-001";
-    const auto all_disconnected_submit = server.SubmitBattleResult(stale_all_disconnected_result);
-    CHECK_TRUE(!all_disconnected_submit.ok);
-    CHECK_EQ(all_disconnected_submit.reason, std::string("instance_boss_not_terminal"));
+    CHECK_TRUE(all_disconnected_result.ok);
+    CHECK_EQ(all_disconnected_result.reason, std::string("ok"));
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_clear_status\":\"failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_result_disposition\":\"instance_failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_surviving_player_count\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_clear_credit\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_result_state\":\"failed\""
+        ) != std::string::npos
+    );
+    const auto all_disconnected_submit = server.SubmitBattleResult(all_disconnected_result.signed_result);
+    CHECK_TRUE(all_disconnected_submit.ok);
+    CHECK_EQ(all_disconnected_submit.reason, std::string("ok"));
     return true;
 }
 
