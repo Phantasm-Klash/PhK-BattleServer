@@ -5880,6 +5880,26 @@ bool TestDispatcher() {
         std::string("mode_action_client_result_invalid")
     );
 
+    phk::battle::BattlePacketHeader nested_authority_action = forged_result_action;
+    nested_authority_action.seq = phk::v1::kBattleModeActionSeq + 10;
+    nested_authority_action.tick = phk::v1::kBattleModeActionTick + 10;
+    RefreshDevAeadNonce(nested_authority_action);
+    const std::string nested_authority_payload =
+        "{\"nested\":{\"client_result_authoritative\":false},"
+        "\"client_result_authoritative\":true}";
+    const auto nested_authority_result = dispatcher.Dispatch(
+        nested_authority_action,
+        std::vector<std::uint8_t>(
+            nested_authority_payload.begin(),
+            nested_authority_payload.end()
+        )
+    );
+    CHECK_TRUE(!nested_authority_result.ok);
+    CHECK_EQ(
+        nested_authority_result.reason,
+        std::string("mode_action_client_result_forbidden")
+    );
+
     phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
     const std::vector<std::string> forged_damage_payloads = {
         "{\"action_type\":\"ready\",\"boss_damage\":9999}",
@@ -5921,6 +5941,61 @@ bool TestDispatcher() {
     );
     CHECK_TRUE(!spaced_unsupported_result.ok);
     CHECK_EQ(spaced_unsupported_result.reason, std::string("mode_action_type_unsupported"));
+
+    phk::battle::BattlePacketHeader invalid_action_type = forged_result_action;
+    invalid_action_type.seq = phk::v1::kBattleModeActionSeq + 6;
+    invalid_action_type.tick = phk::v1::kBattleModeActionTick + 6;
+    RefreshDevAeadNonce(invalid_action_type);
+    const std::vector<std::string> invalid_action_type_payloads = {
+        "{\"action_type\":true}",
+        "{\"action_type\":null}",
+        "{\"action_type\":\"\"}",
+        "{\"action_type\":\"unknown\\u005faction\"}",
+    };
+    for (const auto& invalid_payload : invalid_action_type_payloads) {
+        const auto invalid_action_type_result = dispatcher.Dispatch(
+            invalid_action_type,
+            std::vector<std::uint8_t>(invalid_payload.begin(), invalid_payload.end())
+        );
+        CHECK_TRUE(!invalid_action_type_result.ok);
+        CHECK_EQ(invalid_action_type_result.reason, std::string("mode_action_type_invalid"));
+        ++invalid_action_type.seq;
+        ++invalid_action_type.tick;
+        RefreshDevAeadNonce(invalid_action_type);
+    }
+
+    phk::battle::BattlePacketHeader nested_action_type = invalid_action_type;
+    nested_action_type.player_id = "p2";
+    RefreshDevAeadNonce(nested_action_type);
+    const std::string nested_only_action_type_payload =
+        "{\"nested\":{\"action_type\":\"unknown_action\"}}";
+    const auto nested_only_action_type_result = dispatcher.Dispatch(
+        nested_action_type,
+        std::vector<std::uint8_t>(
+            nested_only_action_type_payload.begin(),
+            nested_only_action_type_payload.end()
+        )
+    );
+    CHECK_TRUE(nested_only_action_type_result.ok);
+    CHECK_EQ(nested_only_action_type_result.response_kind, std::string("mode_action"));
+
+    ++nested_action_type.seq;
+    ++nested_action_type.tick;
+    RefreshDevAeadNonce(nested_action_type);
+    const std::string nested_and_top_level_action_type_payload =
+        "{\"nested\":{\"action_type\":\"ready\"},\"action_type\":\"grant_reward\"}";
+    const auto nested_and_top_level_action_type_result = dispatcher.Dispatch(
+        nested_action_type,
+        std::vector<std::uint8_t>(
+            nested_and_top_level_action_type_payload.begin(),
+            nested_and_top_level_action_type_payload.end()
+        )
+    );
+    CHECK_TRUE(!nested_and_top_level_action_type_result.ok);
+    CHECK_EQ(
+        nested_and_top_level_action_type_result.reason,
+        std::string("mode_action_type_unsupported")
+    );
 
     phk::battle::BattlePacketHeader retry_after_rejected_action = forged_damage_action;
     const std::string retry_payload = "{\"action_type\":\"ready\",\"ready\":true}";

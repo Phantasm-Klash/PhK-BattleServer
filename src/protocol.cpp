@@ -96,6 +96,38 @@ bool IsAllowedModeActionType(std::string_view action_type) {
 
 std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name);
 
+bool IsTopLevelJsonObjectKey(std::string_view payload_json, std::size_t key_start) {
+    int object_depth = 0;
+    int array_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < key_start; ++index) {
+        const char ch = payload_json[index];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++object_depth;
+        } else if (ch == '}') {
+            --object_depth;
+        } else if (ch == '[') {
+            ++array_depth;
+        } else if (ch == ']') {
+            --array_depth;
+        }
+    }
+    return !in_string && object_depth == 1 && array_depth == 0;
+}
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
     const auto value_start = JsonFieldValueStart(payload_json, field_name);
     if (value_start == std::string_view::npos ||
@@ -155,6 +187,10 @@ std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view 
         if (key_start == std::string_view::npos) {
             return std::string_view::npos;
         }
+        if (!IsTopLevelJsonObjectKey(payload_json, key_start)) {
+            search_start = key_start + 1;
+            continue;
+        }
         auto value_start = key_start + key.size();
         while (value_start < payload_json.size() &&
             std::isspace(static_cast<unsigned char>(payload_json[value_start]))) {
@@ -207,10 +243,16 @@ bool ValidatePlaintextModeActionPayload(std::string_view payload_json, std::stri
     if (payload_json.empty() || !LooksLikeJsonObject(payload_json)) {
         return true;
     }
-    const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
-    if (!action_type.empty() && !IsAllowedModeActionType(action_type)) {
-        reason = "mode_action_type_unsupported";
-        return false;
+    if (JsonFieldValueStart(payload_json, "action_type") != std::string_view::npos) {
+        const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
+        if (action_type.empty()) {
+            reason = "mode_action_type_invalid";
+            return false;
+        }
+        if (!IsAllowedModeActionType(action_type)) {
+            reason = "mode_action_type_unsupported";
+            return false;
+        }
     }
     if (JsonBoolFieldIsMalformed(payload_json, "client_result_authoritative")) {
         reason = "mode_action_client_result_invalid";
