@@ -1,6 +1,7 @@
 #include "phk/battle/server.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -238,11 +239,30 @@ std::optional<std::uint64_t> ExtractLastSeenEventCursor(const std::string& paylo
         return std::nullopt;
     }
 
-    std::uint64_t cursor = 0;
+    const auto number_start = digit_offset;
     while (digit_offset < payload_json.size() &&
         std::isdigit(static_cast<unsigned char>(payload_json[digit_offset]))) {
-        cursor = cursor * 10u + static_cast<std::uint64_t>(payload_json[digit_offset] - '0');
         ++digit_offset;
+    }
+    const auto number_end = digit_offset;
+    while (digit_offset < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[digit_offset]))) {
+        ++digit_offset;
+    }
+    if (digit_offset < payload_json.size() &&
+        payload_json[digit_offset] != ',' &&
+        payload_json[digit_offset] != '}') {
+        return std::nullopt;
+    }
+
+    std::uint64_t cursor = 0;
+    const auto parsed = std::from_chars(
+        payload_json.data() + number_start,
+        payload_json.data() + number_end,
+        cursor
+    );
+    if (parsed.ec != std::errc{} || parsed.ptr != payload_json.data() + number_end) {
+        return std::nullopt;
     }
     return cursor;
 }
@@ -753,7 +773,8 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
             result.reason = "encrypted_tick_too_old";
             return result;
         }
-        if (packet.header.tick > simulation.CurrentTick() + simulation.Config().max_input_ahead_ticks) {
+        if (packet.header.tick > simulation.CurrentTick() &&
+            packet.header.tick - simulation.CurrentTick() > simulation.Config().max_input_ahead_ticks) {
             result.reason = "encrypted_tick_too_far_ahead";
             return result;
         }

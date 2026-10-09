@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -322,9 +323,8 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
     }
-    bool negative = false;
+    const auto number_start = token_start;
     if (token_start < payload_json.size() && payload_json[token_start] == '-') {
-        negative = true;
         ++token_start;
     }
     if (token_start >= payload_json.size() ||
@@ -332,12 +332,11 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         return std::nullopt;
     }
 
-    std::int64_t value = 0;
     while (token_start < payload_json.size() &&
         std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
-        value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
         ++token_start;
     }
+    const auto number_end = token_start;
     while (token_start < payload_json.size() &&
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
@@ -347,7 +346,17 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         payload_json[token_start] != '}') {
         return std::nullopt;
     }
-    return negative ? -value : value;
+
+    std::int64_t value = 0;
+    const auto parsed = std::from_chars(
+        payload_json.data() + number_start,
+        payload_json.data() + number_end,
+        value
+    );
+    if (parsed.ec != std::errc{} || parsed.ptr != payload_json.data() + number_end) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -591,7 +600,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "seq_replay";
         return result;
     }
-    if (input.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (input.seq > player_it->second.last_seq &&
+        input.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -601,7 +611,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_tick_too_old";
         return result;
     }
-    if (input.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (input.tick > current_tick_ &&
+        input.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "input_tick_too_far_ahead";
         return result;
@@ -704,7 +715,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "seq_replay";
         return result;
     }
-    if (action.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (action.seq > player_it->second.last_seq &&
+        action.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -714,7 +726,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_tick_too_old";
         return result;
     }
-    if (action.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (action.tick > current_tick_ &&
+        action.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "mode_action_tick_too_far_ahead";
         return result;
