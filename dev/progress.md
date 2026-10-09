@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-10-09 Result JSON Duplicate-Key Boundary
+
+- Battle result mode and reward projection JSON now reject duplicate top-level field names before replay/result field binding.
+- CTest and `tools/check_battle_server.py` cover separate `mode_result_json_duplicate_field` and `reward_projection_json_duplicate_field` rejection paths, preventing conflicting JSON consumers from observing different audit values.
+- This remains result/replay audit validation only. The C++ battle server still does not persist rewards, inventory, wallet, or business database state.
+
 ## 2026-07-01 Retired Encrypted Dispatch Boundary
 
 - CTest now covers encrypted client-to-server dispatch after `RetireMatch`, ensuring retired rooms reject late KCP/AEAD scaffold packets as `match_retired`.

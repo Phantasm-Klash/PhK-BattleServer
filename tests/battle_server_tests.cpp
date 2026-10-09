@@ -820,6 +820,33 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!nested_final_state_hash_result.ok);
     CHECK_EQ(nested_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
 
+    auto duplicate_mode_result_field = valid_result;
+    duplicate_mode_result_field.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "}",
+        ",\"final_tick\":" + std::to_string(summary.final_tick) + "}"
+    );
+    const auto duplicate_mode_result_field_result = server.SubmitBattleResult(duplicate_mode_result_field);
+    CHECK_TRUE(!duplicate_mode_result_field_result.ok);
+    CHECK_EQ(
+        duplicate_mode_result_field_result.reason,
+        std::string("mode_result_json_duplicate_field")
+    );
+
+    auto duplicate_reward_projection_field = valid_result;
+    duplicate_reward_projection_field.result.reward_projection_json = ReplaceFirst(
+        valid_result.result.reward_projection_json,
+        "}",
+        ",\"source\":\"phk-battle-server\"}"
+    );
+    const auto duplicate_reward_projection_field_result =
+        server.SubmitBattleResult(duplicate_reward_projection_field);
+    CHECK_TRUE(!duplicate_reward_projection_field_result.ok);
+    CHECK_EQ(
+        duplicate_reward_projection_field_result.reason,
+        std::string("reward_projection_json_duplicate_field")
+    );
+
     auto wrong_tick_rate = valid_result;
     wrong_tick_rate.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
