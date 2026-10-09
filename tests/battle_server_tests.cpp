@@ -5906,6 +5906,22 @@ bool TestDispatcher() {
     CHECK_TRUE(!unsupported_mode_action_result.ok);
     CHECK_EQ(unsupported_mode_action_result.reason, std::string("mode_action_type_unsupported"));
 
+    phk::battle::BattlePacketHeader spaced_unsupported_action = forged_result_action;
+    spaced_unsupported_action.seq = phk::v1::kBattleModeActionSeq + 5;
+    spaced_unsupported_action.tick = phk::v1::kBattleModeActionTick + 5;
+    RefreshDevAeadNonce(spaced_unsupported_action);
+    const std::string spaced_unsupported_payload =
+        "{\"action_type\" : \"grant_reward\",\"target_player_id\":\"p2\"}";
+    const auto spaced_unsupported_result = dispatcher.Dispatch(
+        spaced_unsupported_action,
+        std::vector<std::uint8_t>(
+            spaced_unsupported_payload.begin(),
+            spaced_unsupported_payload.end()
+        )
+    );
+    CHECK_TRUE(!spaced_unsupported_result.ok);
+    CHECK_EQ(spaced_unsupported_result.reason, std::string("mode_action_type_unsupported"));
+
     phk::battle::BattlePacketHeader retry_after_rejected_action = forged_damage_action;
     const std::string retry_payload = "{\"action_type\":\"ready\",\"ready\":true}";
     const auto retry_after_rejected_action_result = dispatcher.Dispatch(
