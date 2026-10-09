@@ -94,13 +94,16 @@ bool IsAllowedModeActionType(std::string_view action_type) {
         action_type == "reconnect";
 }
 
+std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name);
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
-    const auto value_start = payload_json.find(prefix);
-    if (value_start == std::string_view::npos) {
+    const auto value_start = JsonFieldValueStart(payload_json, field_name);
+    if (value_start == std::string_view::npos ||
+        value_start >= payload_json.size() ||
+        payload_json[value_start] != '"') {
         return "";
     }
-    const auto string_start = value_start + prefix.size();
+    const auto string_start = value_start + 1;
     std::string decoded;
     for (std::size_t index = string_start; index < payload_json.size(); ++index) {
         const char ch = payload_json[index];
