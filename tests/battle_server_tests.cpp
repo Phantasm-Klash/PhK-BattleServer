@@ -1696,6 +1696,12 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_TRUE(!malformed_false_ready_result.ok);
     CHECK_EQ(malformed_false_ready_result.reason, std::string("ready_payload_missing"));
 
+    auto malformed_spaced_ready = missing_ready_payload;
+    malformed_spaced_ready.payload_json = "{\"ready\" : truex}";
+    const auto malformed_spaced_ready_result = simulation.AcceptModeAction(malformed_spaced_ready);
+    CHECK_TRUE(!malformed_spaced_ready_result.ok);
+    CHECK_EQ(malformed_spaced_ready_result.reason, std::string("ready_payload_missing"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";
@@ -1703,7 +1709,7 @@ bool TestReadyModeActionLifecycleState() {
     p1_ready.seq = 1;
     p1_ready.action_id = "ready-p1";
     p1_ready.action_type = "ready";
-    p1_ready.payload_json = "{\"ready\":true}";
+    p1_ready.payload_json = "{\"ready\" : true}";
     CHECK_TRUE(simulation.AcceptModeAction(p1_ready).ok);
     auto pending_duplicate_p1_ready = p1_ready;
     pending_duplicate_p1_ready.seq = 2;
@@ -5820,7 +5826,8 @@ bool TestDispatcher() {
     typed_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
     RefreshDevAeadNonce(typed_mode_action);
     const std::string allowed_action_payload =
-        "{\"action_type\":\"transfer_card\",\"card_instance_id\":\"card-001\",\"target_player_id\":\"p2\"}";
+        "{\"action_type\":\"transfer_card\",\"card_instance_id\":\"card-001\","
+        "\"target_player_id\":\"p2\",\"client_result_authoritative\" : false}";
     const auto typed_mode_action_result = dispatcher.Dispatch(
         typed_mode_action,
         std::vector<std::uint8_t>(allowed_action_payload.begin(), allowed_action_payload.end())
@@ -5853,6 +5860,25 @@ bool TestDispatcher() {
     );
     CHECK_TRUE(!malformed_result_action_result.ok);
     CHECK_EQ(malformed_result_action_result.reason, std::string("mode_action_client_result_invalid"));
+
+    phk::battle::BattlePacketHeader malformed_spaced_result_action = malformed_result_action;
+    malformed_spaced_result_action.seq = phk::v1::kBattleModeActionSeq + 4;
+    malformed_spaced_result_action.tick = phk::v1::kBattleModeActionTick + 4;
+    RefreshDevAeadNonce(malformed_spaced_result_action);
+    const std::string malformed_spaced_result_payload =
+        "{\"action_type\":\"ready\",\"client_result_authoritative\" : falsex}";
+    const auto malformed_spaced_result_action_result = dispatcher.Dispatch(
+        malformed_spaced_result_action,
+        std::vector<std::uint8_t>(
+            malformed_spaced_result_payload.begin(),
+            malformed_spaced_result_payload.end()
+        )
+    );
+    CHECK_TRUE(!malformed_spaced_result_action_result.ok);
+    CHECK_EQ(
+        malformed_spaced_result_action_result.reason,
+        std::string("mode_action_client_result_invalid")
+    );
 
     phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
     const std::vector<std::string> forged_damage_payloads = {
