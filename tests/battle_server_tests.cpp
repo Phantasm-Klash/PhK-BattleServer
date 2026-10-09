@@ -4338,6 +4338,66 @@ bool TestWorldBossResultSubmissionRequiresPersistentProjection() {
     return true;
 }
 
+bool TestWorldBossEmptyAnnouncementKeyIsRequired() {
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489642000;
+    phk::battle::BattleServer server(config);
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-world-empty-announcement";
+    boss_config.mode_id = "world_boss";
+    boss_config.boss_instance_id = "world-boss-empty-001";
+    boss_config.boss_season_id = "world-season-s0";
+    boss_config.boss_phase_id = "world-phase-a";
+    boss_config.boss_max_hp = 100;
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ticket = MakeModeTicket(
+            "ticket-world-empty-" + std::to_string(index),
+            "user-world-empty-" + std::to_string(index),
+            "p" + std::to_string(index),
+            "world_boss",
+            std::string("00112233445566778899fb") +
+                (index < 10 ? "0" : "") + std::to_string(index)
+        );
+        ticket.ticket.match_id = boss_config.match_id;
+        CHECK_TRUE(server.RegisterTicket(ticket).ok);
+    }
+    for (std::size_t index = 1; index <= 4; ++index) {
+        auto ready = MakeModeAction(index + 1);
+        ready.match_id = boss_config.match_id;
+        ready.player_id = "p" + std::to_string(index);
+        ready.tick = 1;
+        ready.seq = 1;
+        ready.action_id = "world-empty-ready-" + std::to_string(index);
+        ready.action_type = "ready";
+        ready.payload_json = "{\"ready\":true}";
+        CHECK_TRUE(server.AcceptModeAction(ready).ok);
+    }
+    CHECK_EQ(server.TickMatch(boss_config.match_id).mode_state.at("boss_defeated"), std::string("0"));
+
+    const auto built = server.BuildSignedBattleResult(boss_config.match_id);
+    CHECK_TRUE(built.ok);
+    CHECK_TRUE(
+        built.signed_result.result.mode_result_json.find(
+            "\"boss_world_defeat_announcement_key\":\"\""
+        ) != std::string::npos
+    );
+
+    auto missing_announcement_key = built.signed_result;
+    missing_announcement_key.result.mode_result_json = ReplaceFirst(
+        missing_announcement_key.result.mode_result_json,
+        ",\"boss_world_defeat_announcement_key\":\"\"",
+        ""
+    );
+    const auto missing_announcement_key_result = server.SubmitBattleResult(missing_announcement_key);
+    CHECK_TRUE(!missing_announcement_key_result.ok);
+    CHECK_EQ(
+        missing_announcement_key_result.reason,
+        std::string("boss_world_defeat_announcement_key_mismatch")
+    );
+    return true;
+}
+
 bool TestTransferCardAuditIdsRejectEscapedStrings() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489645000;
@@ -7133,6 +7193,7 @@ int main() {
         {"BossDefeatFreezesAuthoritativeState", TestBossDefeatFreezesAuthoritativeState},
         {"BossModeResultSubmissionRequiresBossProjection", TestBossModeResultSubmissionRequiresBossProjection},
         {"WorldBossResultSubmissionRequiresPersistentProjection", TestWorldBossResultSubmissionRequiresPersistentProjection},
+        {"WorldBossEmptyAnnouncementKeyIsRequired", TestWorldBossEmptyAnnouncementKeyIsRequired},
         {"TransferCardAuditIdsRejectEscapedStrings", TestTransferCardAuditIdsRejectEscapedStrings},
         {"BossModeResultRequiresStartableRoom", TestBossModeResultRequiresStartableRoom},
         {"BossRosterLocksAfterReadyToStart", TestBossRosterLocksAfterReadyToStart},
