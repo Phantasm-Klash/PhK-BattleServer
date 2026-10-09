@@ -5922,6 +5922,28 @@ bool TestDispatcher() {
     CHECK_TRUE(!spaced_unsupported_result.ok);
     CHECK_EQ(spaced_unsupported_result.reason, std::string("mode_action_type_unsupported"));
 
+    phk::battle::BattlePacketHeader invalid_action_type = forged_result_action;
+    invalid_action_type.seq = phk::v1::kBattleModeActionSeq + 6;
+    invalid_action_type.tick = phk::v1::kBattleModeActionTick + 6;
+    RefreshDevAeadNonce(invalid_action_type);
+    const std::vector<std::string> invalid_action_type_payloads = {
+        "{\"action_type\":true}",
+        "{\"action_type\":null}",
+        "{\"action_type\":\"\"}",
+        "{\"action_type\":\"unknown\\u005faction\"}",
+    };
+    for (const auto& invalid_payload : invalid_action_type_payloads) {
+        const auto invalid_action_type_result = dispatcher.Dispatch(
+            invalid_action_type,
+            std::vector<std::uint8_t>(invalid_payload.begin(), invalid_payload.end())
+        );
+        CHECK_TRUE(!invalid_action_type_result.ok);
+        CHECK_EQ(invalid_action_type_result.reason, std::string("mode_action_type_invalid"));
+        ++invalid_action_type.seq;
+        ++invalid_action_type.tick;
+        RefreshDevAeadNonce(invalid_action_type);
+    }
+
     phk::battle::BattlePacketHeader retry_after_rejected_action = forged_damage_action;
     const std::string retry_payload = "{\"action_type\":\"ready\",\"ready\":true}";
     const auto retry_after_rejected_action_result = dispatcher.Dispatch(

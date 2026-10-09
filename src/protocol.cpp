@@ -207,10 +207,16 @@ bool ValidatePlaintextModeActionPayload(std::string_view payload_json, std::stri
     if (payload_json.empty() || !LooksLikeJsonObject(payload_json)) {
         return true;
     }
-    const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
-    if (!action_type.empty() && !IsAllowedModeActionType(action_type)) {
-        reason = "mode_action_type_unsupported";
-        return false;
+    if (JsonFieldValueStart(payload_json, "action_type") != std::string_view::npos) {
+        const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
+        if (action_type.empty()) {
+            reason = "mode_action_type_invalid";
+            return false;
+        }
+        if (!IsAllowedModeActionType(action_type)) {
+            reason = "mode_action_type_unsupported";
+            return false;
+        }
     }
     if (JsonBoolFieldIsMalformed(payload_json, "client_result_authoritative")) {
         reason = "mode_action_client_result_invalid";
