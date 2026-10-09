@@ -303,13 +303,24 @@ std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::str
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
     }
+    std::size_t token_end = token_start;
     if (payload_json.substr(token_start, 4) == "true") {
-        return true;
+        token_end += 4;
+    } else if (payload_json.substr(token_start, 5) == "false") {
+        token_end += 5;
+    } else {
+        return std::nullopt;
     }
-    if (payload_json.substr(token_start, 5) == "false") {
-        return false;
+    while (token_end < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_end]))) {
+        ++token_end;
     }
-    return std::nullopt;
+    if (token_end < payload_json.size() &&
+        payload_json[token_end] != ',' &&
+        payload_json[token_end] != '}') {
+        return std::nullopt;
+    }
+    return payload_json.substr(token_start, 4) == "true";
 }
 
 std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, std::string_view field_name) {

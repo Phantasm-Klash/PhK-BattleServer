@@ -158,6 +158,34 @@ bool JsonBoolFieldIsTrue(std::string_view payload_json, std::string_view field_n
     return payload_json.substr(token_start, 4) == "true";
 }
 
+bool JsonBoolFieldIsMalformed(std::string_view payload_json, std::string_view field_name) {
+    const std::string prefix = "\"" + std::string(field_name) + "\":";
+    const auto value_start = payload_json.find(prefix);
+    if (value_start == std::string_view::npos) {
+        return false;
+    }
+    auto token_start = value_start + prefix.size();
+    while (token_start < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
+        ++token_start;
+    }
+    std::size_t token_end = token_start;
+    if (payload_json.substr(token_start, 4) == "true") {
+        token_end += 4;
+    } else if (payload_json.substr(token_start, 5) == "false") {
+        token_end += 5;
+    } else {
+        return true;
+    }
+    while (token_end < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_end]))) {
+        ++token_end;
+    }
+    return token_end < payload_json.size() &&
+        payload_json[token_end] != ',' &&
+        payload_json[token_end] != '}';
+}
+
 bool ValidatePlaintextModeActionPayload(std::string_view payload_json, std::string& reason) {
     if (payload_json.empty() || !LooksLikeJsonObject(payload_json)) {
         return true;
@@ -165,6 +193,10 @@ bool ValidatePlaintextModeActionPayload(std::string_view payload_json, std::stri
     const std::string action_type = ExtractJsonStringField(payload_json, "action_type");
     if (!action_type.empty() && !IsAllowedModeActionType(action_type)) {
         reason = "mode_action_type_unsupported";
+        return false;
+    }
+    if (JsonBoolFieldIsMalformed(payload_json, "client_result_authoritative")) {
+        reason = "mode_action_client_result_invalid";
         return false;
     }
     if (JsonBoolFieldIsTrue(payload_json, "client_result_authoritative")) {

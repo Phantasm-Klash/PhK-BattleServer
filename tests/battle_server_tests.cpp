@@ -1684,6 +1684,18 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(false_ready_result.reason, std::string("ready_payload_not_true"));
     CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
 
+    auto malformed_true_ready = missing_ready_payload;
+    malformed_true_ready.payload_json = "{\"ready\":truex}";
+    const auto malformed_true_ready_result = simulation.AcceptModeAction(malformed_true_ready);
+    CHECK_TRUE(!malformed_true_ready_result.ok);
+    CHECK_EQ(malformed_true_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto malformed_false_ready = missing_ready_payload;
+    malformed_false_ready.payload_json = "{\"ready\":falsey}";
+    const auto malformed_false_ready_result = simulation.AcceptModeAction(malformed_false_ready);
+    CHECK_TRUE(!malformed_false_ready_result.ok);
+    CHECK_EQ(malformed_false_ready_result.reason, std::string("ready_payload_missing"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";
@@ -5828,6 +5840,19 @@ bool TestDispatcher() {
     );
     CHECK_TRUE(!forged_result_action_result.ok);
     CHECK_EQ(forged_result_action_result.reason, std::string("mode_action_client_result_forbidden"));
+
+    phk::battle::BattlePacketHeader malformed_result_action = forged_result_action;
+    malformed_result_action.seq = phk::v1::kBattleModeActionSeq + 3;
+    malformed_result_action.tick = phk::v1::kBattleModeActionTick + 3;
+    RefreshDevAeadNonce(malformed_result_action);
+    const std::string malformed_result_payload =
+        "{\"action_type\":\"ready\",\"client_result_authoritative\":falsey}";
+    const auto malformed_result_action_result = dispatcher.Dispatch(
+        malformed_result_action,
+        std::vector<std::uint8_t>(malformed_result_payload.begin(), malformed_result_payload.end())
+    );
+    CHECK_TRUE(!malformed_result_action_result.ok);
+    CHECK_EQ(malformed_result_action_result.reason, std::string("mode_action_client_result_invalid"));
 
     phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
     const std::vector<std::string> forged_damage_payloads = {
