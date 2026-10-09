@@ -292,16 +292,36 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
     return "";
 }
 
-std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":";
-    const auto value_start = payload_json.find(prefix);
-    if (value_start == std::string_view::npos) {
-        return std::nullopt;
+std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name) {
+    const std::string key = "\"" + std::string(field_name) + "\"";
+    std::size_t search_start = 0;
+    while (search_start < payload_json.size()) {
+        const auto key_start = payload_json.find(key, search_start);
+        if (key_start == std::string_view::npos) {
+            return std::string_view::npos;
+        }
+        auto value_start = key_start + key.size();
+        while (value_start < payload_json.size() &&
+            std::isspace(static_cast<unsigned char>(payload_json[value_start]))) {
+            ++value_start;
+        }
+        if (value_start < payload_json.size() && payload_json[value_start] == ':') {
+            ++value_start;
+            while (value_start < payload_json.size() &&
+                std::isspace(static_cast<unsigned char>(payload_json[value_start]))) {
+                ++value_start;
+            }
+            return value_start;
+        }
+        search_start = key_start + 1;
     }
-    auto token_start = value_start + prefix.size();
-    while (token_start < payload_json.size() &&
-        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
-        ++token_start;
+    return std::string_view::npos;
+}
+
+std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
+    const auto token_start = JsonFieldValueStart(payload_json, field_name);
+    if (token_start == std::string_view::npos) {
+        return std::nullopt;
     }
     std::size_t token_end = token_start;
     if (payload_json.substr(token_start, 4) == "true") {
