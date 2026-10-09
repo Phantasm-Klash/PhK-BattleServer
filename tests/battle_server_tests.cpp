@@ -800,6 +800,26 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_tick_result.ok);
     CHECK_EQ(wrong_final_tick_result.reason, std::string("final_tick_mismatch"));
 
+    auto nested_final_tick = valid_result;
+    nested_final_tick.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_tick\":1,",
+        "\"final_tick\":{\"final_tick\":1},"
+    );
+    const auto nested_final_tick_result = server.SubmitBattleResult(nested_final_tick);
+    CHECK_TRUE(!nested_final_tick_result.ok);
+    CHECK_EQ(nested_final_tick_result.reason, std::string("final_tick_mismatch"));
+
+    auto nested_final_state_hash = valid_result;
+    nested_final_state_hash.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_state_hash\":\"" + summary.final_state_hash + "\"",
+        "\"final_state_hash\":{\"final_state_hash\":\"" + summary.final_state_hash + "\"}"
+    );
+    const auto nested_final_state_hash_result = server.SubmitBattleResult(nested_final_state_hash);
+    CHECK_TRUE(!nested_final_state_hash_result.ok);
+    CHECK_EQ(nested_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
+
     auto wrong_tick_rate = valid_result;
     wrong_tick_rate.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
