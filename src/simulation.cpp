@@ -292,6 +292,38 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
     return "";
 }
 
+bool IsTopLevelJsonObjectKey(std::string_view payload_json, std::size_t key_start) {
+    int object_depth = 0;
+    int array_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < key_start; ++index) {
+        const char ch = payload_json[index];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++object_depth;
+        } else if (ch == '}') {
+            --object_depth;
+        } else if (ch == '[') {
+            ++array_depth;
+        } else if (ch == ']') {
+            --array_depth;
+        }
+    }
+    return !in_string && object_depth == 1 && array_depth == 0;
+}
+
 std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name) {
     const std::string key = "\"" + std::string(field_name) + "\"";
     std::size_t search_start = 0;
@@ -299,6 +331,10 @@ std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view 
         const auto key_start = payload_json.find(key, search_start);
         if (key_start == std::string_view::npos) {
             return std::string_view::npos;
+        }
+        if (!IsTopLevelJsonObjectKey(payload_json, key_start)) {
+            search_start = key_start + 1;
+            continue;
         }
         auto value_start = key_start + key.size();
         while (value_start < payload_json.size() &&
