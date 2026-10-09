@@ -1461,6 +1461,12 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!cast_card_missing_slot_result.ok);
     CHECK_EQ(cast_card_missing_slot_result.reason, std::string("cast_card_slot_missing"));
 
+    auto cast_card_nested_slot = cast_card_missing_slot;
+    cast_card_nested_slot.payload_json = "{\"nested\":{\"card_slot\":1}}";
+    const auto cast_card_nested_slot_result = first.AcceptModeAction(cast_card_nested_slot);
+    CHECK_TRUE(!cast_card_nested_slot_result.ok);
+    CHECK_EQ(cast_card_nested_slot_result.reason, std::string("cast_card_slot_missing"));
+
     auto cast_card_bad_slot = cast_card_missing_slot;
     cast_card_bad_slot.payload_json = "{\"card_slot\":8}";
     const auto cast_card_bad_slot_result = first.AcceptModeAction(cast_card_bad_slot);
@@ -1816,6 +1822,13 @@ bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
     const auto fractional_candidate_result = simulation.AcceptModeAction(fractional_candidate);
     CHECK_TRUE(!fractional_candidate_result.ok);
     CHECK_EQ(fractional_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
+    auto nested_candidate = missing_candidate;
+    nested_candidate.payload_json = "{\"nested\":{\"candidate_index\":1}}";
+    const auto nested_candidate_result = simulation.AcceptModeAction(nested_candidate);
+    CHECK_TRUE(!nested_candidate_result.ok);
+    CHECK_EQ(nested_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
     auto oversized_candidate = missing_candidate;
     oversized_candidate.payload_json =
         "{\"candidate_index\":922337203685477580799999999999999999999}";
@@ -2000,6 +2013,14 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(disconnected_result.reason, std::string("transfer_card_target_disconnected"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+
+    auto nested_transfer = transfer;
+    nested_transfer.action_id = "action-boss-transfer-card-nested";
+    nested_transfer.payload_json =
+        "{\"nested\":{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-disconnected\"}}";
+    const auto nested_transfer_result = server.AcceptModeAction(nested_transfer);
+    CHECK_TRUE(!nested_transfer_result.ok);
+    CHECK_EQ(nested_transfer_result.reason, std::string("transfer_card_payload_missing_fields"));
 
     phk::battle::TransferableCardState invalid_audit_card;
     invalid_audit_card.card_instance_id = "boss-card;tampered:p1>p2";

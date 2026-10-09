@@ -242,13 +242,16 @@ std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
     return "center";
 }
 
+std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name);
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
-    const auto value_start = payload_json.find(prefix);
-    if (value_start == std::string_view::npos) {
+    const auto value_start = JsonFieldValueStart(payload_json, field_name);
+    if (value_start == std::string_view::npos ||
+        value_start >= payload_json.size() ||
+        payload_json[value_start] != '"') {
         return "";
     }
-    const auto string_start = value_start + prefix.size();
+    const auto string_start = value_start + 1;
     std::string decoded;
     for (std::size_t index = string_start; index < payload_json.size(); ++index) {
         const char ch = payload_json[index];
@@ -380,12 +383,11 @@ std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::str
 }
 
 std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":";
-    const auto value_start = payload_json.find(prefix);
+    const auto value_start = JsonFieldValueStart(payload_json, field_name);
     if (value_start == std::string_view::npos) {
         return std::nullopt;
     }
-    auto token_start = value_start + prefix.size();
+    auto token_start = value_start;
     while (token_start < payload_json.size() &&
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
