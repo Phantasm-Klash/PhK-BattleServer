@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -322,9 +323,8 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
     }
-    bool negative = false;
+    const auto number_start = token_start;
     if (token_start < payload_json.size() && payload_json[token_start] == '-') {
-        negative = true;
         ++token_start;
     }
     if (token_start >= payload_json.size() ||
@@ -332,12 +332,11 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         return std::nullopt;
     }
 
-    std::int64_t value = 0;
     while (token_start < payload_json.size() &&
         std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
-        value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
         ++token_start;
     }
+    const auto number_end = token_start;
     while (token_start < payload_json.size() &&
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
@@ -347,7 +346,17 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         payload_json[token_start] != '}') {
         return std::nullopt;
     }
-    return negative ? -value : value;
+
+    std::int64_t value = 0;
+    const auto parsed = std::from_chars(
+        payload_json.data() + number_start,
+        payload_json.data() + number_end,
+        value
+    );
+    if (parsed.ec != std::errc{} || parsed.ptr != payload_json.data() + number_end) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {

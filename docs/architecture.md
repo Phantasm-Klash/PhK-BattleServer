@@ -42,6 +42,7 @@ Status: v0.1 skeleton.
 - Battle input and mode actions must come from a player with a registered server session for that match.
 - Battle input and mode-action seq numbers must increase within the configured server window; old, replayed, or implausibly jumped seq values are rejected.
 - Sequence and tick window checks use monotonic difference comparisons, so near-`uint64`-limit packet values cannot wrap an upper-bound addition and bypass replay/fast-forward rejection.
+- Numeric fields extracted from transition-mode JSON use bounded `from_chars` parsing; oversized sequence-adjacent values are rejected before mode-action or reconnect state changes.
 - A player may queue only one input for a given authoritative tick. A later higher-seq packet for the same player/tick is rejected instead of replacing the buffered input, so replay hash material and applied simulation state cannot diverge.
 - Input-side `mode_action_id` references are byte-bounded before entering input replay/hash material, matching the mode-action id bound used for replay de-duplication.
 - Mode actions are limited to the shared server-interface action surface: `cast_card`, `select_round_card`, `transfer_card`, `ready`, and `reconnect`. Unknown action types are rejected until full protobuf/native mode dispatch replaces this scaffold. Mode-action ids, type names, and payloads are byte-bounded before replay de-duplication or tick buffering, so malformed clients cannot grow replay/hash audit state with unbounded intent metadata.
