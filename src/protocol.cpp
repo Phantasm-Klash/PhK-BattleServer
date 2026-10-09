@@ -270,7 +270,9 @@ DispatchResult BattleDispatcher::DispatchWithPayloadValidation(
     }
 
     const auto tick_it = last_tick_by_match_.find(header.match_id);
-    if (tick_it != last_tick_by_match_.end() && header.tick > tick_it->second + 600) {
+    if (tick_it != last_tick_by_match_.end() &&
+        header.tick > tick_it->second &&
+        header.tick - tick_it->second > 600) {
         result.reason = "tick_jump";
         return result;
     }

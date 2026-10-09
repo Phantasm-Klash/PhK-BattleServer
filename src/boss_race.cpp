@@ -176,7 +176,10 @@ bool BossRaceSimulation::SubmitInput(const BattleInput& input) {
     if (input.seq == 0 || input.seq <= player_it->second.last_seq) {
         return false;
     }
-    if (input.tick <= current_tick_ || input.tick > current_tick_ + 8) {
+    if (input.tick <= current_tick_) {
+        return false;
+    }
+    if (input.tick - current_tick_ > 8) {
         return false;
     }
     if ((input.direction_bits & ~0x0fu) != 0) {

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 
 #include "phk/battle/boss_race.hpp"
@@ -122,6 +123,19 @@ void TestPatternSchedulerCoversTenPatterns() {
     }
 }
 
+void TestInputTickWindowOverflowGuard() {
+    auto sim = phk::battle::BossRaceSimulation(MakeConfig(9u, 100000));
+    Check(sim.AddPlayer("player_a", 0, 60000), "add player for overflow check");
+    auto input = MakeInput(
+        sim.Config().match_id,
+        "player_a",
+        std::numeric_limits<std::uint64_t>::max(),
+        1,
+        false
+    );
+    Check(!sim.SubmitInput(input), "reject far-future max tick");
+}
+
 }  // namespace
 
 int main() {
@@ -129,6 +143,7 @@ int main() {
     TestFirstToDefeatWins();
     TestDeterministicBullets();
     TestPatternSchedulerCoversTenPatterns();
+    TestInputTickWindowOverflowGuard();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

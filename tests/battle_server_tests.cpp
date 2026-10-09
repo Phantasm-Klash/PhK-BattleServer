@@ -1,5 +1,6 @@
 ﻿#include <cstdlib>
 #include <array>
+#include <limits>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -1413,6 +1414,14 @@ bool TestSimulationDeterminism() {
     const auto far_future = first.AcceptInput(MakeInput("p1", 99, 2, 1u << 3));
     CHECK_TRUE(!far_future.ok);
     CHECK_EQ(far_future.reason, std::string("input_tick_too_far_ahead"));
+    auto max_seq_jump = MakeInput("p1", 2, std::numeric_limits<std::uint64_t>::max(), 1u << 3);
+    const auto max_seq_jump_result = first.AcceptInput(max_seq_jump);
+    CHECK_TRUE(!max_seq_jump_result.ok);
+    CHECK_EQ(max_seq_jump_result.reason, std::string("seq_too_far_ahead"));
+    auto max_tick_jump = MakeInput("p1", std::numeric_limits<std::uint64_t>::max(), 2, 1u << 3);
+    const auto max_tick_jump_result = first.AcceptInput(max_tick_jump);
+    CHECK_TRUE(!max_tick_jump_result.ok);
+    CHECK_EQ(max_tick_jump_result.reason, std::string("input_tick_too_far_ahead"));
 
     CHECK_TRUE(second.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
     CHECK_TRUE(first.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
@@ -5892,6 +5901,28 @@ bool TestDispatcher() {
     return true;
 }
 
+bool TestDispatcherTickWindowOverflowGuard() {
+    phk::battle::BattleDispatcher dispatcher;
+    phk::battle::BattlePacketHeader first;
+    first.version.ruleset_version = phk::v1::kRulesetVersion;
+    first.match_id = "match-overflow";
+    first.player_id = "p1";
+    first.tick = std::numeric_limits<std::uint64_t>::max() - 1;
+    first.seq = 1;
+    first.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(first);
+    const auto first_result = dispatcher.Dispatch(first, {});
+    CHECK_TRUE(first_result.ok);
+
+    auto near_max = first;
+    near_max.tick = std::numeric_limits<std::uint64_t>::max();
+    near_max.seq = 2;
+    RefreshDevAeadNonce(near_max);
+    const auto near_max_result = dispatcher.Dispatch(near_max, {});
+    CHECK_TRUE(near_max_result.ok);
+    return true;
+}
+
 bool TestEncryptedPacketAdapterShape() {
     phk::battle::BattleDispatcher dispatcher;
     phk::battle::BattleEncryptedPacket packet;
@@ -6920,6 +6951,7 @@ int main() {
         {"ResultAndReplayRecordUseStablePlayerOrder", TestResultAndReplayRecordUseStablePlayerOrder},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
+        {"DispatcherTickWindowOverflowGuard", TestDispatcherTickWindowOverflowGuard},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"DecodedPayloadHeaderBinding", TestDecodedPayloadHeaderBinding},

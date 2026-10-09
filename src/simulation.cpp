@@ -591,7 +591,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "seq_replay";
         return result;
     }
-    if (input.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (input.seq > player_it->second.last_seq &&
+        input.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -601,7 +602,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_tick_too_old";
         return result;
     }
-    if (input.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (input.tick > current_tick_ &&
+        input.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "input_tick_too_far_ahead";
         return result;
@@ -704,7 +706,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "seq_replay";
         return result;
     }
-    if (action.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (action.seq > player_it->second.last_seq &&
+        action.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -714,7 +717,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_tick_too_old";
         return result;
     }
-    if (action.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (action.tick > current_tick_ &&
+        action.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "mode_action_tick_too_far_ahead";
         return result;

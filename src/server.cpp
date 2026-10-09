@@ -753,7 +753,8 @@ DispatchResult BattleServer::DispatchEncrypted(const BattleEncryptedPacket& pack
             result.reason = "encrypted_tick_too_old";
             return result;
         }
-        if (packet.header.tick > simulation.CurrentTick() + simulation.Config().max_input_ahead_ticks) {
+        if (packet.header.tick > simulation.CurrentTick() &&
+            packet.header.tick - simulation.CurrentTick() > simulation.Config().max_input_ahead_ticks) {
             result.reason = "encrypted_tick_too_far_ahead";
             return result;
         }
