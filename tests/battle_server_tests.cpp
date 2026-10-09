@@ -1684,6 +1684,18 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(false_ready_result.reason, std::string("ready_payload_not_true"));
     CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
 
+    auto malformed_true_ready = missing_ready_payload;
+    malformed_true_ready.payload_json = "{\"ready\":truex}";
+    const auto malformed_true_ready_result = simulation.AcceptModeAction(malformed_true_ready);
+    CHECK_TRUE(!malformed_true_ready_result.ok);
+    CHECK_EQ(malformed_true_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto malformed_false_ready = missing_ready_payload;
+    malformed_false_ready.payload_json = "{\"ready\":falsey}";
+    const auto malformed_false_ready_result = simulation.AcceptModeAction(malformed_false_ready);
+    CHECK_TRUE(!malformed_false_ready_result.ok);
+    CHECK_EQ(malformed_false_ready_result.reason, std::string("ready_payload_missing"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";
