@@ -17,6 +17,27 @@ constexpr std::int32_t kArenaHalfHeightMilli = 90000;
 constexpr std::int32_t kBossOriginXMilli = 0;
 constexpr std::int32_t kBossOriginYMilli = -60000;
 
+// 权威坐标单位：整数 milli（1/1000 px）。内部运动学用像素浮点，边界处 llround。
+constexpr double kMilliPerPixel = 1000.0;
+
+// 原版场地 640×960（半宽 320 / 半高 480）。danmaku 模块的反弹/边界常量按此场地，
+// 因此发射/更新在「屏幕坐标」(0..640, 0..960) 下进行，快照再转回居中 milli。
+constexpr double kScreenW = 640.0;
+constexpr double kScreenH = 960.0;
+constexpr double kScreenCenterX = 320.0;
+constexpr double kScreenCenterY = 480.0;
+
+// 真实弹幕 ruleset 版本；旧合成弹幕保留在 mvp-boss-race-s0 下。
+inline constexpr const char* kRulesetRealDanmaku = "tna-1.40";
+
+std::int32_t ToMilli(double pixels) {
+    return static_cast<std::int32_t>(std::llround(pixels * kMilliPerPixel));
+}
+
+double ToPixels(std::int32_t milli) {
+    return static_cast<double>(milli) / kMilliPerPixel;
+}
+
 std::uint32_t Fnv1a32(std::string_view text) {
     std::uint32_t hash = 2166136261u;
     for (const unsigned char byte : text) {
@@ -45,28 +66,16 @@ std::int32_t ClampMilli(std::int32_t value, std::int32_t lo, std::int32_t hi) {
     return value;
 }
 
-std::pair<std::int32_t, std::int32_t> VelocityFromAngle(double angle_rad, std::int32_t speed) {
-    return {
-        static_cast<std::int32_t>(std::llround(std::cos(angle_rad) * speed)),
-        static_cast<std::int32_t>(std::llround(std::sin(angle_rad) * speed)),
-    };
-}
-
 }  // namespace
 
 const std::vector<std::string>& BossRacePatternIds() {
-    static const std::vector<std::string> ids = {
-        "ring",
-        "gap_ring",
-        "n_way",
-        "aimed",
-        "seeded_arc",
-        "spiral",
-        "laser_curtain",
-        "homing",
-        "sine_stream",
-        "blossom",
-    };
+    static const std::vector<std::string> ids = [] {
+        std::vector<std::string> out;
+        for (const danmaku::PatternDef& def : danmaku::BossRacePatternLibrary()) {
+            out.emplace_back(def.id);
+        }
+        return out;
+    }();
     return ids;
 }
 
@@ -235,7 +244,78 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
     }
 }
 
+std::size_t BossRaceSimulation::EmittedBulletsFor(const std::string& player_id) const {
+    std::size_t count = 0;
+    for (const LiveBullet& bullet : live_bullets_) {
+        if (bullet.owner_player_id == player_id) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
+    // 主路径 = 真实弹幕（tna-1.40）；旧合成弹幕仅在 mvp-boss-race-s0 下保留兼容。
+    if (config_.ruleset_version == "mvp-boss-race-s0") {
+        SpawnSyntheticBulletsForTick(tick);
+    } else {
+        // 其余（含 kRulesetRealDanmaku）一律走真实弹幕。
+        (void)kRulesetRealDanmaku;
+        SpawnRealBulletsForTick(tick);
+    }
+}
+
+void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
+    if (tick == 0 || (tick % config_.pattern_period_ticks) != 0) {
+        return;
+    }
+    const std::size_t pattern_index =
+        static_cast<std::size_t>((tick / config_.pattern_period_ticks) % kBossRacePatternCount);
+    const danmaku::PatternDef& def = danmaku::BossRacePatternLibrary()[pattern_index];
+
+    for (auto& item : players_) {
+        PlayerState& player = item.second;
+        if (!player.connected || player.boss_current_hp == 0) {
+            continue;
+        }
+        if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
+            continue;
+        }
+
+        danmaku::EmitContext ctx;
+        ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli);
+        ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli);
+
+        danmaku::MotionTargets targets;
+        targets.has_my_ship = true;
+        targets.my_ship_x = kScreenCenterX + ToPixels(player.x_milli);
+        targets.my_ship_y = kScreenCenterY + ToPixels(player.y_milli);
+        targets.has_enemy = true;
+        targets.enemy_x = ctx.emitter_x;
+        targets.enemy_y = ctx.emitter_y;
+
+        const std::vector<danmaku::BulletMotion> emitted =
+            danmaku::EmitPatternTick(def, tick, ctx, targets);
+
+        std::uint32_t spawn_index = 0;
+        for (const danmaku::BulletMotion& motion : emitted) {
+            if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
+                break;
+            }
+            LiveBullet live;
+            live.bullet_id = "b" + std::to_string(next_bullet_id_++);
+            live.owner_player_id = player.player_id;
+            live.pattern_id = std::string(def.id);
+            live.pattern_index = static_cast<std::uint32_t>(pattern_index);
+            live.spawn_index = spawn_index++;
+            live.motion = motion;
+            live_bullets_.push_back(std::move(live));
+        }
+    }
+}
+
+// mvp-boss-race-s0 兼容路径：保留旧 10 个合成模式（非主路径）。
+void BossRaceSimulation::SpawnSyntheticBulletsForTick(std::uint64_t tick) {
     if (tick == 0 || (tick % config_.pattern_period_ticks) != 0) {
         return;
     }
@@ -248,14 +328,7 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
         if (!player.connected || player.boss_current_hp == 0) {
             continue;
         }
-
-        std::size_t emitted_for_player = 0;
-        for (const auto& existing : bullets_) {
-            if (existing.owner_player_id == player.player_id) {
-                ++emitted_for_player;
-            }
-        }
-        if (emitted_for_player >= kBossRaceMaxBulletsPerPlayer) {
+        if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
             continue;
         }
 
@@ -264,22 +337,29 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
             static_cast<double>(player.x_milli - kBossOriginXMilli)
         );
 
-        auto push = [&](double angle, std::int32_t speed, std::uint32_t radius, std::int32_t offset_x = 0, std::int32_t offset_y = 0) {
-            if (emitted_for_player >= kBossRaceMaxBulletsPerPlayer) {
+        std::uint32_t synthetic_spawn_index = 0;
+        auto push = [&](double angle_rad, std::int32_t speed_milli, std::uint32_t radius_milli, std::int32_t offset_x = 0, std::int32_t offset_y = 0) {
+            if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
                 return;
             }
-            const auto velocity = VelocityFromAngle(angle, speed);
-            BossRaceBullet bullet;
-            bullet.bullet_id = "b" + std::to_string(next_bullet_id_++);
-            bullet.owner_player_id = player.player_id;
-            bullet.x_milli = kBossOriginXMilli + offset_x;
-            bullet.y_milli = kBossOriginYMilli + offset_y;
-            bullet.vx_milli = velocity.first;
-            bullet.vy_milli = velocity.second;
-            bullet.radius_milli = radius;
-            bullet.pattern_id = pattern_id;
-            bullets_.push_back(bullet);
-            ++emitted_for_player;
+            LiveBullet live;
+            live.bullet_id = "b" + std::to_string(next_bullet_id_++);
+            live.owner_player_id = player.player_id;
+            live.pattern_id = pattern_id;
+            live.pattern_index = static_cast<std::uint32_t>(pattern_index);
+            live.spawn_index = synthetic_spawn_index++;
+            danmaku::BulletMotion motion;
+            motion.x = kScreenCenterX + ToPixels(kBossOriginXMilli) + ToPixels(offset_x);
+            motion.y = kScreenCenterY + ToPixels(kBossOriginYMilli) + ToPixels(offset_y);
+            motion.angle = angle_rad * (180.0 / kPi);
+            motion.angle_init = -1.0;
+            motion.speed = ToPixels(speed_milli);
+            motion.spd_init2 = motion.speed;
+            motion.bullet_func_no = 0;
+            motion.hit_dis = ToPixels(static_cast<std::int32_t>(radius_milli));
+            motion.IntegrateVelocity();
+            live.motion = motion;
+            live_bullets_.push_back(std::move(live));
         };
 
         switch (pattern_index) {
@@ -351,21 +431,36 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
     }
 }
 
-void BossRaceSimulation::AdvanceBullets() {
-    for (auto& bullet : bullets_) {
-        bullet.x_milli += bullet.vx_milli;
-        bullet.y_milli += bullet.vy_milli;
+void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
+    for (LiveBullet& live : live_bullets_) {
+        danmaku::MotionTargets targets;
+        const auto owner_it = players_.find(live.owner_player_id);
+        if (owner_it != players_.end()) {
+            targets.has_my_ship = true;
+            targets.my_ship_x = kScreenCenterX + ToPixels(owner_it->second.x_milli);
+            targets.my_ship_y = kScreenCenterY + ToPixels(owner_it->second.y_milli);
+        }
+        targets.has_enemy = true;
+        targets.enemy_x = kScreenCenterX + ToPixels(kBossOriginXMilli);
+        targets.enemy_y = kScreenCenterY + ToPixels(kBossOriginYMilli);
+
+        // 确定性 RNG：输入 (match_seed, tick, pattern_index, spawn_index)。
+        danmaku::DeterministicRng rng(config_.match_seed, tick, live.pattern_index, live.spawn_index);
+        danmaku::UpdateBulletMotion(live.motion, targets, rng);
+        live.motion.x += live.motion.vx;
+        live.motion.y += live.motion.vy;
+        live.motion.t += 1.0;
     }
-    bullets_.erase(
+    live_bullets_.erase(
         std::remove_if(
-            bullets_.begin(),
-            bullets_.end(),
-            [](const BossRaceBullet& bullet) {
-                return std::abs(bullet.x_milli) > kArenaHalfWidthMilli + 20000 ||
-                    std::abs(bullet.y_milli) > kArenaHalfHeightMilli + 20000;
+            live_bullets_.begin(),
+            live_bullets_.end(),
+            [](const LiveBullet& live) {
+                return live.motion.x < -20.0 || live.motion.x > kScreenW + 20.0 ||
+                    live.motion.y < -20.0 || live.motion.y > kScreenH + 20.0;
             }
         ),
-        bullets_.end()
+        live_bullets_.end()
     );
 }
 
@@ -397,7 +492,7 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
     if (state_ == BossRaceState::Running) {
         ApplyPlayerTick(tick_to_apply);
         SpawnBulletsForTick(tick_to_apply);
-        AdvanceBullets();
+        AdvanceBullets(tick_to_apply);
         CheckRaceWinner(tick_to_apply);
     }
     current_tick_ = tick_to_apply;
@@ -415,9 +510,13 @@ std::string BossRaceSimulation::CanonicalStateHash() const {
             std::to_string(item.second.boss_current_hp) + ":" +
             std::to_string(item.second.damage_dealt);
     }
-    material += "|b:" + std::to_string(bullets_.size());
-    for (const auto& bullet : bullets_) {
-        material += "|" + bullet.bullet_id + ":" + std::to_string(bullet.x_milli) + ":" + std::to_string(bullet.y_milli);
+    material += "|b:" + std::to_string(live_bullets_.size());
+    for (const LiveBullet& live : live_bullets_) {
+        material += "|" + live.bullet_id + ":" +
+            std::to_string(ToMilli(live.motion.x - kScreenCenterX)) + ":" +
+            std::to_string(ToMilli(live.motion.y - kScreenCenterY)) + ":" +
+            std::to_string(live.motion.bullet_kind) + ":" +
+            std::to_string(live.motion.bullet_func_no);
     }
     const std::uint32_t a = Fnv1a32(material);
     const std::uint32_t b = Mix32(a ^ 0x9e3779b9u);
@@ -442,7 +541,21 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         player.connected = item.second.connected;
         snapshot.players.push_back(player);
     }
-    snapshot.bullets = bullets_;
+    snapshot.bullets.reserve(live_bullets_.size());
+    for (const LiveBullet& live : live_bullets_) {
+        BossRaceBullet bullet;
+        bullet.bullet_id = live.bullet_id;
+        bullet.owner_player_id = live.owner_player_id;
+        bullet.x_milli = ToMilli(live.motion.x - kScreenCenterX);
+        bullet.y_milli = ToMilli(live.motion.y - kScreenCenterY);
+        bullet.vx_milli = ToMilli(live.motion.vx);
+        bullet.vy_milli = ToMilli(live.motion.vy);
+        bullet.radius_milli = static_cast<std::uint32_t>(std::llround(live.motion.hit_dis * kMilliPerPixel));
+        bullet.pattern_id = live.pattern_id;
+        bullet.bullet_kind = live.motion.bullet_kind;
+        bullet.motion_func = live.motion.bullet_func_no;
+        snapshot.bullets.push_back(std::move(bullet));
+    }
     snapshot.state_hash = CanonicalStateHash();
     return snapshot;
 }

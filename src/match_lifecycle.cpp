@@ -237,6 +237,10 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(bullet.vy_milli);
         json += ",\"radius_milli\":";
         json += std::to_string(bullet.radius_milli);
+        json += ",\"bullet_kind\":";
+        json += std::to_string(bullet.bullet_kind);
+        json += ",\"motion_func\":";
+        json += std::to_string(bullet.motion_func);
         json += ",\"pattern_id\":\"";
         json += JsonEscape(bullet.pattern_id);
         json += "\"}";

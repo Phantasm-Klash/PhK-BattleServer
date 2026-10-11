@@ -15,7 +15,7 @@ inline constexpr std::string_view kBusinessApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kBattleApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kRulesetVersion = "ruleset-local-s0";
 inline constexpr std::string_view kRulesetHash = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-inline constexpr std::string_view kSourceDigestSha256 = "1d7bc3d325358efdecfe5a6f4a8d411c747c3a9ca5ebf718f25ad0bf7e6e4d5d";
+inline constexpr std::string_view kSourceDigestSha256 = "67923047af9508a55ee95c72c90250c9309a70c0a132a6435d388880d153c11c";
 inline constexpr std::string_view kBattleModeActionMatchId = "match-001";
 inline constexpr std::string_view kBattleModeActionPlayerId = "p1";
 inline constexpr std::string_view kBattleModeActionActionId = "match-001_a000001";
@@ -55,23 +55,13 @@ inline constexpr std::string_view kBattleResultCallbackSignatureHex = "ccccccccc
 inline constexpr std::string_view kBattleResultCallbackSubmitPath = "/v1/battle/results/submit";
 inline constexpr std::string_view kBattleResultCallbackSettlementKey = "battle-result:match-001";
 inline constexpr std::int64_t kBattleResultCallbackSettledAtMs = 1782489610000;
-inline constexpr std::string_view kMvpBossRaceModeId = "mvp_boss_race";
-inline constexpr std::string_view kMvpBossRaceWinCondition = "first_boss_defeat";
-inline constexpr int kMvpBossRaceBossCount = 1;
-inline constexpr int kMvpBossRacePatternCount = 10;
-inline constexpr int kMvpBossRaceMaxPlayers = 2;
-inline constexpr std::string_view kMvpBossRaceMatchId = "match-mvp-001";
-inline constexpr std::string_view kMvpBossRaceWinnerPlayerId = "p1";
-inline constexpr std::string_view kMvpBossRaceReplayId = "replay-mvp-001";
-inline constexpr bool kMvpBossRaceServerAuthoritative = true;
-inline constexpr std::uint64_t kMvpBossRaceFinalTick = 5400;
 
 struct MessageField {
     std::string_view message;
     std::string_view field;
 };
 
-inline constexpr std::array<MessageField, 308> kMessageFields = {{
+inline constexpr std::array<MessageField, 389> kMessageFields = {{
     {"BattleAllocationPush", "allocation"},
     {"BattleAllocationPush", "business_signature"},
     {"BattleBulletDelta", "bullet_id"},
@@ -198,21 +188,40 @@ inline constexpr std::array<MessageField, 308> kMessageFields = {{
     {"BattleTicket", "ticket_nonce"},
     {"BattleTicket", "user_id"},
     {"BattleTicket", "version"},
-    {"BossRaceModeState", "match_id"},
-    {"BossRaceModeState", "match_over"},
-    {"BossRaceModeState", "mode_id"},
-    {"BossRaceModeState", "players"},
-    {"BossRaceModeState", "ruleset_version"},
-    {"BossRaceModeState", "tick"},
-    {"BossRaceModeState", "version"},
-    {"BossRaceModeState", "winner_player_id"},
-    {"BossRacePlayerState", "boss_current_hp"},
-    {"BossRacePlayerState", "boss_max_hp"},
-    {"BossRacePlayerState", "damage_dealt"},
-    {"BossRacePlayerState", "defeat_tick"},
-    {"BossRacePlayerState", "defeated"},
-    {"BossRacePlayerState", "player_id"},
-    {"BossRacePlayerState", "points_awarded"},
+    {"BossPhasePattern", "boss_index"},
+    {"BossPhasePattern", "entries"},
+    {"BossPhasePattern", "notes"},
+    {"BossPhasePattern", "pattern_id"},
+    {"BossPhasePattern", "phase_field_offset"},
+    {"BossPhasePattern", "source_addr"},
+    {"BulletSpawnCommand", "base_angle_deg"},
+    {"BulletSpawnCommand", "bullet_type"},
+    {"BulletSpawnCommand", "count"},
+    {"BulletSpawnCommand", "f24"},
+    {"BulletSpawnCommand", "f28"},
+    {"BulletSpawnCommand", "f32"},
+    {"BulletSpawnCommand", "f36"},
+    {"BulletSpawnCommand", "f40"},
+    {"BulletSpawnCommand", "f60"},
+    {"BulletSpawnCommand", "f64"},
+    {"BulletSpawnCommand", "f68"},
+    {"BulletSpawnCommand", "f72"},
+    {"BulletSpawnCommand", "f76"},
+    {"BulletSpawnCommand", "f80"},
+    {"BulletSpawnCommand", "flag16"},
+    {"BulletSpawnCommand", "frame_index"},
+    {"BulletSpawnCommand", "s52"},
+    {"BulletSpawnCommand", "s54"},
+    {"BulletSpawnCommand", "s56"},
+    {"BulletSpawnCommand", "s84"},
+    {"BulletSpawnCommand", "s86"},
+    {"BulletSpawnCommand", "s88"},
+    {"BulletSpawnCommand", "s90"},
+    {"BulletSpawnCommand", "s92"},
+    {"BulletSpawnCommand", "s94"},
+    {"BulletSpawnCommand", "spawn_x"},
+    {"BulletSpawnCommand", "spawn_y"},
+    {"BulletSpawnCommand", "spread_or_speed"},
     {"BusinessAck", "ack_seq"},
     {"BusinessAck", "error"},
     {"BusinessAck", "session_id"},
@@ -232,6 +241,46 @@ inline constexpr std::array<MessageField, 308> kMessageFields = {{
     {"BusinessSecureEnvelope", "session_mac"},
     {"BusinessSecureEnvelope", "timestamp_ms"},
     {"BusinessSecureEnvelope", "version"},
+    {"DanmakuBulletState", "age_ticks"},
+    {"DanmakuBulletState", "angle_deg"},
+    {"DanmakuBulletState", "bullet_id"},
+    {"DanmakuBulletState", "bullet_kind"},
+    {"DanmakuBulletState", "func_state"},
+    {"DanmakuBulletState", "life_ticks"},
+    {"DanmakuBulletState", "motion"},
+    {"DanmakuBulletState", "owner_enemy_id"},
+    {"DanmakuBulletState", "radius_milli"},
+    {"DanmakuBulletState", "vx_milli"},
+    {"DanmakuBulletState", "vy_milli"},
+    {"DanmakuBulletState", "x_milli"},
+    {"DanmakuBulletState", "y_milli"},
+    {"DanmakuFieldSpec", "half_height"},
+    {"DanmakuFieldSpec", "half_width"},
+    {"DanmakuFieldSpec", "height"},
+    {"DanmakuFieldSpec", "tick_rate_hz"},
+    {"DanmakuFieldSpec", "width"},
+    {"DanmakuLoadout", "bombs"},
+    {"DanmakuLoadout", "shots"},
+    {"DanmakuSpawnBatch", "commands"},
+    {"DanmakuSpawnBatch", "owner_enemy_id"},
+    {"DanmakuSpawnBatch", "pattern_index"},
+    {"DanmakuSpawnBatch", "spawn_index"},
+    {"DanmakuSpawnBatch", "tick"},
+    {"DanmakuTimelineEntry", "angle_expr"},
+    {"DanmakuTimelineEntry", "base_angle_deg"},
+    {"DanmakuTimelineEntry", "bullet_count"},
+    {"DanmakuTimelineEntry", "bullet_kind"},
+    {"DanmakuTimelineEntry", "motion"},
+    {"DanmakuTimelineEntry", "node_size_bytes"},
+    {"DanmakuTimelineEntry", "offset_expr"},
+    {"DanmakuTimelineEntry", "pattern_node_id"},
+    {"DanmakuTimelineEntry", "period_ticks"},
+    {"DanmakuTimelineEntry", "phase"},
+    {"DanmakuTimelineEntry", "phase_offset"},
+    {"DanmakuTimelineEntry", "sound_effect_id"},
+    {"DanmakuTimelineEntry", "spread_deg"},
+    {"DanmakuTimelineEntry", "sub_phase"},
+    {"DanmakuTimelineEntry", "sub_phase_2"},
     {"DeckSnapshotRef", "card_ids"},
     {"DeckSnapshotRef", "deck_id"},
     {"DeckSnapshotRef", "deck_snapshot_hash"},
@@ -305,6 +354,28 @@ inline constexpr std::array<MessageField, 308> kMessageFields = {{
     {"MatchStartMessage", "signed_battle_ticket"},
     {"MatchStartMessage", "started_at_ms"},
     {"MatchStartMessage", "version"},
+    {"PlayerBombSpec", "bullet_count"},
+    {"PlayerBombSpec", "bullet_types"},
+    {"PlayerBombSpec", "character"},
+    {"PlayerBombSpec", "invuln_frames"},
+    {"PlayerBombSpec", "name"},
+    {"PlayerBombSpec", "notes"},
+    {"PlayerBombSpec", "sprites"},
+    {"PlayerBombSpec", "total_frames"},
+    {"PlayerShotSpec", "angles_deg"},
+    {"PlayerShotSpec", "bullet_types"},
+    {"PlayerShotSpec", "character"},
+    {"PlayerShotSpec", "mode"},
+    {"PlayerShotSpec", "muzzle_expr"},
+    {"PlayerShotSpec", "name"},
+    {"PlayerShotSpec", "raw_angle"},
+    {"PlayerShotSpec", "raw_speed"},
+    {"PlayerShotSpec", "raw_tex_type"},
+    {"PlayerShotSpec", "raw_volley"},
+    {"PlayerShotSpec", "resolved"},
+    {"PlayerShotSpec", "speed"},
+    {"PlayerShotSpec", "variant"},
+    {"PlayerShotSpec", "volley_count"},
     {"ReplayInputStreamSummary", "event_count"},
     {"ReplayInputStreamSummary", "event_stream_hash"},
     {"ReplayInputStreamSummary", "final_state_hash"},

@@ -49,8 +49,31 @@ phk::battle::BossRaceConfig MakeConfig(std::uint64_t seed, std::uint64_t boss_hp
 void TestPatternCatalog() {
     const auto& ids = phk::battle::BossRacePatternIds();
     Check(ids.size() == 10, "pattern catalog has ten entries");
-    Check(ids.front() == "ring", "first pattern is ring");
-    Check(ids.back() == "blossom", "last pattern is blossom");
+    Check(ids.front() == "kome_ring", "first pattern is kome_ring");
+    Check(ids.back() == "chou_four_dir", "last pattern is chou_four_dir");
+}
+
+void TestRealBulletsCarryKindAndMotion() {
+    auto sim = phk::battle::BossRaceSimulation(MakeConfig(1234567u, 1000000));
+    Check(sim.AddPlayer("player_a", -20000, 60000), "add player_a for real bullets");
+    Check(sim.AddPlayer("player_b", 20000, 60000), "add player_b for real bullets");
+
+    std::uint64_t seq = 0;
+    bool saw_real_bullet = false;
+    for (std::uint64_t tick = 1; tick <= 120; ++tick) {
+        Check(sim.SubmitInput(MakeInput(sim.Config().match_id, "player_a", tick, ++seq, false)), "input a");
+        Check(sim.SubmitInput(MakeInput(sim.Config().match_id, "player_b", tick, ++seq, false)), "input b");
+        const auto snapshot = sim.Tick();
+        for (const auto& bullet : snapshot.bullets) {
+            // 真实弹种：kEnemyBullet 值域 9..224。
+            if (bullet.bullet_kind >= 9 && bullet.bullet_kind <= 224) {
+                saw_real_bullet = true;
+            }
+            Check(bullet.bullet_kind >= 9 && bullet.bullet_kind <= 224, "bullet kind is a real kEnemyBullet value");
+            Check(!bullet.pattern_id.empty(), "bullet carries pattern id");
+        }
+    }
+    Check(saw_real_bullet, "real bullets were emitted with valid kinds");
 }
 
 void TestFirstToDefeatWins() {
@@ -129,6 +152,7 @@ int main() {
     TestFirstToDefeatWins();
     TestDeterministicBullets();
     TestPatternSchedulerCoversTenPatterns();
+    TestRealBulletsCarryKindAndMotion();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

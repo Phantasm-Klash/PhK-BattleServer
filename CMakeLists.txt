@@ -47,6 +47,10 @@ message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 
 add_library(phk_battle_core
     src/boss_race.cpp
+    src/danmaku/bullet_motion.cpp
+    src/danmaku/emitter.cpp
+    src/danmaku/pattern_timeline.cpp
+    src/danmaku/player_loadout.cpp
     src/handshake.cpp
     src/kcp_endpoint.cpp
     src/kcp_server_endpoint.cpp
@@ -95,6 +99,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_boss_race_tests PRIVATE phk_battle_core)
     add_test(NAME phk_boss_race_tests COMMAND phk_boss_race_tests)
+
+    add_executable(phk_danmaku_tests
+        tests/danmaku_tests.cpp
+    )
+    target_link_libraries(phk_danmaku_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_danmaku_tests COMMAND phk_danmaku_tests)
 
     add_executable(phk_battle_lifecycle_tests
         tests/battle_server_lifecycle_tests.cpp

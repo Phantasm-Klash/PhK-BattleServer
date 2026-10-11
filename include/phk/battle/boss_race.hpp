@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "phk/battle/danmaku/bullet_motion.hpp"
+#include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/protocol.hpp"
 
 // MVP "mvp_boss_race" simulation.
@@ -36,7 +38,7 @@ enum class BossRaceState {
 struct BossRaceConfig {
     std::string match_id;
     std::string mode_id = kMvpBossRaceModeId;
-    std::string ruleset_version = "mvp-boss-race-s0";
+    std::string ruleset_version = "tna-1.40";
     std::uint64_t match_seed = 0;
     std::uint64_t boss_max_hp = kBossRaceDefaultBossHp;
     std::uint32_t tick_rate_hz = kBossRaceTickRateHz;
@@ -52,6 +54,9 @@ struct BossRaceBullet {
     std::int32_t vy_milli = 0;
     std::uint32_t radius_milli = 4000;
     std::string pattern_id;
+    // 真实弹幕扩展（tna-1.40）：原版 kEnemyBullet 值 + bulletFunc 编号。
+    std::int32_t bullet_kind = 0;
+    std::int32_t motion_func = 0;
 };
 
 struct BossRacePlayerSnapshot {
@@ -73,7 +78,7 @@ struct BossRaceSnapshot {
     std::string state_hash;
 };
 
-// Returns the ten MVP pattern ids, in scheduler order.
+// Returns the ten pattern ids, in scheduler order (real tna-1.40 patterns).
 [[nodiscard]] const std::vector<std::string>& BossRacePatternIds();
 
 // Deterministic RNG shared with the Go / client convention:
@@ -127,12 +132,25 @@ private:
         BattleInput last_input;
     };
 
+    // 带完整运动学状态的实时子弹（真实弹幕）。
+    struct LiveBullet {
+        std::string bullet_id;
+        std::string owner_player_id;
+        std::string pattern_id;
+        std::uint32_t pattern_index = 0;
+        std::uint32_t spawn_index = 0;
+        danmaku::BulletMotion motion;
+    };
+
     void StartIfReady();
     void ApplyPlayerTick(std::uint64_t tick);
     void SpawnBulletsForTick(std::uint64_t tick);
-    void AdvanceBullets();
+    void SpawnRealBulletsForTick(std::uint64_t tick);
+    void SpawnSyntheticBulletsForTick(std::uint64_t tick);  // mvp-boss-race-s0 兼容
+    void AdvanceBullets(std::uint64_t tick);
     void CheckRaceWinner(std::uint64_t tick);
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
+    [[nodiscard]] std::size_t EmittedBulletsFor(const std::string& player_id) const;
 
     BossRaceConfig config_;
     std::uint64_t current_tick_ = 0;
@@ -142,7 +160,7 @@ private:
     std::uint64_t winner_tick_ = 0;
     std::map<std::string, PlayerState> players_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
-    std::vector<BossRaceBullet> bullets_;
+    std::vector<LiveBullet> live_bullets_;
 };
 
 }  // namespace phk::battle
