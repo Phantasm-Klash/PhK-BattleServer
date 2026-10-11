@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cctype>
 #include <iomanip>
 #include <optional>
@@ -241,13 +242,16 @@ std::string BossSpawnSlotName(std::int32_t x_milli, std::int32_t y_milli) {
     return "center";
 }
 
+std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name);
+
 std::string ExtractJsonStringField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":\"";
-    const auto value_start = payload_json.find(prefix);
-    if (value_start == std::string_view::npos) {
+    const auto value_start = JsonFieldValueStart(payload_json, field_name);
+    if (value_start == std::string_view::npos ||
+        value_start >= payload_json.size() ||
+        payload_json[value_start] != '"') {
         return "";
     }
-    const auto string_start = value_start + prefix.size();
+    const auto string_start = value_start + 1;
     std::string decoded;
     for (std::size_t index = string_start; index < payload_json.size(); ++index) {
         const char ch = payload_json[index];
@@ -291,40 +295,105 @@ std::string ExtractJsonStringField(std::string_view payload_json, std::string_vi
     return "";
 }
 
+bool IsTopLevelJsonObjectKey(std::string_view payload_json, std::size_t key_start) {
+    int object_depth = 0;
+    int array_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < key_start; ++index) {
+        const char ch = payload_json[index];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++object_depth;
+        } else if (ch == '}') {
+            --object_depth;
+        } else if (ch == '[') {
+            ++array_depth;
+        } else if (ch == ']') {
+            --array_depth;
+        }
+    }
+    return !in_string && object_depth == 1 && array_depth == 0;
+}
+
+std::size_t JsonFieldValueStart(std::string_view payload_json, std::string_view field_name) {
+    const std::string key = "\"" + std::string(field_name) + "\"";
+    std::size_t search_start = 0;
+    while (search_start < payload_json.size()) {
+        const auto key_start = payload_json.find(key, search_start);
+        if (key_start == std::string_view::npos) {
+            return std::string_view::npos;
+        }
+        if (!IsTopLevelJsonObjectKey(payload_json, key_start)) {
+            search_start = key_start + 1;
+            continue;
+        }
+        auto value_start = key_start + key.size();
+        while (value_start < payload_json.size() &&
+            std::isspace(static_cast<unsigned char>(payload_json[value_start]))) {
+            ++value_start;
+        }
+        if (value_start < payload_json.size() && payload_json[value_start] == ':') {
+            ++value_start;
+            while (value_start < payload_json.size() &&
+                std::isspace(static_cast<unsigned char>(payload_json[value_start]))) {
+                ++value_start;
+            }
+            return value_start;
+        }
+        search_start = key_start + 1;
+    }
+    return std::string_view::npos;
+}
+
 std::optional<bool> ExtractJsonBoolField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":";
-    const auto value_start = payload_json.find(prefix);
-    if (value_start == std::string_view::npos) {
+    const auto token_start = JsonFieldValueStart(payload_json, field_name);
+    if (token_start == std::string_view::npos) {
         return std::nullopt;
     }
-    auto token_start = value_start + prefix.size();
-    while (token_start < payload_json.size() &&
-        std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
-        ++token_start;
-    }
+    std::size_t token_end = token_start;
     if (payload_json.substr(token_start, 4) == "true") {
-        return true;
+        token_end += 4;
+    } else if (payload_json.substr(token_start, 5) == "false") {
+        token_end += 5;
+    } else {
+        return std::nullopt;
     }
-    if (payload_json.substr(token_start, 5) == "false") {
-        return false;
+    while (token_end < payload_json.size() &&
+        std::isspace(static_cast<unsigned char>(payload_json[token_end]))) {
+        ++token_end;
     }
-    return std::nullopt;
+    if (token_end < payload_json.size() &&
+        payload_json[token_end] != ',' &&
+        payload_json[token_end] != '}') {
+        return std::nullopt;
+    }
+    return payload_json.substr(token_start, 4) == "true";
 }
 
 std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, std::string_view field_name) {
-    const std::string prefix = "\"" + std::string(field_name) + "\":";
-    const auto value_start = payload_json.find(prefix);
+    const auto value_start = JsonFieldValueStart(payload_json, field_name);
     if (value_start == std::string_view::npos) {
         return std::nullopt;
     }
-    auto token_start = value_start + prefix.size();
+    auto token_start = value_start;
     while (token_start < payload_json.size() &&
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
     }
-    bool negative = false;
+    const auto number_start = token_start;
     if (token_start < payload_json.size() && payload_json[token_start] == '-') {
-        negative = true;
         ++token_start;
     }
     if (token_start >= payload_json.size() ||
@@ -332,12 +401,11 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         return std::nullopt;
     }
 
-    std::int64_t value = 0;
     while (token_start < payload_json.size() &&
         std::isdigit(static_cast<unsigned char>(payload_json[token_start]))) {
-        value = value * 10 + static_cast<std::int64_t>(payload_json[token_start] - '0');
         ++token_start;
     }
+    const auto number_end = token_start;
     while (token_start < payload_json.size() &&
         std::isspace(static_cast<unsigned char>(payload_json[token_start]))) {
         ++token_start;
@@ -347,7 +415,17 @@ std::optional<std::int64_t> ExtractJsonIntField(std::string_view payload_json, s
         payload_json[token_start] != '}') {
         return std::nullopt;
     }
-    return negative ? -value : value;
+
+    std::int64_t value = 0;
+    const auto parsed = std::from_chars(
+        payload_json.data() + number_start,
+        payload_json.data() + number_end,
+        value
+    );
+    if (parsed.ec != std::errc{} || parsed.ptr != payload_json.data() + number_end) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
@@ -591,7 +669,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "seq_replay";
         return result;
     }
-    if (input.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (input.seq > player_it->second.last_seq &&
+        input.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -601,7 +680,8 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "input_tick_too_old";
         return result;
     }
-    if (input.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (input.tick > current_tick_ &&
+        input.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "input_tick_too_far_ahead";
         return result;
@@ -704,7 +784,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "seq_replay";
         return result;
     }
-    if (action.seq > player_it->second.last_seq + config_.max_seq_ahead) {
+    if (action.seq > player_it->second.last_seq &&
+        action.seq - player_it->second.last_seq > config_.max_seq_ahead) {
         result.code = InputValidationCode::SeqTooFarAhead;
         result.reason = "seq_too_far_ahead";
         return result;
@@ -714,7 +795,8 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
         result.reason = "mode_action_tick_too_old";
         return result;
     }
-    if (action.tick > current_tick_ + config_.max_input_ahead_ticks) {
+    if (action.tick > current_tick_ &&
+        action.tick - current_tick_ > config_.max_input_ahead_ticks) {
         result.code = InputValidationCode::TickTooFarAhead;
         result.reason = "mode_action_tick_too_far_ahead";
         return result;

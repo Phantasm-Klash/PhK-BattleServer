@@ -1,5 +1,6 @@
 ﻿#include <cstdlib>
 #include <array>
+#include <limits>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -799,6 +800,26 @@ bool TestBattleResultSubmission() {
     CHECK_TRUE(!wrong_final_tick_result.ok);
     CHECK_EQ(wrong_final_tick_result.reason, std::string("final_tick_mismatch"));
 
+    auto nested_final_tick = valid_result;
+    nested_final_tick.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_tick\":1,",
+        "\"final_tick\":{\"final_tick\":1},"
+    );
+    const auto nested_final_tick_result = server.SubmitBattleResult(nested_final_tick);
+    CHECK_TRUE(!nested_final_tick_result.ok);
+    CHECK_EQ(nested_final_tick_result.reason, std::string("final_tick_mismatch"));
+
+    auto nested_final_state_hash = valid_result;
+    nested_final_state_hash.result.mode_result_json = ReplaceFirst(
+        valid_result.result.mode_result_json,
+        "\"final_state_hash\":\"" + summary.final_state_hash + "\"",
+        "\"final_state_hash\":{\"final_state_hash\":\"" + summary.final_state_hash + "\"}"
+    );
+    const auto nested_final_state_hash_result = server.SubmitBattleResult(nested_final_state_hash);
+    CHECK_TRUE(!nested_final_state_hash_result.ok);
+    CHECK_EQ(nested_final_state_hash_result.reason, std::string("final_state_hash_mismatch"));
+
     auto wrong_tick_rate = valid_result;
     wrong_tick_rate.result.mode_result_json = ReplaceFirst(
         valid_result.result.mode_result_json,
@@ -1413,6 +1434,14 @@ bool TestSimulationDeterminism() {
     const auto far_future = first.AcceptInput(MakeInput("p1", 99, 2, 1u << 3));
     CHECK_TRUE(!far_future.ok);
     CHECK_EQ(far_future.reason, std::string("input_tick_too_far_ahead"));
+    auto max_seq_jump = MakeInput("p1", 2, std::numeric_limits<std::uint64_t>::max(), 1u << 3);
+    const auto max_seq_jump_result = first.AcceptInput(max_seq_jump);
+    CHECK_TRUE(!max_seq_jump_result.ok);
+    CHECK_EQ(max_seq_jump_result.reason, std::string("seq_too_far_ahead"));
+    auto max_tick_jump = MakeInput("p1", std::numeric_limits<std::uint64_t>::max(), 2, 1u << 3);
+    const auto max_tick_jump_result = first.AcceptInput(max_tick_jump);
+    CHECK_TRUE(!max_tick_jump_result.ok);
+    CHECK_EQ(max_tick_jump_result.reason, std::string("input_tick_too_far_ahead"));
 
     CHECK_TRUE(second.AcceptInput(MakeInput("p1", 1, 1, 1u << 3)).ok);
     CHECK_TRUE(first.AcceptInput(MakeInput("p2", 1, 1, 1u << 2)).ok);
@@ -1452,6 +1481,12 @@ bool TestSimulationDeterminism() {
     CHECK_TRUE(!cast_card_missing_slot_result.ok);
     CHECK_EQ(cast_card_missing_slot_result.reason, std::string("cast_card_slot_missing"));
 
+    auto cast_card_nested_slot = cast_card_missing_slot;
+    cast_card_nested_slot.payload_json = "{\"nested\":{\"card_slot\":1}}";
+    const auto cast_card_nested_slot_result = first.AcceptModeAction(cast_card_nested_slot);
+    CHECK_TRUE(!cast_card_nested_slot_result.ok);
+    CHECK_EQ(cast_card_nested_slot_result.reason, std::string("cast_card_slot_missing"));
+
     auto cast_card_bad_slot = cast_card_missing_slot;
     cast_card_bad_slot.payload_json = "{\"card_slot\":8}";
     const auto cast_card_bad_slot_result = first.AcceptModeAction(cast_card_bad_slot);
@@ -1463,6 +1498,12 @@ bool TestSimulationDeterminism() {
     const auto cast_card_fractional_slot_result = first.AcceptModeAction(cast_card_fractional_slot);
     CHECK_TRUE(!cast_card_fractional_slot_result.ok);
     CHECK_EQ(cast_card_fractional_slot_result.reason, std::string("cast_card_slot_missing"));
+    auto cast_card_oversized_slot = cast_card_missing_slot;
+    cast_card_oversized_slot.payload_json =
+        "{\"card_slot\":922337203685477580799999999999999999999}";
+    const auto cast_card_oversized_slot_result = first.AcceptModeAction(cast_card_oversized_slot);
+    CHECK_TRUE(!cast_card_oversized_slot_result.ok);
+    CHECK_EQ(cast_card_oversized_slot_result.reason, std::string("cast_card_slot_missing"));
 
     auto cast_card_forged_damage = cast_card_missing_slot;
     cast_card_forged_damage.payload_json = "{\"card_slot\":1,\"damage\":999,\"boss_hp\":0}";
@@ -1669,6 +1710,24 @@ bool TestReadyModeActionLifecycleState() {
     CHECK_EQ(false_ready_result.reason, std::string("ready_payload_not_true"));
     CHECK_EQ(simulation.Snapshot().mode_state.at("ready_player_count"), std::string("0"));
 
+    auto malformed_true_ready = missing_ready_payload;
+    malformed_true_ready.payload_json = "{\"ready\":truex}";
+    const auto malformed_true_ready_result = simulation.AcceptModeAction(malformed_true_ready);
+    CHECK_TRUE(!malformed_true_ready_result.ok);
+    CHECK_EQ(malformed_true_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto malformed_false_ready = missing_ready_payload;
+    malformed_false_ready.payload_json = "{\"ready\":falsey}";
+    const auto malformed_false_ready_result = simulation.AcceptModeAction(malformed_false_ready);
+    CHECK_TRUE(!malformed_false_ready_result.ok);
+    CHECK_EQ(malformed_false_ready_result.reason, std::string("ready_payload_missing"));
+
+    auto malformed_spaced_ready = missing_ready_payload;
+    malformed_spaced_ready.payload_json = "{\"ready\" : truex}";
+    const auto malformed_spaced_ready_result = simulation.AcceptModeAction(malformed_spaced_ready);
+    CHECK_TRUE(!malformed_spaced_ready_result.ok);
+    CHECK_EQ(malformed_spaced_ready_result.reason, std::string("ready_payload_missing"));
+
     auto p1_ready = MakeModeAction(1);
     p1_ready.match_id = config.match_id;
     p1_ready.player_id = "p1";
@@ -1676,7 +1735,7 @@ bool TestReadyModeActionLifecycleState() {
     p1_ready.seq = 1;
     p1_ready.action_id = "ready-p1";
     p1_ready.action_type = "ready";
-    p1_ready.payload_json = "{\"ready\":true}";
+    p1_ready.payload_json = "{\"ready\" : true}";
     CHECK_TRUE(simulation.AcceptModeAction(p1_ready).ok);
     auto pending_duplicate_p1_ready = p1_ready;
     pending_duplicate_p1_ready.seq = 2;
@@ -1783,6 +1842,19 @@ bool TestBattleRoyaleSelectRoundCardPayloadBoundary() {
     const auto fractional_candidate_result = simulation.AcceptModeAction(fractional_candidate);
     CHECK_TRUE(!fractional_candidate_result.ok);
     CHECK_EQ(fractional_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
+    auto nested_candidate = missing_candidate;
+    nested_candidate.payload_json = "{\"nested\":{\"candidate_index\":1}}";
+    const auto nested_candidate_result = simulation.AcceptModeAction(nested_candidate);
+    CHECK_TRUE(!nested_candidate_result.ok);
+    CHECK_EQ(nested_candidate_result.reason, std::string("select_round_card_candidate_missing"));
+
+    auto oversized_candidate = missing_candidate;
+    oversized_candidate.payload_json =
+        "{\"candidate_index\":922337203685477580799999999999999999999}";
+    const auto oversized_candidate_result = simulation.AcceptModeAction(oversized_candidate);
+    CHECK_TRUE(!oversized_candidate_result.ok);
+    CHECK_EQ(oversized_candidate_result.reason, std::string("select_round_card_candidate_missing"));
 
     auto forged_candidate = missing_candidate;
     forged_candidate.payload_json = "{\"candidate_index\":1,\"reward\":\"grant\"}";
@@ -1961,6 +2033,14 @@ bool TestBossTransferCardValidation() {
     CHECK_EQ(disconnected_result.reason, std::string("transfer_card_target_disconnected"));
 
     CHECK_TRUE(server.SetPlayerConnected("match-001", "p2", true).ok);
+
+    auto nested_transfer = transfer;
+    nested_transfer.action_id = "action-boss-transfer-card-nested";
+    nested_transfer.payload_json =
+        "{\"nested\":{\"target_player_id\":\"p2\",\"card_instance_id\":\"boss-card-disconnected\"}}";
+    const auto nested_transfer_result = server.AcceptModeAction(nested_transfer);
+    CHECK_TRUE(!nested_transfer_result.ok);
+    CHECK_EQ(nested_transfer_result.reason, std::string("transfer_card_payload_missing_fields"));
 
     phk::battle::TransferableCardState invalid_audit_card;
     invalid_audit_card.card_instance_id = "boss-card;tampered:p1>p2";
@@ -3454,6 +3534,11 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     phk::battle::BattleServerConfig config;
     config.now_ms = 1782489640000;
     phk::battle::BattleServer server(config);
+    phk::battle::BossMatchConfig boss_config;
+    boss_config.match_id = "match-001";
+    boss_config.mode_id = "instance_boss";
+    boss_config.boss_max_hp = 20;
+    CHECK_TRUE(server.ConfigureBossMatch(boss_config).ok);
     CHECK_TRUE(server.RegisterTicket(MakeModeTicket(
         "ticket-instance-result-1",
         "user-instance-result-1",
@@ -3543,6 +3628,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
         built.signed_result.result.mode_result_json.find("\"boss_season_id\":\"season-local-s0\"") !=
         std::string::npos
     );
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"boss_phase_id\":\"phase-1\"") !=
         std::string::npos
@@ -3566,8 +3652,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"connected_player_count\":4") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"disconnected_player_count\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":1000") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":980") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_max_hp\":20") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_current_hp\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_total\":20") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p1\":10") != std::string::npos);
     CHECK_TRUE(
@@ -3589,17 +3675,17 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p3\":0") != std::string::npos);
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_damage_p4\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":0") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"failed\"") != std::string::npos);
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_failed\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_defeated_tick\":1") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_clear_status\":\"cleared\"") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_result_disposition\":\"instance_cleared\"") != std::string::npos);
     CHECK_TRUE(
         built.signed_result.result.mode_result_json.find("\"boss_instance_surviving_player_count\":4") !=
         std::string::npos
     );
-    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_instance_clear_credit\":0") != std::string::npos);
+    CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"boss_instance_clear_credit\":1") != std::string::npos);
     CHECK_TRUE(
-        built.signed_result.result.mode_result_json.find("\"boss_instance_result_state\":\"failed\"") !=
+        built.signed_result.result.mode_result_json.find("\"boss_instance_result_state\":\"cleared\"") !=
         std::string::npos
     );
     CHECK_TRUE(built.signed_result.result.mode_result_json.find("\"transfer_card_count\":2") != std::string::npos);
@@ -3857,7 +3943,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_max_hp = built.signed_result;
     wrong_max_hp.result.mode_result_json = ReplaceFirst(
         wrong_max_hp.result.mode_result_json,
-        "\"boss_max_hp\":1000",
+        "\"boss_max_hp\":20",
         "\"boss_max_hp\":1"
     );
     const auto wrong_max_hp_result = server.SubmitBattleResult(wrong_max_hp);
@@ -3867,8 +3953,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_current_hp = built.signed_result;
     wrong_current_hp.result.mode_result_json = ReplaceFirst(
         wrong_current_hp.result.mode_result_json,
-        "\"boss_current_hp\":980",
-        "\"boss_current_hp\":0"
+        "\"boss_current_hp\":0",
+        "\"boss_current_hp\":1"
     );
     const auto wrong_current_hp_result = server.SubmitBattleResult(wrong_current_hp);
     CHECK_TRUE(!wrong_current_hp_result.ok);
@@ -3917,8 +4003,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_defeated = built.signed_result;
     wrong_defeated.result.mode_result_json = ReplaceFirst(
         wrong_defeated.result.mode_result_json,
-        "\"boss_defeated\":0",
-        "\"boss_defeated\":1"
+        "\"boss_defeated\":1",
+        "\"boss_defeated\":0"
     );
     const auto wrong_defeated_result = server.SubmitBattleResult(wrong_defeated);
     CHECK_TRUE(!wrong_defeated_result.ok);
@@ -3927,8 +4013,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_defeated_tick = built.signed_result;
     wrong_defeated_tick.result.mode_result_json = ReplaceFirst(
         wrong_defeated_tick.result.mode_result_json,
-        "\"boss_defeated_tick\":0",
-        "\"boss_defeated_tick\":1"
+        "\"boss_defeated_tick\":1",
+        "\"boss_defeated_tick\":2"
     );
     const auto wrong_defeated_tick_result = server.SubmitBattleResult(wrong_defeated_tick);
     CHECK_TRUE(!wrong_defeated_tick_result.ok);
@@ -3938,7 +4024,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_clear_status.result.mode_result_json = ReplaceJsonStringField(
         wrong_clear_status.result.mode_result_json,
         "boss_clear_status",
-        "cleared"
+        "failed"
     );
     const auto wrong_clear_status_result = server.SubmitBattleResult(wrong_clear_status);
     CHECK_TRUE(!wrong_clear_status_result.ok);
@@ -3948,7 +4034,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_disposition.result.mode_result_json = ReplaceJsonStringField(
         wrong_disposition.result.mode_result_json,
         "boss_result_disposition",
-        "instance_cleared"
+        "instance_failed"
     );
     const auto wrong_disposition_result = server.SubmitBattleResult(wrong_disposition);
     CHECK_TRUE(!wrong_disposition_result.ok);
@@ -3970,8 +4056,8 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     auto wrong_instance_clear_credit = built.signed_result;
     wrong_instance_clear_credit.result.mode_result_json = ReplaceFirst(
         wrong_instance_clear_credit.result.mode_result_json,
-        "\"boss_instance_clear_credit\":0",
-        "\"boss_instance_clear_credit\":1"
+        "\"boss_instance_clear_credit\":1",
+        "\"boss_instance_clear_credit\":0"
     );
     const auto wrong_instance_clear_credit_result = server.SubmitBattleResult(wrong_instance_clear_credit);
     CHECK_TRUE(!wrong_instance_clear_credit_result.ok);
@@ -3984,7 +4070,7 @@ bool TestBossModeResultSubmissionRequiresBossProjection() {
     wrong_instance_result_state.result.mode_result_json = ReplaceJsonStringField(
         wrong_instance_result_state.result.mode_result_json,
         "boss_instance_result_state",
-        "cleared"
+        "failed"
     );
     const auto wrong_instance_result_state_result = server.SubmitBattleResult(wrong_instance_result_state);
     CHECK_TRUE(!wrong_instance_result_state_result.ok);
@@ -4437,36 +4523,13 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
     CHECK_EQ(disconnected_snapshot.mode_state.at("boss_lifecycle_state"), std::string("combat_started"));
     const auto disconnected_result = server.BuildSignedBattleResult("match-001");
-    CHECK_TRUE(disconnected_result.ok);
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_start_ready\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_ready_to_start\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"connected_player_count\":3") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"disconnected_player_count\":1") !=
-        std::string::npos
-    );
-    CHECK_TRUE(
-        disconnected_result.signed_result.result.mode_result_json.find("\"boss_roster_locked\":1") !=
-        std::string::npos
-    );
-    auto wrong_roster_lock = disconnected_result.signed_result;
-    wrong_roster_lock.result.mode_result_json = ReplaceFirst(
-        wrong_roster_lock.result.mode_result_json,
-        "\"boss_roster_locked\":1",
-        "\"boss_roster_locked\":0"
-    );
-    const auto wrong_roster_lock_result = server.SubmitBattleResult(wrong_roster_lock);
-    CHECK_TRUE(!wrong_roster_lock_result.ok);
-    CHECK_EQ(wrong_roster_lock_result.reason, std::string("boss_roster_locked_mismatch"));
+    CHECK_TRUE(!disconnected_result.ok);
+    CHECK_EQ(disconnected_result.reason, std::string("instance_boss_not_terminal"));
+    phk::battle::SignedBattleResult stale_incomplete_result;
+    stale_incomplete_result.result.match_id = "match-001";
+    const auto stale_incomplete_submit = server.SubmitBattleResult(stale_incomplete_result);
+    CHECK_TRUE(!stale_incomplete_submit.ok);
+    CHECK_EQ(stale_incomplete_submit.reason, std::string("instance_boss_not_terminal"));
     const auto disconnected_late_join = server.RegisterTicket(MakeModeTicket(
         "ticket-roster-lock-disconnected-late",
         "user-roster-lock-disconnected-late",
@@ -4495,7 +4558,44 @@ bool TestBossRosterLocksAfterReadyToStart() {
     CHECK_EQ(snapshot.mode_state.at("boss_ready_player_count"), std::string("4"));
     CHECK_EQ(snapshot.mode_state.at("boss_ready_to_start"), std::string("1"));
     CHECK_EQ(snapshot.mode_state.at("boss_roster_locked"), std::string("1"));
-    CHECK_TRUE(server.BuildSignedBattleResult("match-001").ok);
+    const auto incomplete_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(!incomplete_result.ok);
+    CHECK_EQ(incomplete_result.reason, std::string("instance_boss_not_terminal"));
+    for (std::size_t index = 1; index <= 4; ++index) {
+        CHECK_TRUE(server.SetPlayerConnected("match-001", "p" + std::to_string(index), false).ok);
+    }
+    CHECK_EQ(server.MatchSnapshot("match-001").mode_state.at("connected_player_count"), std::string("0"));
+    const auto all_disconnected_result = server.BuildSignedBattleResult("match-001");
+    CHECK_TRUE(all_disconnected_result.ok);
+    CHECK_EQ(all_disconnected_result.reason, std::string("ok"));
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_clear_status\":\"failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_result_disposition\":\"instance_failed\""
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_surviving_player_count\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_clear_credit\":0"
+        ) != std::string::npos
+    );
+    CHECK_TRUE(
+        all_disconnected_result.signed_result.result.mode_result_json.find(
+            "\"boss_instance_result_state\":\"failed\""
+        ) != std::string::npos
+    );
+    const auto all_disconnected_submit = server.SubmitBattleResult(all_disconnected_result.signed_result);
+    CHECK_TRUE(all_disconnected_submit.ok);
+    CHECK_EQ(all_disconnected_submit.reason, std::string("ok"));
     return true;
 }
 
@@ -5767,7 +5867,8 @@ bool TestDispatcher() {
     typed_mode_action.tick = phk::v1::kBattleModeActionTick + 1;
     RefreshDevAeadNonce(typed_mode_action);
     const std::string allowed_action_payload =
-        "{\"action_type\":\"transfer_card\",\"card_instance_id\":\"card-001\",\"target_player_id\":\"p2\"}";
+        "{\"action_type\":\"transfer_card\",\"card_instance_id\":\"card-001\","
+        "\"target_player_id\":\"p2\",\"client_result_authoritative\" : false}";
     const auto typed_mode_action_result = dispatcher.Dispatch(
         typed_mode_action,
         std::vector<std::uint8_t>(allowed_action_payload.begin(), allowed_action_payload.end())
@@ -5787,6 +5888,58 @@ bool TestDispatcher() {
     );
     CHECK_TRUE(!forged_result_action_result.ok);
     CHECK_EQ(forged_result_action_result.reason, std::string("mode_action_client_result_forbidden"));
+
+    phk::battle::BattlePacketHeader malformed_result_action = forged_result_action;
+    malformed_result_action.seq = phk::v1::kBattleModeActionSeq + 3;
+    malformed_result_action.tick = phk::v1::kBattleModeActionTick + 3;
+    RefreshDevAeadNonce(malformed_result_action);
+    const std::string malformed_result_payload =
+        "{\"action_type\":\"ready\",\"client_result_authoritative\":falsey}";
+    const auto malformed_result_action_result = dispatcher.Dispatch(
+        malformed_result_action,
+        std::vector<std::uint8_t>(malformed_result_payload.begin(), malformed_result_payload.end())
+    );
+    CHECK_TRUE(!malformed_result_action_result.ok);
+    CHECK_EQ(malformed_result_action_result.reason, std::string("mode_action_client_result_invalid"));
+
+    phk::battle::BattlePacketHeader malformed_spaced_result_action = malformed_result_action;
+    malformed_spaced_result_action.seq = phk::v1::kBattleModeActionSeq + 4;
+    malformed_spaced_result_action.tick = phk::v1::kBattleModeActionTick + 4;
+    RefreshDevAeadNonce(malformed_spaced_result_action);
+    const std::string malformed_spaced_result_payload =
+        "{\"action_type\":\"ready\",\"client_result_authoritative\" : falsex}";
+    const auto malformed_spaced_result_action_result = dispatcher.Dispatch(
+        malformed_spaced_result_action,
+        std::vector<std::uint8_t>(
+            malformed_spaced_result_payload.begin(),
+            malformed_spaced_result_payload.end()
+        )
+    );
+    CHECK_TRUE(!malformed_spaced_result_action_result.ok);
+    CHECK_EQ(
+        malformed_spaced_result_action_result.reason,
+        std::string("mode_action_client_result_invalid")
+    );
+
+    phk::battle::BattlePacketHeader nested_authority_action = forged_result_action;
+    nested_authority_action.seq = phk::v1::kBattleModeActionSeq + 10;
+    nested_authority_action.tick = phk::v1::kBattleModeActionTick + 10;
+    RefreshDevAeadNonce(nested_authority_action);
+    const std::string nested_authority_payload =
+        "{\"nested\":{\"client_result_authoritative\":false},"
+        "\"client_result_authoritative\":true}";
+    const auto nested_authority_result = dispatcher.Dispatch(
+        nested_authority_action,
+        std::vector<std::uint8_t>(
+            nested_authority_payload.begin(),
+            nested_authority_payload.end()
+        )
+    );
+    CHECK_TRUE(!nested_authority_result.ok);
+    CHECK_EQ(
+        nested_authority_result.reason,
+        std::string("mode_action_client_result_forbidden")
+    );
 
     phk::battle::BattlePacketHeader forged_damage_action = forged_result_action;
     const std::vector<std::string> forged_damage_payloads = {
@@ -5813,6 +5966,77 @@ bool TestDispatcher() {
     );
     CHECK_TRUE(!unsupported_mode_action_result.ok);
     CHECK_EQ(unsupported_mode_action_result.reason, std::string("mode_action_type_unsupported"));
+
+    phk::battle::BattlePacketHeader spaced_unsupported_action = forged_result_action;
+    spaced_unsupported_action.seq = phk::v1::kBattleModeActionSeq + 5;
+    spaced_unsupported_action.tick = phk::v1::kBattleModeActionTick + 5;
+    RefreshDevAeadNonce(spaced_unsupported_action);
+    const std::string spaced_unsupported_payload =
+        "{\"action_type\" : \"grant_reward\",\"target_player_id\":\"p2\"}";
+    const auto spaced_unsupported_result = dispatcher.Dispatch(
+        spaced_unsupported_action,
+        std::vector<std::uint8_t>(
+            spaced_unsupported_payload.begin(),
+            spaced_unsupported_payload.end()
+        )
+    );
+    CHECK_TRUE(!spaced_unsupported_result.ok);
+    CHECK_EQ(spaced_unsupported_result.reason, std::string("mode_action_type_unsupported"));
+
+    phk::battle::BattlePacketHeader invalid_action_type = forged_result_action;
+    invalid_action_type.seq = phk::v1::kBattleModeActionSeq + 6;
+    invalid_action_type.tick = phk::v1::kBattleModeActionTick + 6;
+    RefreshDevAeadNonce(invalid_action_type);
+    const std::vector<std::string> invalid_action_type_payloads = {
+        "{\"action_type\":true}",
+        "{\"action_type\":null}",
+        "{\"action_type\":\"\"}",
+        "{\"action_type\":\"unknown\\u005faction\"}",
+    };
+    for (const auto& invalid_payload : invalid_action_type_payloads) {
+        const auto invalid_action_type_result = dispatcher.Dispatch(
+            invalid_action_type,
+            std::vector<std::uint8_t>(invalid_payload.begin(), invalid_payload.end())
+        );
+        CHECK_TRUE(!invalid_action_type_result.ok);
+        CHECK_EQ(invalid_action_type_result.reason, std::string("mode_action_type_invalid"));
+        ++invalid_action_type.seq;
+        ++invalid_action_type.tick;
+        RefreshDevAeadNonce(invalid_action_type);
+    }
+
+    phk::battle::BattlePacketHeader nested_action_type = invalid_action_type;
+    nested_action_type.player_id = "p2";
+    RefreshDevAeadNonce(nested_action_type);
+    const std::string nested_only_action_type_payload =
+        "{\"nested\":{\"action_type\":\"unknown_action\"}}";
+    const auto nested_only_action_type_result = dispatcher.Dispatch(
+        nested_action_type,
+        std::vector<std::uint8_t>(
+            nested_only_action_type_payload.begin(),
+            nested_only_action_type_payload.end()
+        )
+    );
+    CHECK_TRUE(nested_only_action_type_result.ok);
+    CHECK_EQ(nested_only_action_type_result.response_kind, std::string("mode_action"));
+
+    ++nested_action_type.seq;
+    ++nested_action_type.tick;
+    RefreshDevAeadNonce(nested_action_type);
+    const std::string nested_and_top_level_action_type_payload =
+        "{\"nested\":{\"action_type\":\"ready\"},\"action_type\":\"grant_reward\"}";
+    const auto nested_and_top_level_action_type_result = dispatcher.Dispatch(
+        nested_action_type,
+        std::vector<std::uint8_t>(
+            nested_and_top_level_action_type_payload.begin(),
+            nested_and_top_level_action_type_payload.end()
+        )
+    );
+    CHECK_TRUE(!nested_and_top_level_action_type_result.ok);
+    CHECK_EQ(
+        nested_and_top_level_action_type_result.reason,
+        std::string("mode_action_type_unsupported")
+    );
 
     phk::battle::BattlePacketHeader retry_after_rejected_action = forged_damage_action;
     const std::string retry_payload = "{\"action_type\":\"ready\",\"ready\":true}";
@@ -5869,6 +6093,28 @@ bool TestDispatcher() {
     const auto long_nonce_result = dispatcher.Dispatch(long_nonce, {'p'});
     CHECK_TRUE(!long_nonce_result.ok);
     CHECK_EQ(long_nonce_result.reason, std::string("nonce_invalid"));
+    return true;
+}
+
+bool TestDispatcherTickWindowOverflowGuard() {
+    phk::battle::BattleDispatcher dispatcher;
+    phk::battle::BattlePacketHeader first;
+    first.version.ruleset_version = phk::v1::kRulesetVersion;
+    first.match_id = "match-overflow";
+    first.player_id = "p1";
+    first.tick = std::numeric_limits<std::uint64_t>::max() - 1;
+    first.seq = 1;
+    first.payload_type = phk::battle::BattlePayloadType::Input;
+    FillEncryptedHeaderShape(first);
+    const auto first_result = dispatcher.Dispatch(first, {});
+    CHECK_TRUE(first_result.ok);
+
+    auto near_max = first;
+    near_max.tick = std::numeric_limits<std::uint64_t>::max();
+    near_max.seq = 2;
+    RefreshDevAeadNonce(near_max);
+    const auto near_max_result = dispatcher.Dispatch(near_max, {});
+    CHECK_TRUE(near_max_result.ok);
     return true;
 }
 
@@ -6900,6 +7146,7 @@ int main() {
         {"ResultAndReplayRecordUseStablePlayerOrder", TestResultAndReplayRecordUseStablePlayerOrder},
 		{"ServerAuthoritativeInputAndSnapshot", TestServerAuthoritativeInputAndSnapshot},
 		{"Dispatcher", TestDispatcher},
+        {"DispatcherTickWindowOverflowGuard", TestDispatcherTickWindowOverflowGuard},
 		{"EncryptedPacketAdapterShape", TestEncryptedPacketAdapterShape},
 		{"ServerEncryptedPacketSessionBoundary", TestServerEncryptedPacketSessionBoundary},
 		{"DecodedPayloadHeaderBinding", TestDecodedPayloadHeaderBinding},

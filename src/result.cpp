@@ -28,13 +28,78 @@ bool SameStringSet(std::vector<std::string> left, std::vector<std::string> right
     });
 }
 
+bool IsTopLevelJsonObjectKey(std::string_view json, std::size_t key_start) {
+    int object_depth = 0;
+    int array_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < key_start; ++index) {
+        const char ch = json[index];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++object_depth;
+        } else if (ch == '}') {
+            --object_depth;
+        } else if (ch == '[') {
+            ++array_depth;
+        } else if (ch == ']') {
+            --array_depth;
+        }
+    }
+    return !in_string && object_depth == 1 && array_depth == 0;
+}
+
+std::size_t JsonFieldValueStart(std::string_view json, std::string_view field_name) {
+    const std::string key = "\"" + std::string(field_name) + "\"";
+    std::size_t search_start = 0;
+    while (search_start < json.size()) {
+        const auto key_start = json.find(key, search_start);
+        if (key_start == std::string_view::npos) {
+            return std::string_view::npos;
+        }
+        if (!IsTopLevelJsonObjectKey(json, key_start)) {
+            search_start = key_start + 1;
+            continue;
+        }
+        auto value_start = key_start + key.size();
+        while (value_start < json.size() &&
+            std::isspace(static_cast<unsigned char>(json[value_start]))) {
+            ++value_start;
+        }
+        if (value_start < json.size() && json[value_start] == ':') {
+            ++value_start;
+            while (value_start < json.size() &&
+                std::isspace(static_cast<unsigned char>(json[value_start]))) {
+                ++value_start;
+            }
+            return value_start;
+        }
+        search_start = key_start + 1;
+    }
+    return std::string_view::npos;
+}
+
 bool ContainsJsonUintField(const std::string& json, std::string_view field_name, std::uint64_t expected) {
-    const std::string needle = "\"" + std::string(field_name) + "\":" + std::to_string(expected);
-    const std::size_t offset = json.find(needle);
-    if (offset == std::string::npos) {
+    const auto value_start = JsonFieldValueStart(json, field_name);
+    if (value_start == std::string_view::npos) {
         return false;
     }
-    const std::size_t after_value = offset + needle.size();
+    const std::string expected_text = std::to_string(expected);
+    if (json.compare(value_start, expected_text.size(), expected_text) != 0) {
+        return false;
+    }
+    const std::size_t after_value = value_start + expected_text.size();
     if (after_value == json.size()) {
         return true;
     }
@@ -43,19 +108,7 @@ bool ContainsJsonUintField(const std::string& json, std::string_view field_name,
 }
 
 bool ContainsJsonField(const std::string& json, std::string_view field_name) {
-    const std::string needle = "\"" + std::string(field_name) + "\"";
-    std::size_t offset = json.find(needle);
-    while (offset != std::string::npos) {
-        std::size_t cursor = offset + needle.size();
-        while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) {
-            ++cursor;
-        }
-        if (cursor < json.size() && json[cursor] == ':') {
-            return true;
-        }
-        offset = json.find(needle, offset + 1);
-    }
-    return false;
+    return JsonFieldValueStart(json, field_name) != std::string_view::npos;
 }
 
 bool ContainsJsonFieldWithPrefix(const std::string& json, std::string_view field_prefix) {
@@ -444,12 +497,20 @@ bool ContainsJsonStringField(const std::string& json, std::string_view field_nam
     if (expected.empty()) {
         return true;
     }
-    const std::string needle = "\"" + std::string(field_name) + "\":\"" + JsonEscape(expected) + "\"";
-    const std::size_t offset = json.find(needle);
-    if (offset == std::string::npos) {
+    const auto value_start = JsonFieldValueStart(json, field_name);
+    if (value_start == std::string_view::npos ||
+        value_start >= json.size() ||
+        json[value_start] != '"') {
         return false;
     }
-    const std::size_t after_value = offset + needle.size();
+    const std::string expected_text = JsonEscape(expected);
+    const std::size_t string_start = value_start + 1;
+    if (json.compare(string_start, expected_text.size(), expected_text) != 0 ||
+        string_start + expected_text.size() >= json.size() ||
+        json[string_start + expected_text.size()] != '"') {
+        return false;
+    }
+    const std::size_t after_value = string_start + expected_text.size() + 1;
     if (after_value == json.size()) {
         return true;
     }
