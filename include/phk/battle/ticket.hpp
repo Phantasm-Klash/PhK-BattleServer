@@ -23,6 +23,14 @@ struct BattleTicket {
     std::int64_t issued_at_ms = 0;
     std::int64_t expires_at_ms = 0;
     std::string business_session_id;
+    // W-1 opening loadout (proto BattleTicket fields 15/16/17). hand_card_ids
+    // carries 0..kCardHandLimit catalog card ids; initial_energy is the opening
+    // energy; server_seed_decimal is the authoritative lobby seed as DECIMAL
+    // TEXT (a JS number would narrow seeds above 2^53). The lobby ED25519
+    // signature covers these fields on the wire.
+    std::vector<std::string> hand_card_ids;
+    double initial_energy = 0.0;
+    std::string server_seed_decimal;
 };
 
 struct SignedBattleTicket {

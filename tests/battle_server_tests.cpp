@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "phk/v1/manifest.hpp"
+#include "phk/battle/card_hand.hpp"
 #include "phk/battle/kcp_endpoint.hpp"
 #include "phk/battle/server.hpp"
 #include "phk/battle/simulation.hpp"
@@ -120,6 +121,11 @@ phk::battle::SignedBattleTicket MakeTicket() {
     signed_ticket.ticket.issued_at_ms = 1782489600000;
     signed_ticket.ticket.expires_at_ms = 1782489660000;
     signed_ticket.ticket.business_session_id = "session-ref:dev-alice";
+    // W-1 opening loadout: 4-card hand from the 16-card catalog, opening
+    // energy, authoritative lobby seed as decimal text (> 2^53 on purpose).
+    signed_ticket.ticket.hand_card_ids = {"focus_lens", "focus_lens", "hitbox_charm", "hitbox_charm"};
+    signed_ticket.ticket.initial_energy = 2.0;
+    signed_ticket.ticket.server_seed_decimal = "8035909259742954606";
     signed_ticket.key_id = "dev-ed25519-local";
     signed_ticket.public_key_hex = RepeatHex('a', 64);
     signed_ticket.signature_hex = RepeatHex('b', 128);
@@ -338,6 +344,138 @@ bool TestTicketVerifier() {
     const auto invalid_mode_id_result = verifier.Verify(invalid_mode_id, options);
     CHECK_TRUE(!invalid_mode_id_result.ok);
     CHECK_EQ(invalid_mode_id_result.reason, std::string("mode_id_invalid"));
+    return true;
+}
+
+// W-1: opening loadout validation at ticket verification (hand <= 4 catalog
+// cards, energy in [0, 10], seed is a decimal int64 text).
+bool TestTicketVerifierOpeningLoadout() {
+    phk::battle::TicketVerifier verifier;
+    phk::battle::TicketVerificationOptions options;
+    options.now_ms = 1782489605000;
+    options.required_battle_server_id = "battle-local-1";
+    options.required_endpoint = "127.0.0.1:7901";
+    options.required_key_id = "dev-ed25519-local";
+
+    const auto good = verifier.Verify(MakeTicket(), options);
+    CHECK_TRUE(good.ok);
+    CHECK_EQ(good.reason, std::string("ok"));
+
+    auto five_cards = MakeTicket();
+    five_cards.ticket.hand_card_ids = {"focus_lens", "focus_lens", "hitbox_charm", "hitbox_charm", "aegis_ward"};
+    const auto five_cards_result = verifier.Verify(five_cards, options);
+    CHECK_TRUE(!five_cards_result.ok);
+    CHECK_EQ(five_cards_result.reason, std::string("hand_too_many_cards"));
+
+    auto unknown_card = MakeTicket();
+    unknown_card.ticket.hand_card_ids = {"focus_lens", "no_such_card", "aegis_ward"};
+    const auto unknown_card_result = verifier.Verify(unknown_card, options);
+    CHECK_TRUE(!unknown_card_result.ok);
+    CHECK_EQ(unknown_card_result.reason, std::string("hand_card_not_in_catalog"));
+
+    auto empty_card = MakeTicket();
+    empty_card.ticket.hand_card_ids = {"focus_lens", "", "aegis_ward"};
+    const auto empty_card_result = verifier.Verify(empty_card, options);
+    CHECK_TRUE(!empty_card_result.ok);
+    CHECK_EQ(empty_card_result.reason, std::string("hand_card_id_empty"));
+
+    auto four_cards = MakeTicket();
+    four_cards.ticket.hand_card_ids = {"focus_lens", "focus_lens", "hitbox_charm", "hitbox_charm"};
+    CHECK_TRUE(verifier.Verify(four_cards, options).ok);
+
+    auto empty_hand = MakeTicket();
+    empty_hand.ticket.hand_card_ids = {};
+    CHECK_TRUE(verifier.Verify(empty_hand, options).ok);  // "not dealt yet" stays legal
+
+    auto negative_energy = MakeTicket();
+    negative_energy.ticket.initial_energy = -0.1;
+    const auto negative_energy_result = verifier.Verify(negative_energy, options);
+    CHECK_TRUE(!negative_energy_result.ok);
+    CHECK_EQ(negative_energy_result.reason, std::string("initial_energy_invalid"));
+
+    auto over_cap_energy = MakeTicket();
+    over_cap_energy.ticket.initial_energy = phk::battle::kCardMaxEnergy + 0.001;
+    const auto over_cap_energy_result = verifier.Verify(over_cap_energy, options);
+    CHECK_TRUE(!over_cap_energy_result.ok);
+    CHECK_EQ(over_cap_energy_result.reason, std::string("initial_energy_invalid"));
+
+    auto nan_energy = MakeTicket();
+    nan_energy.ticket.initial_energy = std::numeric_limits<double>::quiet_NaN();
+    const auto nan_energy_result = verifier.Verify(nan_energy, options);
+    CHECK_TRUE(!nan_energy_result.ok);
+    CHECK_EQ(nan_energy_result.reason, std::string("initial_energy_invalid"));
+
+    auto infinite_energy = MakeTicket();
+    infinite_energy.ticket.initial_energy = std::numeric_limits<double>::infinity();
+    const auto infinite_energy_result = verifier.Verify(infinite_energy, options);
+    CHECK_TRUE(!infinite_energy_result.ok);
+    CHECK_EQ(infinite_energy_result.reason, std::string("initial_energy_invalid"));
+
+    auto cap_energy = MakeTicket();
+    cap_energy.ticket.initial_energy = phk::battle::kCardMaxEnergy;
+    CHECK_TRUE(verifier.Verify(cap_energy, options).ok);
+
+    auto garbage_seed = MakeTicket();
+    garbage_seed.ticket.server_seed_decimal = "12x";
+    const auto garbage_seed_result = verifier.Verify(garbage_seed, options);
+    CHECK_TRUE(!garbage_seed_result.ok);
+    CHECK_EQ(garbage_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto empty_seed = MakeTicket();
+    empty_seed.ticket.server_seed_decimal = "";
+    const auto empty_seed_result = verifier.Verify(empty_seed, options);
+    CHECK_TRUE(!empty_seed_result.ok);
+    CHECK_EQ(empty_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto padded_seed = MakeTicket();
+    padded_seed.ticket.server_seed_decimal = "007";
+    const auto padded_seed_result = verifier.Verify(padded_seed, options);
+    CHECK_TRUE(!padded_seed_result.ok);
+    CHECK_EQ(padded_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto plus_seed = MakeTicket();
+    plus_seed.ticket.server_seed_decimal = "+7";
+    const auto plus_seed_result = verifier.Verify(plus_seed, options);
+    CHECK_TRUE(!plus_seed_result.ok);
+    CHECK_EQ(plus_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto spaced_seed = MakeTicket();
+    spaced_seed.ticket.server_seed_decimal = " 7";
+    const auto spaced_seed_result = verifier.Verify(spaced_seed, options);
+    CHECK_TRUE(!spaced_seed_result.ok);
+    CHECK_EQ(spaced_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto overflow_seed = MakeTicket();
+    overflow_seed.ticket.server_seed_decimal = "9223372036854775808";  // int64 max + 1
+    const auto overflow_seed_result = verifier.Verify(overflow_seed, options);
+    CHECK_TRUE(!overflow_seed_result.ok);
+    CHECK_EQ(overflow_seed_result.reason, std::string("server_seed_invalid"));
+
+    auto int64_max_seed = MakeTicket();
+    int64_max_seed.ticket.server_seed_decimal = "9223372036854775807";
+    CHECK_TRUE(verifier.Verify(int64_max_seed, options).ok);
+
+    auto int64_min_seed = MakeTicket();
+    int64_min_seed.ticket.server_seed_decimal = "-9223372036854775808";
+    CHECK_TRUE(verifier.Verify(int64_min_seed, options).ok);
+
+    // A seed above 2^53 must stay exact through decimal text.
+    auto large_seed = MakeTicket();
+    large_seed.ticket.server_seed_decimal = "8035909259742954606";
+    CHECK_TRUE(verifier.Verify(large_seed, options).ok);
+    CHECK_TRUE(
+        phk::battle::CanonicalTicketPayload(large_seed.ticket).find("8035909259742954606") !=
+        std::string::npos
+    );
+
+    // Canonical payload must bind the opening loadout: a hand difference must
+    // change it.
+    auto other_hand = MakeTicket();
+    other_hand.ticket.hand_card_ids = {"aegis_ward", "aegis_ward", "aegis_ward", "aegis_ward"};
+    CHECK_TRUE(
+        phk::battle::CanonicalTicketPayload(MakeTicket().ticket) !=
+        phk::battle::CanonicalTicketPayload(other_hand.ticket)
+    );
     return true;
 }
 
@@ -7105,6 +7243,7 @@ int main() {
 		{"SharedSnapshotEventFixtures", TestSharedSnapshotEventFixtures},
 		{"GoldenReplaySummaryFixture", TestGoldenReplaySummaryFixture},
 		{"TicketVerifier", TestTicketVerifier},
+		{"TicketVerifierOpeningLoadout", TestTicketVerifierOpeningLoadout},
 		{"ServerAndHandshake", TestServerAndHandshake},
         {"HandshakeTranscriptBindsFullClientMaterial", TestHandshakeTranscriptBindsFullClientMaterial},
         {"RoomCapacityGuard", TestRoomCapacityGuard},

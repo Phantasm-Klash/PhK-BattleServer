@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cmath>
 #include <sstream>
+
+#include "phk/battle/card_hand.hpp"
 
 namespace phk::battle {
 
@@ -19,6 +23,34 @@ bool IsAllowedAuditTokenChar(char ch) {
 
 bool IsValidAuditToken(std::string_view value) {
     return !value.empty() && std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
+}
+
+// W-1: the lobby seed arrives as decimal text (proto field 17). Accept exactly
+// what Go strconv.FormatInt emits: optional '-' then digits with no leading
+// zero, no '+', no whitespace; the value must fit int64 without narrowing.
+bool ParseDecimalInt64(const std::string& text, std::int64_t& out) {
+    if (text.empty()) {
+        return false;
+    }
+    std::size_t offset = 0;
+    if (text[0] == '-') {
+        offset = 1;
+    }
+    if (offset >= text.size()) {
+        return false;
+    }
+    for (std::size_t index = offset; index < text.size(); ++index) {
+        if (std::isdigit(static_cast<unsigned char>(text[index])) == 0) {
+            return false;
+        }
+    }
+    if (text[offset] == '0' && text.size() - offset > 1) {
+        return false;  // no leading zeros (Go FormatInt output shape)
+    }
+    const char* begin = text.data();
+    const char* end = text.data() + text.size();
+    const auto parsed = std::from_chars(begin, end, out);
+    return parsed.ec == std::errc() && parsed.ptr == end;
 }
 
 void Fail(VerificationResult& result, std::string reason) {
@@ -79,6 +111,34 @@ VerificationResult TicketVerifier::Verify(
     }
     if (!LooksLikeSha256Ref(ticket.deck_snapshot_hash)) {
         Fail(result, "deck_snapshot_hash_invalid");
+        return result;
+    }
+    // W-1 opening loadout: hand <= cardHandLimit, every card id in the 16-card
+    // catalog, energy finite and within [0, kCardMaxEnergy], seed is a decimal
+    // int64 text (no JS-number narrowing on the wire).
+    if (ticket.hand_card_ids.size() > static_cast<std::size_t>(kCardHandLimit)) {
+        Fail(result, "hand_too_many_cards");
+        return result;
+    }
+    for (const auto& card_id : ticket.hand_card_ids) {
+        if (card_id.empty()) {
+            Fail(result, "hand_card_id_empty");
+            return result;
+        }
+        if (FindCardDefinition(card_id) == nullptr) {
+            Fail(result, "hand_card_not_in_catalog");
+            return result;
+        }
+    }
+    if (!std::isfinite(ticket.initial_energy) ||
+        ticket.initial_energy < 0.0 ||
+        ticket.initial_energy > kCardMaxEnergy) {
+        Fail(result, "initial_energy_invalid");
+        return result;
+    }
+    std::int64_t server_seed = 0;
+    if (!ParseDecimalInt64(ticket.server_seed_decimal, server_seed)) {
+        Fail(result, "server_seed_invalid");
         return result;
     }
     if (ticket.ruleset_version.empty()) {
@@ -182,7 +242,13 @@ std::string CanonicalTicketPayload(const BattleTicket& ticket) {
         << ticket.ticket_nonce_hex << '|'
         << ticket.issued_at_ms << '|'
         << ticket.expires_at_ms << '|'
-        << ticket.business_session_id;
+        << ticket.business_session_id << '|'
+        << "hand=";
+    for (const auto& card_id : ticket.hand_card_ids) {
+        out << card_id << '/';
+    }
+    out << '|' << "energy=" << ticket.initial_energy
+        << '|' << "seed=" << ticket.server_seed_decimal;
     return out.str();
 }
 

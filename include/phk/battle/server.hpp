@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "phk/battle/handshake.hpp"
 #include "phk/battle/protocol.hpp"
@@ -51,6 +52,11 @@ struct BattleSessionRecord {
     std::string mode_id;
     std::string deck_snapshot_hash;
     std::string ruleset_version;
+    // W-1 opening loadout (validated at ticket verification): opening hand,
+    // opening energy and the authoritative lobby seed in decimal text.
+    std::vector<std::string> hand_card_ids;
+    double initial_energy = 0.0;
+    std::string server_seed_decimal;
     std::uint32_t kcp_conv = 0;
     std::string key_id;
     std::string server_to_client_key_id;
