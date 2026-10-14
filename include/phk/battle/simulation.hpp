@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "phk/battle/chain_log.hpp"
 #include "phk/battle/protocol.hpp"
 #include "phk/battle/result.hpp"
 
@@ -188,6 +189,8 @@ public:
     [[nodiscard]] std::size_t PlayerCount() const;
     [[nodiscard]] std::size_t BulletCount() const;
     [[nodiscard]] std::uint64_t AcceptedInputCount() const;
+    // T5 链式操作日志（append-only；只读访问，验证用 VerifyChain）。
+    [[nodiscard]] const OperationChainLog& OperationLog() const;
     [[nodiscard]] bool IsPlayerConnected(const std::string& player_id) const;
     [[nodiscard]] bool BossRosterReadyToLock() const;
 
@@ -296,6 +299,7 @@ private:
     std::vector<BulletState> bullets_;
     std::vector<std::string> input_trace_;
     std::vector<std::string> event_trace_;
+    OperationChainLog operation_log_;
 };
 
 [[nodiscard]] std::string InputValidationCodeName(InputValidationCode code);

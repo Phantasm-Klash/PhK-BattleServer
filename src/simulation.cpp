@@ -524,10 +524,22 @@ BattleSimulation::BattleSimulation(SimulationConfig config)
         boss_max_hp_ = config_.boss_max_hp;
         boss_current_hp_ = config_.boss_max_hp;
     }
+
+    // T5 链式操作日志：genesis 条目 = 本局种子（append-only 审计链）。
+    // 今日值为 DeriveMatchSeed（FNV-1a-64，server.cpp:1585，经
+    // server.cpp:599 写入 config_.match_seed），seed_kind=battle_derived。
+    // 大厅权威种子（seedFrom，SHA-256，service.go:6376）须经 loadout 的
+    // server_seed 下发（T7 H-2/W-1）：落地后本行改传
+    // lobby_authoritative，链结构与调用点不变。
+    operation_log_.AppendMatchSeed(0, kChainSeedKindBattleDerived, config_.match_seed);
 }
 
 const SimulationConfig& BattleSimulation::Config() const {
     return config_;
+}
+
+const OperationChainLog& BattleSimulation::OperationLog() const {
+    return operation_log_;
 }
 
 std::uint64_t BattleSimulation::CurrentTick() const {
@@ -745,6 +757,18 @@ InputValidationResult BattleSimulation::AcceptInput(const BattleInput& input) {
     input_buffer_peak_record_count_ = std::max(input_buffer_peak_record_count_, pending_input_records);
     players_[input.player_id].last_seq = input.seq;
     AccumulateAcceptedInput(input);
+    // T5 链式操作日志：按接受序入链（被拒输入在 ValidateInput 早退，不进链）。
+    operation_log_.AppendInput(
+        static_cast<std::int64_t>(input.tick),
+        input.player_id,
+        input.seq,
+        input.direction_bits,
+        input.slow,
+        input.shoot,
+        input.bomb,
+        input.card_slot,
+        input.mode_action_id
+    );
     return result;
 }
 
@@ -1020,6 +1044,17 @@ InputValidationResult BattleSimulation::AcceptModeAction(const BattleModeAction&
     if (!result.ok) {
         return result;
     }
+
+    // T5 链式操作日志：mode action 按接受序入链（被拒动作不进链；
+    // action_type 用真实类型，payload_json 原始字节入 digest）。
+    operation_log_.AppendModeAction(
+        static_cast<std::int64_t>(action.tick),
+        action.player_id,
+        action.action_id,
+        action.seq,
+        action.action_type,
+        action.payload_json
+    );
 
     players_[action.player_id].last_seq = action.seq;
     accepted_mode_action_ids_.insert(action.action_id);
