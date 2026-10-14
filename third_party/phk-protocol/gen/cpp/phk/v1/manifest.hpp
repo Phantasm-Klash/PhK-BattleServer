@@ -15,7 +15,7 @@ inline constexpr std::string_view kBusinessApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kBattleApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kRulesetVersion = "ruleset-local-s0";
 inline constexpr std::string_view kRulesetHash = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-inline constexpr std::string_view kSourceDigestSha256 = "67923047af9508a55ee95c72c90250c9309a70c0a132a6435d388880d153c11c";
+inline constexpr std::string_view kSourceDigestSha256 = "e37db6360a6f3e45c4969ccf02850f1e01379b8844a3a939013c478cc3fe7294";
 inline constexpr std::string_view kBattleModeActionMatchId = "match-001";
 inline constexpr std::string_view kBattleModeActionPlayerId = "p1";
 inline constexpr std::string_view kBattleModeActionActionId = "match-001_a000001";
@@ -55,13 +55,23 @@ inline constexpr std::string_view kBattleResultCallbackSignatureHex = "ccccccccc
 inline constexpr std::string_view kBattleResultCallbackSubmitPath = "/v1/battle/results/submit";
 inline constexpr std::string_view kBattleResultCallbackSettlementKey = "battle-result:match-001";
 inline constexpr std::int64_t kBattleResultCallbackSettledAtMs = 1782489610000;
+inline constexpr std::string_view kMvpBossRaceModeId = "mvp_boss_race";
+inline constexpr std::string_view kMvpBossRaceWinCondition = "first_boss_defeat";
+inline constexpr int kMvpBossRaceBossCount = 1;
+inline constexpr int kMvpBossRacePatternCount = 10;
+inline constexpr int kMvpBossRaceMaxPlayers = 2;
+inline constexpr std::string_view kMvpBossRaceMatchId = "match-mvp-001";
+inline constexpr std::string_view kMvpBossRaceWinnerPlayerId = "p1";
+inline constexpr std::string_view kMvpBossRaceReplayId = "replay-mvp-001";
+inline constexpr bool kMvpBossRaceServerAuthoritative = true;
+inline constexpr std::uint64_t kMvpBossRaceFinalTick = 5400;
 
 struct MessageField {
     std::string_view message;
     std::string_view field;
 };
 
-inline constexpr std::array<MessageField, 389> kMessageFields = {{
+inline constexpr std::array<MessageField, 407> kMessageFields = {{
     {"BattleAllocationPush", "allocation"},
     {"BattleAllocationPush", "business_signature"},
     {"BattleBulletDelta", "bullet_id"},
@@ -179,11 +189,14 @@ inline constexpr std::array<MessageField, 389> kMessageFields = {{
     {"BattleTicket", "deck_snapshot_hash"},
     {"BattleTicket", "endpoint"},
     {"BattleTicket", "expires_at_ms"},
+    {"BattleTicket", "hand_card_ids"},
+    {"BattleTicket", "initial_energy"},
     {"BattleTicket", "issued_at_ms"},
     {"BattleTicket", "match_id"},
     {"BattleTicket", "mode_id"},
     {"BattleTicket", "player_id"},
     {"BattleTicket", "ruleset_version"},
+    {"BattleTicket", "server_seed"},
     {"BattleTicket", "ticket_id"},
     {"BattleTicket", "ticket_nonce"},
     {"BattleTicket", "user_id"},
@@ -194,6 +207,21 @@ inline constexpr std::array<MessageField, 389> kMessageFields = {{
     {"BossPhasePattern", "pattern_id"},
     {"BossPhasePattern", "phase_field_offset"},
     {"BossPhasePattern", "source_addr"},
+    {"BossRaceModeState", "match_id"},
+    {"BossRaceModeState", "match_over"},
+    {"BossRaceModeState", "mode_id"},
+    {"BossRaceModeState", "players"},
+    {"BossRaceModeState", "ruleset_version"},
+    {"BossRaceModeState", "tick"},
+    {"BossRaceModeState", "version"},
+    {"BossRaceModeState", "winner_player_id"},
+    {"BossRacePlayerState", "boss_current_hp"},
+    {"BossRacePlayerState", "boss_max_hp"},
+    {"BossRacePlayerState", "damage_dealt"},
+    {"BossRacePlayerState", "defeat_tick"},
+    {"BossRacePlayerState", "defeated"},
+    {"BossRacePlayerState", "player_id"},
+    {"BossRacePlayerState", "points_awarded"},
     {"BulletSpawnCommand", "base_angle_deg"},
     {"BulletSpawnCommand", "bullet_type"},
     {"BulletSpawnCommand", "count"},
