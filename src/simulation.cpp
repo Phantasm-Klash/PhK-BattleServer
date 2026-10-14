@@ -698,6 +698,13 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
         result.reason = "invalid_direction_bits";
         return result;
     }
+    // 传输层 sanity check（M-1，T7 §3）：-1 = "本 tick 不出牌"哨兵
+    // （BattleInput.card_slot 的结构默认值，与 lobby validateInputPacket 的
+    // card_slot -1..3 检查同级），0..7 为 wire 宽度粗筛。**权威上界是手牌
+    // 长度 hand.size()-1（恒 <= kCardHandLimit-1）**：由 card_hand.hpp 的
+    // ValidateCast 执行，slot >= hand.size() 一律走 card_rejected 拒绝路径
+    // （cast_card_slot_empty / cast_card_slot_out_of_range）。本层不判定手牌
+    // （BattleSimulation 无手牌状态，cast 执行器尚未接线），保持粗筛定位。
     if (input.card_slot < -1 || input.card_slot > 7) {
         result.code = InputValidationCode::InvalidCardSlot;
         result.reason = "invalid_card_slot";
@@ -872,6 +879,11 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             result.reason = "cast_card_slot_missing";
             return result;
         }
+        // 传输层 sanity check（M-1，T7 §3）：显式 cast_card 动作要求槽位 >= 0
+        // 且落在 wire 宽度 0..7。权威上界同为 hand.size()-1，由
+        // card_hand.hpp 的 ValidateCast 执行并走 card_rejected 拒绝路径
+        // （cast_card_slot_empty / cast_card_slot_out_of_range）；cast 执行器
+        // 接线后，本动作将在 tick 应用处经 ValidateCast 复核。
         if (card_slot.value() < 0 || card_slot.value() > 7) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "cast_card_slot_invalid";

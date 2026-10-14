@@ -55,6 +55,16 @@ std::string TrimCardId(const std::string& value) {
 
 CastValidationResult ValidateCast(const HandState& hand, int slot, std::int64_t tick) {
     CastValidationResult result;
+    // M-1：-1 是"本 tick 不出牌"哨兵（BattleInput.card_slot 默认值，传输层
+    // simulation.cpp:701 放行 -1..7）。它不是错误：不拒绝、不改手牌，
+    // 调用方按"本 tick 无出牌操作"处理，不得发 card_rejected。
+    if (slot == kNoCardSlotSentinel) {
+        result.no_card = true;
+        return result;
+    }
+    // M-1：之后任何 slot >= hand.card_ids.size() 都被下面两段拒绝
+    // （out_of_range / empty），即有效上界 = hand.size()-1；两者共同构成
+    // card_rejected 拒绝路径，reason 为对战端现有 snake_case 风格。
     if (slot < 0 || slot >= kCardHandLimit) {
         result.reason = "cast_card_slot_out_of_range";
         return result;
@@ -102,6 +112,8 @@ bool DrawServerCard(HandState& hand) {
 
 CastValidationResult ApplyCast(HandState& hand, int slot, std::int64_t tick) {
     const CastValidationResult result = ValidateCast(hand, slot, tick);
+    // 拒绝与 -1 哨兵都走这条早退：手牌保持逐字节不变（Go 测试
+    // "rejected cast must not mutate hand" 同语义；哨兵同理无操作）。
     if (!result.accepted) {
         return result;
     }

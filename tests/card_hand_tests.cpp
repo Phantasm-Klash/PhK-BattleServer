@@ -78,9 +78,36 @@ void TestCatalogWhitelist() {
 
 void TestRejectionSlotOutOfRange() {
     HandState hand = ArmedHand();
-    Check(ValidateCast(hand, -1, 1).reason == "cast_card_slot_out_of_range", "slot -1 rejected");
+    // M-1：-1 是"不出牌"哨兵，不是拒绝（no_card=true、reason 为空）。
+    const auto sentinel = ValidateCast(hand, -1, 1);
+    Check(sentinel.no_card && !sentinel.accepted && sentinel.reason.empty(),
+          "slot -1: no-card sentinel, not a rejection");
     Check(ValidateCast(hand, kCardHandLimit, 1).reason == "cast_card_slot_out_of_range", "slot 4 rejected");
     Check(ValidateCast(hand, 99, 1).reason == "cast_card_slot_out_of_range", "slot 99 rejected");
+}
+
+// M-1（T7 §3）：cast 校验以 hand.size() 为界；任何 >= hand.size() 的槽位
+// 都走拒绝路径（out_of_range / empty 两段共同构成上界），杜绝越界索引手牌。
+void TestCastSlotBoundedByHandSize() {
+    HandState two;
+    two.card_ids = {"mirror_lance", "focus_lens"};
+    two.energy = 10.0;
+
+    Check(ValidateCast(two, -1, 1).no_card, "2-card hand: slot -1 = no card");
+    Check(ValidateCast(two, 0, 1).accepted, "2-card hand: slot 0 accepted");
+    Check(ValidateCast(two, 1, 1).accepted, "2-card hand: slot 1 accepted");
+    Check(ValidateCast(two, 2, 1).reason == "cast_card_slot_empty", "2-card hand: slot 2 rejected (empty)");
+    Check(ValidateCast(two, 7, 1).reason == "cast_card_slot_out_of_range", "2-card hand: slot 7 rejected (out_of_range)");
+    Check(!ValidateCast(two, 2, 1).accepted && !ValidateCast(two, 7, 1).accepted, "2-card hand: slots 2/7 both rejected");
+
+    const auto applied = ApplyCast(two, -1, 1);
+    Check(applied.no_card && two.card_ids.size() == 2u && two.energy == 10.0 && two.draw_cursor == 0,
+          "sentinel cast leaves hand untouched");
+
+    HandState four = ArmedHand();  // 4 张满手
+    Check(ValidateCast(four, 3, 1).accepted, "4-card hand: slot 3 accepted");
+    Check(ValidateCast(four, 4, 1).reason == "cast_card_slot_out_of_range", "4-card hand: slot 4 rejected (out_of_range)");
+    Check(!ValidateCast(four, 4, 1).accepted, "4-card hand: slot 4 rejected");
 }
 
 void TestRejectionSlotEmpty() {
@@ -221,6 +248,7 @@ void TestBuildCardActivation() {
 int main() {
     TestCatalogWhitelist();
     TestRejectionSlotOutOfRange();
+    TestCastSlotBoundedByHandSize();
     TestRejectionSlotEmpty();
     TestRejectionUnknownCard();
     TestRejectionOnCooldown();

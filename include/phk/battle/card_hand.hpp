@@ -31,6 +31,10 @@ namespace phk::battle {
 constexpr int kCardHandLimit = 4;
 constexpr double kCardMaxEnergy = 10.0;
 
+// card_slot 哨兵：-1 = 本 tick 不出牌（BattleInput.card_slot 的结构默认值，
+// simulation.cpp:701 的传输层检查放行 -1..7）。它不是错误，不得走拒绝路径。
+constexpr int kNoCardSlotSentinel = -1;
+
 // 卡池目录单条（service.go:405-420 字段全集；缺省值同 Go 零值）。
 struct CardDefinition {
     std::string card_id;
@@ -59,9 +63,16 @@ struct HandState {
     std::vector<std::string> deck;                     // DeckSnapshot.CardIDs
 };
 
-// 出牌校验结果。accepted=false 时 reason 为拒绝码（空串 = 通过）。
+// 出牌校验结果。
+//   no_card  = true ：slot == kNoCardSlotSentinel(-1)，本 tick 不出牌——
+//                       哨兵语义，不是拒绝（无 card_rejected 事件，手牌不变）。
+//   accepted  = true ：校验通过（ApplyCast 已落账）。
+//   其余            ：拒绝，reason 为拒绝码（accepted=false 且 no_card=false 时
+//                       必为非空）。
+// 判定顺序：调用方必须先看 no_card，再看 accepted，最后按 reason 处理拒绝。
 struct CastValidationResult {
     bool accepted = false;
+    bool no_card = false;
     std::string reason;
     const CardDefinition* definition = nullptr;
     std::string card_id;             // TrimSpace 后的卡 id（校验通过时有效）
@@ -71,8 +82,13 @@ struct CastValidationResult {
 };
 
 // Go validateAndActivateCardLocked 的纯函数版：只读校验，不改 HandState。
-// 校验顺序与 Go 完全一致：
-//   1. slot 越界 [0, kCardHandLimit)        → cast_card_slot_out_of_range
+// M-1 修复（T7 §3）：有效出牌槽位以**手牌长度**为界（0..hand.size()-1）——
+// 任何 slot >= hand.card_ids.size() 都进拒绝路径，杜绝按 slot 索引手牌越界。
+// 校验顺序：
+//   0. slot == kNoCardSlotSentinel(-1)      → no_card 哨兵（不出牌，非拒绝）
+//   1. slot < 0 或 slot >= kCardHandLimit   → cast_card_slot_out_of_range
+//      （连同 2 一起即 hand.size() 上界：手牌恒 <= kCardHandLimit，
+//        DrawServerCard 强制；与 Go 的两段式逐字对应）
 //   2. slot 超出当前手牌长度                 → cast_card_slot_empty
 //   3. TrimSpace 后不在 16 卡目录            → cast_card_unknown_card
 //   4. tick < cooldowns[cardID]             → cast_card_on_cooldown
