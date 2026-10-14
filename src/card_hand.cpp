@@ -1,5 +1,10 @@
 // 局内手牌状态与出牌校验实现。对照 service.go:405-420 / 3301-3337 / 4229-4240。
 //
+// M-1（2026-10-14）：slot 权威边界由 kCardHandLimit(4) 改为 hand.card_ids.size()；
+// slot == -1 为"不出牌"哨兵（BattleInput.card_slot struct default，protocol.hpp:49）；
+// 越界（含 Go 原 outside-hand 与 empty 两级）统一走
+// cast_card_slot_out_of_range → 调用方 card_rejected 路径。
+//
 // 版权：东方同人逆向成果，仅用于自研玩法。
 
 #include "phk/battle/card_hand.hpp"
@@ -55,22 +60,25 @@ std::string TrimCardId(const std::string& value) {
 
 CastValidationResult ValidateCast(const HandState& hand, int slot, std::int64_t tick) {
     CastValidationResult result;
-    // M-1：-1 是"本 tick 不出牌"哨兵（BattleInput.card_slot 默认值，传输层
-    // simulation.cpp:701 放行 -1..7）。它不是错误：不拒绝、不改手牌，
-    // 调用方按"本 tick 无出牌操作"处理，不得发 card_rejected。
-    if (slot == kNoCardSlotSentinel) {
-        result.no_card = true;
+    // M-1：-1 是 wire struct default（protocol.hpp:49）= "本 tick 不出牌"。
+    // 不是错误：accepted=true 但 plays_no_card=true，无卡定义、无拒绝码。
+    // 调用方（未来 executor）见此结果时既不产生 cast 效果也不发 card_rejected；
+    // ApplyCast 见此结果保持 HandState 不变。
+    if (slot == -1) {
+        result.accepted = true;
+        result.plays_no_card = true;
+        result.energy_after = hand.energy;
         return result;
     }
-    // M-1：之后任何 slot >= hand.card_ids.size() 都被下面两段拒绝
-    // （out_of_range / empty），即有效上界 = hand.size()-1；两者共同构成
-    // card_rejected 拒绝路径，reason 为对战端现有 snake_case 风格。
-    if (slot < 0 || slot >= kCardHandLimit) {
+    // M-1：权威边界 = 实际手牌长度（0..hand.size()-1），不再用固定的
+    // kCardHandLimit=4。合并了 Go 的两级错误：
+    //   - Go "card slot is outside hand"（slot<0 || slot>=4）——>3 的 slot
+    //     由传输层先拦（simulation.cpp:701 wire input -1..7；
+    //     :868-877 cast_card payload 0..7）；
+    //   - Go "card slot is empty"（slot>=len(hand)）——对战端手牌由 loadout
+    //     下发、当前恒不满 4，slot>=hand.size() 即无牌可出，越界即拒。
+    if (slot < 0 || static_cast<std::size_t>(slot) >= hand.card_ids.size()) {
         result.reason = "cast_card_slot_out_of_range";
-        return result;
-    }
-    if (static_cast<std::size_t>(slot) >= hand.card_ids.size()) {
-        result.reason = "cast_card_slot_empty";
         return result;
     }
     const std::string card_id = TrimCardId(hand.card_ids[static_cast<std::size_t>(slot)]);
@@ -112,9 +120,9 @@ bool DrawServerCard(HandState& hand) {
 
 CastValidationResult ApplyCast(HandState& hand, int slot, std::int64_t tick) {
     const CastValidationResult result = ValidateCast(hand, slot, tick);
-    // 拒绝与 -1 哨兵都走这条早退：手牌保持逐字节不变（Go 测试
-    // "rejected cast must not mutate hand" 同语义；哨兵同理无操作）。
-    if (!result.accepted) {
+    // 拒绝：原样返回，HandState 不变（调用方走 card_rejected）。
+    // 哨兵 -1：accepted 但无牌可出，同样不改任何状态。
+    if (!result.accepted || result.plays_no_card) {
         return result;
     }
     hand.energy = result.energy_after;

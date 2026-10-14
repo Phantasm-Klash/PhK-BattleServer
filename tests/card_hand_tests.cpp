@@ -2,6 +2,15 @@
 // 的每条拒绝路径与账本语义，并覆盖边界（冷却等值、能量 0.0001 容差、
 // 空卡跳过、手牌上限、TrimSpace）。
 //
+// M-1（2026-10-14）边界规格（任务书）：slot 权威边界 = hand.size()。
+//   - 2 张手牌：slot 2 / slot 7 拒绝（cast_card_slot_out_of_range）；
+//     slot -1 = "不出牌"哨兵（accepted + plays_no_card，非拒绝）；
+//     slot 0 / 1 接受。
+//   - 4 张手牌：slot 3 接受；slot 4 拒绝。
+//   - Go 原两级错误（outside hand >=4 / empty >=len(hand)）在 C++ 侧合并
+//     为 cast_card_slot_out_of_range 一级；>3 由传输层先拦
+//     （simulation.cpp:701 / :868-877）。
+//
 // 版权：东方同人逆向成果，仅用于自研玩法。
 
 #include <cmath>
@@ -76,47 +85,48 @@ void TestCatalogWhitelist() {
 
 // ---- 每条拒绝路径 ----
 
+// M-1：4 张满手牌上，>hand.size()-1 的 slot 一律 out_of_range；-1 是哨兵。
 void TestRejectionSlotOutOfRange() {
     HandState hand = ArmedHand();
-    // M-1：-1 是"不出牌"哨兵，不是拒绝（no_card=true、reason 为空）。
+    // -1 = "本 tick 不出牌"哨兵（protocol.hpp:49 struct default）：非拒绝、
+    // 无卡定义、无拒绝码；ApplyCast 也不得改状态。
     const auto sentinel = ValidateCast(hand, -1, 1);
-    Check(sentinel.no_card && !sentinel.accepted && sentinel.reason.empty(),
-          "slot -1: no-card sentinel, not a rejection");
+    Check(sentinel.accepted, "slot -1 sentinel accepted (not an error)");
+    Check(sentinel.plays_no_card, "slot -1 plays_no_card");
+    Check(sentinel.definition == nullptr, "slot -1 has no definition");
+    Check(sentinel.reason.empty(), "slot -1 has no rejection reason");
+    const HandState before = hand;
+    const auto applied = ApplyCast(hand, -1, 1);
+    Check(applied.accepted && applied.plays_no_card, "ApplyCast(-1) sentinel result");
+    Check(hand.card_ids == before.card_ids && hand.energy == before.energy &&
+              hand.cooldowns == before.cooldowns && hand.draw_cursor == before.draw_cursor,
+          "ApplyCast(-1) must leave hand untouched");
+
     Check(ValidateCast(hand, kCardHandLimit, 1).reason == "cast_card_slot_out_of_range", "slot 4 rejected");
     Check(ValidateCast(hand, 99, 1).reason == "cast_card_slot_out_of_range", "slot 99 rejected");
 }
 
-// M-1（T7 §3）：cast 校验以 hand.size() 为界；任何 >= hand.size() 的槽位
-// 都走拒绝路径（out_of_range / empty 两段共同构成上界），杜绝越界索引手牌。
-void TestCastSlotBoundedByHandSize() {
-    HandState two;
-    two.card_ids = {"mirror_lance", "focus_lens"};
-    two.energy = 10.0;
+// M-1：权威边界 = hand.size()。2 张手牌 → slot 2/7 拒、slot -1 哨兵、0/1 过。
+void TestSlotBoundIsHandSize() {
+    HandState hand;
+    hand.card_ids = {"mirror_lance", "focus_lens"};
+    hand.energy = 10.0;
 
-    Check(ValidateCast(two, -1, 1).no_card, "2-card hand: slot -1 = no card");
-    Check(ValidateCast(two, 0, 1).accepted, "2-card hand: slot 0 accepted");
-    Check(ValidateCast(two, 1, 1).accepted, "2-card hand: slot 1 accepted");
-    Check(ValidateCast(two, 2, 1).reason == "cast_card_slot_empty", "2-card hand: slot 2 rejected (empty)");
-    Check(ValidateCast(two, 7, 1).reason == "cast_card_slot_out_of_range", "2-card hand: slot 7 rejected (out_of_range)");
-    Check(!ValidateCast(two, 2, 1).accepted && !ValidateCast(two, 7, 1).accepted, "2-card hand: slots 2/7 both rejected");
+    Check(ValidateCast(hand, 0, 1).accepted && !ValidateCast(hand, 0, 1).plays_no_card, "slot 0 accepted");
+    Check(ValidateCast(hand, 1, 1).accepted && !ValidateCast(hand, 1, 1).plays_no_card, "slot 1 accepted");
+    Check(ValidateCast(hand, 2, 1).reason == "cast_card_slot_out_of_range", "slot 2 rejected (2-card hand)");
+    Check(ValidateCast(hand, 7, 1).reason == "cast_card_slot_out_of_range", "slot 7 rejected (2-card hand)");
+    Check(ValidateCast(hand, 2, 1).plays_no_card == false, "slot 2 is a rejection, not the sentinel");
 
-    const auto applied = ApplyCast(two, -1, 1);
-    Check(applied.no_card && two.card_ids.size() == 2u && two.energy == 10.0 && two.draw_cursor == 0,
-          "sentinel cast leaves hand untouched");
-
-    HandState four = ArmedHand();  // 4 张满手
-    Check(ValidateCast(four, 3, 1).accepted, "4-card hand: slot 3 accepted");
-    Check(ValidateCast(four, 4, 1).reason == "cast_card_slot_out_of_range", "4-card hand: slot 4 rejected (out_of_range)");
-    Check(!ValidateCast(four, 4, 1).accepted, "4-card hand: slot 4 rejected");
+    const auto sentinel = ValidateCast(hand, -1, 1);
+    Check(sentinel.accepted && sentinel.plays_no_card, "slot -1 sentinel plays nothing");
 }
 
-void TestRejectionSlotEmpty() {
-    HandState hand;
-    hand.card_ids = {"mirror_lance"};  // 手牌只有 1 张，槽 1..3 为空
-    hand.energy = 10.0;
-    Check(ValidateCast(hand, 0, 1).accepted, "slot 0 accepted with 1 card");
-    Check(ValidateCast(hand, 1, 1).reason == "cast_card_slot_empty", "slot 1 rejected empty");
-    Check(ValidateCast(hand, 3, 1).reason == "cast_card_slot_empty", "slot 3 rejected empty");
+// M-1：4 张手牌 → slot 3 接受、slot 4 拒绝（旧代码同样成立，回归保护）。
+void TestSlotBoundFullHand() {
+    HandState hand = ArmedHand();
+    Check(ValidateCast(hand, 3, 1).accepted && !ValidateCast(hand, 3, 1).plays_no_card, "slot 3 accepted (4-card hand)");
+    Check(ValidateCast(hand, 4, 1).reason == "cast_card_slot_out_of_range", "slot 4 rejected (4-card hand)");
 }
 
 void TestRejectionUnknownCard() {
@@ -248,8 +258,8 @@ void TestBuildCardActivation() {
 int main() {
     TestCatalogWhitelist();
     TestRejectionSlotOutOfRange();
-    TestCastSlotBoundedByHandSize();
-    TestRejectionSlotEmpty();
+    TestSlotBoundIsHandSize();
+    TestSlotBoundFullHand();
     TestRejectionUnknownCard();
     TestRejectionOnCooldown();
     TestRejectionInsufficientEnergy();
