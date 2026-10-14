@@ -54,6 +54,7 @@ add_library(phk_battle_core
     src/handshake.cpp
     src/kcp_endpoint.cpp
     src/kcp_server_endpoint.cpp
+    src/lobby_rng.cpp
     src/match_lifecycle.cpp
     src/protocol.cpp
     src/result.cpp
@@ -111,4 +112,10 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_battle_lifecycle_tests PRIVATE phk_battle_core)
     add_test(NAME phk_battle_lifecycle_tests COMMAND phk_battle_lifecycle_tests)
+
+    add_executable(phk_lobby_rng_tests
+        tests/lobby_rng_tests.cpp
+    )
+    target_link_libraries(phk_lobby_rng_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_lobby_rng_tests COMMAND phk_lobby_rng_tests)
 endif()
