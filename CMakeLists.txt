@@ -47,6 +47,7 @@ message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 
 add_library(phk_battle_core
     src/card_effects.cpp
+    src/card_hand.cpp
     src/boss_race.cpp
     src/danmaku/bullet_motion.cpp
     src/danmaku/emitter.cpp
@@ -125,4 +126,10 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_card_effects_tests PRIVATE phk_battle_core)
     add_test(NAME phk_card_effects_tests COMMAND phk_card_effects_tests)
+
+    add_executable(phk_card_hand_tests
+        tests/card_hand_tests.cpp
+    )
+    target_link_libraries(phk_card_hand_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_card_hand_tests COMMAND phk_card_hand_tests)
 endif()
