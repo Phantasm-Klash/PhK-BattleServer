@@ -25,10 +25,12 @@ bool IsValidAuditToken(std::string_view value) {
     return !value.empty() && std::all_of(value.begin(), value.end(), IsAllowedAuditTokenChar);
 }
 
+}  // namespace
+
 // W-1: the lobby seed arrives as decimal text (proto field 17). Accept exactly
 // what Go strconv.FormatInt emits: optional '-' then digits with no leading
 // zero, no '+', no whitespace; the value must fit int64 without narrowing.
-bool ParseDecimalInt64(const std::string& text, std::int64_t& out) {
+bool ParseDecimalInt64Text(const std::string& text, std::int64_t& out) {
     if (text.empty()) {
         return false;
     }
@@ -52,6 +54,8 @@ bool ParseDecimalInt64(const std::string& text, std::int64_t& out) {
     const auto parsed = std::from_chars(begin, end, out);
     return parsed.ec == std::errc() && parsed.ptr == end;
 }
+
+namespace {
 
 void Fail(VerificationResult& result, std::string reason) {
     result.ok = false;
@@ -137,7 +141,7 @@ VerificationResult TicketVerifier::Verify(
         return result;
     }
     std::int64_t server_seed = 0;
-    if (!ParseDecimalInt64(ticket.server_seed_decimal, server_seed)) {
+    if (!ParseDecimalInt64Text(ticket.server_seed_decimal, server_seed)) {
         Fail(result, "server_seed_invalid");
         return result;
     }

@@ -1,9 +1,12 @@
 #include "phk/battle/simulation.hpp"
 
+#include "phk/battle/ticket.hpp"  // ParseDecimalInt64Text（票据 server_seed 文本解析）
+
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -1102,10 +1105,12 @@ BattleSnapshot BattleSimulation::Tick() {
             continue;
         }
         BattleInput input = InputForTick(player);
+        bool real_input = false;
         if (pending_it != pending_inputs_by_tick_.end()) {
             const auto input_it = pending_it->second.find(player.player_id);
             if (input_it != pending_it->second.end()) {
                 input = input_it->second;
+                real_input = true;
                 if (battle_input_enabled) {
                     player.last_input = input;
                 }
@@ -1123,6 +1128,13 @@ BattleSnapshot BattleSimulation::Tick() {
             continue;
         }
         ApplyInput(player, input, tick_to_apply);
+        // T3 step4：出牌意图（Go 同构通道，service.go:3219 packet.CardSlot>=0）。
+        // 只消费**真实**客户端输入——held fallback 不重放 card_slot，避免陈旧
+        // 意图逐 tick 重放烧能量；-1 为不出牌哨兵（struct default），直接跳过
+        // （无事件行、无状态变更）。
+        if (real_input && input.card_slot >= 0) {
+            ExecuteCastCard(player.player_id, input.card_slot, static_cast<std::int64_t>(tick_to_apply));
+        }
     }
 
     if (pending_it != pending_inputs_by_tick_.end()) {
@@ -2139,23 +2151,291 @@ void BattleSimulation::ApplyBossDamageForInput(
 
     constexpr std::uint64_t kPlayerShotDamagePerTick = 10;
     const std::uint64_t damage = std::min(kPlayerShotDamagePerTick, boss_current_hp_);
-    boss_current_hp_ -= damage;
-    boss_damage_total_ += damage;
-    boss_damage_by_player_[player.player_id] += damage;
+    RegisterBossDamage(player.player_id, applied_tick, damage);
+}
+
+bool BattleSimulation::RegisterBossDamage(
+    const std::string& player_id,
+    std::uint64_t tick,
+    std::uint64_t damage
+) {
+    if (boss_current_hp_ == 0) {
+        return false;
+    }
+    const std::uint64_t applied = std::min(damage, boss_current_hp_);
+    boss_current_hp_ -= applied;
+    boss_damage_total_ += applied;
+    boss_damage_by_player_[player_id] += applied;
 
     if (boss_current_hp_ == 0 && boss_defeated_tick_ == 0) {
-        boss_defeated_tick_ = applied_tick;
+        boss_defeated_tick_ = tick;
         event_stream_hash_ = HashAppend(event_stream_hash_, config_.match_id);
         event_stream_hash_ = HashAppend(event_stream_hash_, config_.mode_id);
-        event_stream_hash_ = HashAppend(event_stream_hash_, applied_tick);
-        event_stream_hash_ = HashAppend(event_stream_hash_, player.player_id);
+        event_stream_hash_ = HashAppend(event_stream_hash_, tick);
+        event_stream_hash_ = HashAppend(event_stream_hash_, player_id);
         event_stream_hash_ = HashAppend(event_stream_hash_, boss_damage_total_);
         event_trace_.push_back(
-            "boss_defeated|tick=" + std::to_string(applied_tick) +
-            "|player=" + player.player_id +
+            "boss_defeated|tick=" + std::to_string(tick) +
+            "|player=" + player_id +
             "|total_damage=" + std::to_string(boss_damage_total_)
         );
         ++event_count_;
+        return true;
+    }
+    return false;
+}
+
+// ---- T3 step4：出牌执行器 ----
+
+std::int64_t BattleSimulation::LobbySeed() const {
+    return card_purge_seed_;
+}
+
+bool BattleSimulation::SeedPlayerHand(
+    const std::string& player_id,
+    const std::vector<std::string>& hand_card_ids,
+    double initial_energy,
+    const std::string& server_seed_decimal
+) {
+    auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return false;
+    }
+    // 对局级大厅种子（T7 H-2）：首张含种子的票据设定；同场第二张票据携带
+    // 不同种子 = 大厅不变量违例，保持首个值并告知调用方（RegisterTicket 记录）。
+    if (!server_seed_decimal.empty()) {
+        std::int64_t seed = 0;
+        if (!ParseDecimalInt64Text(server_seed_decimal, seed)) {
+            return false;
+        }
+        if (card_purge_seed_set_ && seed != card_purge_seed_) {
+            return false;
+        }
+        card_purge_seed_ = seed;
+        card_purge_seed_set_ = true;
+    }
+    PlayerState& player = player_it->second;
+    player.hand.card_ids = hand_card_ids;
+    player.hand.energy = initial_energy;
+    // 缺口（记录在 task-queue/out/T3_step4_integration.md §3）：票面无
+    // deck_card_ids，牌堆置空 ⇒ DrawServerCard 为 no-op（出牌后不补抽），
+    // draw_cursor 无法回填（大厅发牌后应为 4）。待 W-1 第二阶段扩展票据。
+    player.hand.deck.clear();
+    player.hand.draw_cursor = 0;
+    player.invulnerable_until = 0;
+    return true;
+}
+
+std::size_t BattleSimulation::HandSize(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return 0;
+    }
+    return player_it->second.hand.card_ids.size();
+}
+
+double BattleSimulation::PlayerEnergy(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return 0.0;
+    }
+    return player_it->second.hand.energy;
+}
+
+std::int64_t BattleSimulation::PlayerInvulnerableUntil(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return 0;
+    }
+    return player_it->second.invulnerable_until;
+}
+
+const std::vector<CardCastEvent>& BattleSimulation::CardCastEvents() const {
+    return card_cast_events_;
+}
+
+void BattleSimulation::ClearCardCastEvents() {
+    card_cast_events_.clear();
+}
+
+void BattleSimulation::ApplyCastCardModeAction(const BattleModeAction& action, std::int64_t tick) {
+    // 传输层已校验 cast_card 必带 card_slot 且 ∈ 0..7（simulation.cpp:899-915）；
+    // 缺失时按哨兵 -1（不出牌、无副作用）防御处理。
+    const auto card_slot = ExtractJsonIntField(action.payload_json, "card_slot");
+    const int slot = card_slot.has_value() ? static_cast<int>(card_slot.value()) : -1;
+    ExecuteCastCard(action.player_id, slot, tick);
+}
+
+void BattleSimulation::ExecuteCastCard(const std::string& player_id, int slot, std::int64_t tick) {
+    auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return;
+    }
+    PlayerState& player = player_it->second;
+
+    // 校验 + 账本（扣能量/写冷却/移除出牌槽/补抽；拒绝与哨兵不改状态）。
+    const CastValidationResult cast = ApplyCast(player.hand, slot, tick);
+    if (cast.plays_no_card) {
+        // -1 哨兵（BattleInput.card_slot struct default）：不出牌、无事件、
+        // 无状态变更（M-1；card_hand.hpp 头注释）。
+        return;
+    }
+    if (!cast.accepted) {
+        CardCastEvent row;
+        row.event_type = "card_rejected";
+        row.tick = tick;
+        row.player_id = player_id;
+        row.slot = slot;
+        row.reason = cast.reason;
+        card_cast_events_.push_back(std::move(row));
+        return;
+    }
+    const CardDefinition& definition = *cast.definition;
+
+    // boss 伤害（通用激活路径语义，Go applyCardRequestLocked：activation.Damage
+    // 施加到 BossHP，且不重复于效果层）。
+    const std::int64_t damage = definition.damage > 0 ? definition.damage : 0;
+    if (IsBossMode(config_.mode_id) && damage > 0 && boss_current_hp_ > 0) {
+        if (RegisterBossDamage(player_id, static_cast<std::uint64_t>(tick), static_cast<std::uint64_t>(damage))) {
+            // lobby 已识别 boss_defeated 行并路由 mixed-pool draft（T9）；
+            // reason 携带 boss id（validateBattleEventRowLocked 约定）。
+            CardCastEvent row;
+            row.event_type = "boss_defeated";
+            row.tick = tick;
+            row.player_id = player_id;
+            row.reason = config_.boss_instance_id;
+            card_cast_events_.push_back(std::move(row));
+        }
+    }
+
+    CardCastEvent accepted;
+    accepted.event_type = "card_accepted";
+    accepted.tick = tick;
+    accepted.player_id = player_id;
+    accepted.card_id = definition.card_id;
+    accepted.event_value = definition.damage;
+    accepted.slot = slot;
+    card_cast_events_.push_back(std::move(accepted));
+
+    RunCardEffect(player, player_id, BuildCardActivation(definition, tick), tick);
+}
+
+std::vector<CardBulletSnapshot> BattleSimulation::BuildBulletSnapshots() const {
+    std::vector<CardBulletSnapshot> snapshots;
+    snapshots.reserve(bullets_.size());
+    for (const BulletState& bullet : bullets_) {
+        CardBulletSnapshot snapshot;
+        snapshot.bullet_id = bullet.bullet_id;
+        snapshot.pattern_id = bullet.pattern_id;
+        snapshot.x = static_cast<double>(bullet.x_milli) / 1000.0;
+        snapshot.y = static_cast<double>(bullet.y_milli) / 1000.0;
+        snapshot.vx = static_cast<double>(bullet.vx_milli) / 1000.0;
+        snapshot.vy = static_cast<double>(bullet.vy_milli) / 1000.0;
+        snapshot.radius = static_cast<double>(bullet.radius_milli) / 1000.0;
+        snapshot.color = bullet.color;
+        snapshots.push_back(std::move(snapshot));
+    }
+    return snapshots;
+}
+
+void BattleSimulation::RunCardEffect(
+    const PlayerState& caster,
+    const std::string& caster_id,
+    const CardActivation& activation,
+    std::int64_t tick
+) {
+    CardEffectResult effect;
+    if (activation.effect_kind == "opponent_pattern") {
+        std::vector<CardPlayerSnapshot> players;
+        players.reserve(players_.size());
+        for (const auto& item : players_) {
+            CardPlayerSnapshot snapshot;
+            snapshot.player_id = item.second.player_id;
+            snapshot.x = static_cast<double>(item.second.x_milli) / 1000.0;
+            snapshot.y = static_cast<double>(item.second.y_milli) / 1000.0;
+            players.push_back(std::move(snapshot));
+        }
+        effect = ApplyOpponentPattern(
+            players,
+            caster_id,
+            activation,
+            tick,
+            config_.match_id,
+            next_bullet_id_,
+            bullets_.size()
+        );
+    } else if (activation.effect_kind == "bullet_purge") {
+        // T7 H-2：选取种子 = 票据 server_seed（card_purge_seed_），
+        // 绝不用 DeriveMatchSeed（config_.match_seed）。
+        CardPlayerSnapshot caster_snapshot;
+        caster_snapshot.player_id = caster_id;
+        caster_snapshot.x = static_cast<double>(caster.x_milli) / 1000.0;
+        caster_snapshot.y = static_cast<double>(caster.y_milli) / 1000.0;
+        effect = ApplyBulletPurge(
+            BuildBulletSnapshots(),
+            caster_snapshot,
+            activation,
+            card_purge_seed_,
+            tick
+        );
+    } else if (activation.effect_kind == "invulnerable") {
+        effect = ApplyInvulnerable(activation, tick);
+    } else if (activation.effect_kind == "finisher") {
+        effect = ApplyFinisher(BuildBulletSnapshots(), tick);
+    } else {
+        // self/pattern/economy（其余 12 张）：账本已变更但无子弹效果
+        // （Go applyCardEffectLocked 的 switch 同样不处理，不发
+        // card_effect_applied）。
+        return;
+    }
+
+    ApplyBulletDeltas(effect.bullet_deltas);
+    if (activation.effect_kind == "invulnerable") {
+        auto target_it = players_.find(caster_id);
+        if (target_it != players_.end()) {
+            target_it->second.invulnerable_until = effect.invulnerable_until;
+        }
+    }
+
+    CardCastEvent row;
+    row.event_type = "card_effect_applied";
+    row.tick = tick;
+    row.player_id = caster_id;
+    row.card_id = activation.card_id;
+    row.event_value = effect.event_value;
+    row.target_user_id = effect.target_user_id;
+    card_cast_events_.push_back(std::move(row));
+}
+
+void BattleSimulation::ApplyBulletDeltas(const std::vector<CardBulletDelta>& deltas) {
+    for (const CardBulletDelta& delta : deltas) {
+        if (delta.op == "spawn") {
+            if (bullets_.size() >= config_.max_bullets) {
+                continue;  // 与 addBulletLocked 封顶一致（效果层已按场数预判）
+            }
+            BulletState bullet;
+            // 统一 id 方案：丢弃效果层的 Go 风格 id，用模拟既有 "b<N>" 编号
+            // （效果层收到的 next_bullet_seq = next_bullet_id_，同值同序）。
+            bullet.bullet_id = "b" + std::to_string(next_bullet_id_++);
+            bullet.x_milli = static_cast<std::int32_t>(std::llround(delta.x * 1000.0));
+            bullet.y_milli = static_cast<std::int32_t>(std::llround(delta.y * 1000.0));
+            bullet.vx_milli = static_cast<std::int32_t>(std::llround(delta.vx * 1000.0));
+            bullet.vy_milli = static_cast<std::int32_t>(std::llround(delta.vy * 1000.0));
+            const double radius_milli = std::llround(delta.radius * 1000.0);
+            bullet.radius_milli = radius_milli > 0.0
+                ? static_cast<std::uint32_t>(radius_milli)
+                : 0u;
+            bullet.pattern_id = delta.pattern_id;
+            bullet.color = delta.color;
+            bullets_.push_back(std::move(bullet));
+        } else if (delta.op == "despawn") {
+            const auto it = std::find_if(bullets_.begin(), bullets_.end(), [&](const BulletState& bullet) {
+                return bullet.bullet_id == delta.bullet_id;
+            });
+            if (it != bullets_.end()) {
+                bullets_.erase(it);
+            }
+        }
     }
 }
 
@@ -2186,6 +2466,9 @@ void BattleSimulation::ApplyModeActionsForTick(std::uint64_t tick) {
         }
         if (action.action_type == "ready") {
             ApplyReadyModeAction(action);
+        }
+        if (action.action_type == "cast_card") {
+            ApplyCastCardModeAction(action, static_cast<std::int64_t>(tick));
         }
         if (action.action_type == "transfer_card") {
             if (!ApplyTransferCardModeAction(action)) {

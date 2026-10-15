@@ -638,6 +638,16 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         }
         return finish();
     }
+    // T3 step4：开局手牌/能量随已验票据播种到 per-player HandState；
+    // 同场首张票据同时设定对局级大厅种子（bullet_purge 唯一种子来源，T7 H-2）。
+    // 返回 false 仅可能为种子冲突（大厅不变量违例：同场不同种子）——种子已由
+    // TicketVerifier 校验格式，此处保持首个值，手牌照常播种。
+    simulation_it->second.SeedPlayerHand(
+        session.player_id,
+        session.hand_card_ids,
+        session.initial_energy,
+        session.server_seed_decimal
+    );
 
     result.ok = true;
     result.reason = "ok";

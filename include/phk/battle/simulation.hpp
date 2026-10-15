@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "phk/battle/card_hand.hpp"
 #include "phk/battle/chain_log.hpp"
 #include "phk/battle/protocol.hpp"
 #include "phk/battle/result.hpp"
@@ -180,6 +181,24 @@ struct TransferableCardState {
     bool cooldown_ready = true;
 };
 
+// 出牌执行器收集的一行事件（T3 step4）。字段与大厅 BattleEventRow
+// （Gensoulkyo/runtime/core/battle_events.go:41-50）一一对应，Step 2 逐字段
+// 映射成回传 JSON。event_value 语义 = 受影响的子弹计数（spawned/removed/
+// cleared；card_accepted 时为卡伤害），不是费用。
+//
+// 故意不进 event_trace_/event_stream_hash_/event_count_：后三者参与
+// ReplaySummary 与 CanonicalStateHash，卡行进重放哈希会扰动既有确定性断言。
+struct CardCastEvent {
+    std::string event_type;   // card_accepted | card_effect_applied | card_rejected | boss_defeated
+    std::int64_t tick = 0;
+    std::string player_id;
+    std::string card_id;
+    std::int64_t event_value = 0;
+    std::string target_user_id;
+    int slot = -1;
+    std::string reason;
+};
+
 class BattleSimulation {
 public:
     explicit BattleSimulation(SimulationConfig config);
@@ -213,6 +232,25 @@ public:
     ) const;
     [[nodiscard]] ReplayFixture BuildReplayFixture(std::string owner_user_id = "") const;
 
+    // ---- T3 step4：出牌执行器（手牌播种 / 执行 / 事件收集） ----
+    // 大厅权威种子（票据 server_seed 十进制文本解析值）；仅 bullet_purge 选取
+    // 使用（T7 H-2），DeriveMatchSeed（config_.match_seed）不参与。
+    [[nodiscard]] std::int64_t LobbySeed() const;
+    // 由已验票据播种一名玩家的开局手牌/能量，并（首张票据）设定对局级大厅种子。
+    // 返回 false：玩家未知、种子文本非法、或与已设定的对局种子冲突（保持首个值）。
+    bool SeedPlayerHand(
+        const std::string& player_id,
+        const std::vector<std::string>& hand_card_ids,
+        double initial_energy,
+        const std::string& server_seed_decimal
+    );
+    [[nodiscard]] std::size_t HandSize(const std::string& player_id) const;
+    [[nodiscard]] double PlayerEnergy(const std::string& player_id) const;
+    [[nodiscard]] std::int64_t PlayerInvulnerableUntil(const std::string& player_id) const;
+    // 执行器收集的事件行（ oldest first；Step 2 消费/清空）。
+    [[nodiscard]] const std::vector<CardCastEvent>& CardCastEvents() const;
+    void ClearCardCastEvents();
+
 private:
     struct PlayerState {
         std::string player_id;
@@ -221,6 +259,11 @@ private:
         std::uint64_t last_seq = 0;
         bool connected = true;
         BattleInput last_input;
+        // T3 step4：局内手牌状态（由票据播种，跨 tick 保持）。
+        HandState hand;
+        // invulnerable 效果到期 tick（Go InvulnerableUntil 语义）。当前无消费者
+        // （本模拟无子弹-玩家接触判定），记录待接触判定接线后生效。
+        std::int64_t invulnerable_until = 0;
     };
 
     struct BulletState {
@@ -248,6 +291,22 @@ private:
     void ApplyModeActionsForTick(std::uint64_t tick);
     void ApplyReadyModeAction(const BattleModeAction& action);
     bool ApplyTransferCardModeAction(const BattleModeAction& action);
+    // T3 step4：出牌执行器内核（两通道共用）。slot == -1 为不出牌哨兵
+    // （无效果、无事件行、无状态变更）；拒绝记 card_rejected；通过则落账本、
+    // boss 伤害、效果与 card_accepted/card_effect_applied 事件行。
+    void ExecuteCastCard(const std::string& player_id, int slot, std::int64_t tick);
+    void ApplyCastCardModeAction(const BattleModeAction& action, std::int64_t tick);
+    void RunCardEffect(
+        const PlayerState& caster,
+        const std::string& caster_id,
+        const CardActivation& activation,
+        std::int64_t tick
+    );
+    void ApplyBulletDeltas(const std::vector<CardBulletDelta>& deltas);
+    [[nodiscard]] std::vector<CardBulletSnapshot> BuildBulletSnapshots() const;
+    // 通用 boss 伤害记账（ApplyBossDamageForInput 与出牌执行器共用）；
+    // 归零致死时写 boss_defeated trace 并 ++event_count_，返回是否致死。
+    bool RegisterBossDamage(const std::string& player_id, std::uint64_t tick, std::uint64_t damage);
     [[nodiscard]] std::string TransferCardAuditMaterial() const;
     void SpawnBulletsForTick();
     void AdvanceBullets();
@@ -297,6 +356,11 @@ private:
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::map<std::uint64_t, std::vector<BattleModeAction>> pending_mode_actions_by_tick_;
     std::vector<BulletState> bullets_;
+    // T3 step4：票据 server_seed（十进制文本）解析出的大厅权威种子；仅
+    // ApplyBulletPurge 使用（T7 H-2）。首张含种子的票据设定。
+    std::int64_t card_purge_seed_ = 0;
+    bool card_purge_seed_set_ = false;
+    std::vector<CardCastEvent> card_cast_events_;
     std::vector<std::string> input_trace_;
     std::vector<std::string> event_trace_;
     OperationChainLog operation_log_;

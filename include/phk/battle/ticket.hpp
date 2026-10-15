@@ -69,4 +69,10 @@ public:
 [[nodiscard]] bool LooksLikeRawBearerSession(std::string_view value);
 [[nodiscard]] std::string CanonicalTicketPayload(const BattleTicket& ticket);
 
+// 票据 server_seed 的十进制文本解析（Go strconv.FormatInt 输出形状：
+// 可选 '-' + 数字、无前导零、无空白；必须不窄化地装入 int64）。
+// 种子必须以十进制文本在线上传递（JS number 会在 >2^53 处分叉），
+// TicketVerifier 与 BattleSimulation::SeedPlayerHand 共用本规则。
+[[nodiscard]] bool ParseDecimalInt64Text(const std::string& text, std::int64_t& out);
+
 }  // namespace phk::battle

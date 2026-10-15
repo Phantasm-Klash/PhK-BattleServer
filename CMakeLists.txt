@@ -134,6 +134,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     target_link_libraries(phk_card_hand_tests PRIVATE phk_battle_core)
     add_test(NAME phk_card_hand_tests COMMAND phk_card_hand_tests)
 
+    add_executable(phk_card_cast_execution_tests
+        tests/card_cast_execution_tests.cpp
+    )
+    target_link_libraries(phk_card_cast_execution_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_card_cast_execution_tests COMMAND phk_card_cast_execution_tests)
+
     add_executable(phk_chain_log_tests
         tests/chain_log_tests.cpp
     )
