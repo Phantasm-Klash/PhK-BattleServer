@@ -6,6 +6,9 @@
 #include "phk/battle/card_events_report.hpp"
 
 #include <string>
+#include <utility>
+
+#include "phk/battle/lobby_rng.hpp"  // HmacSha256Hex
 
 namespace phk::battle {
 namespace {
@@ -63,6 +66,18 @@ std::vector<std::pair<std::string, std::string>> BattleEventsCallbackHeaders() {
         {kBattleEventsServiceOriginHeader, kBattleEventsServiceOriginValue},
         {kBattleEventsCallbackHeader, kBattleEventsCallbackValue},
     };
+}
+
+std::vector<std::pair<std::string, std::string>> BattleCallbackHeaders(
+    const std::string& body,
+    const std::string& callback_secret
+) {
+    std::vector<std::pair<std::string, std::string>> headers = BattleEventsCallbackHeaders();
+    if (callback_secret.empty()) {
+        return headers;
+    }
+    headers.emplace_back(kBattleCallbackSignatureHeader, HmacSha256Hex(callback_secret, body));
+    return headers;
 }
 
 std::string BuildBattleEventsJson(

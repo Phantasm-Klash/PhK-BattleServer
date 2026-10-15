@@ -38,6 +38,12 @@ namespace phk::battle {
     std::int64_t index
 );
 
+// RFC 2104 HMAC-SHA256，输出小写十六进制（64 字符），与 Go
+// hex(HMAC-SHA256(key, message)) 逐字节同形。key 长于 64B 时先
+// SHA-256(key)（RFC 4231 语义）。T6 服务回调签名即建于此：
+// X-PhK-Battle-Signature = HmacSha256Hex(每对战服回调秘密, 原始 body)。
+[[nodiscard]] std::string HmacSha256Hex(const std::string& key, const std::string& message);
+
 }  // namespace phk::battle
 
 #endif  // PHK_BATTLE_LOBBY_RNG_HPP

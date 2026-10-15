@@ -26,6 +26,7 @@ void Check(bool condition, const std::string& label) {
     }
 }
 
+using phk::battle::HmacSha256Hex;
 using phk::battle::LobbyDeterministicUnit;
 using phk::battle::Sha256Bytes;
 using phk::battle::ShortHashHex;
@@ -111,10 +112,37 @@ void TestDeterminism() {
 
 }  // namespace
 
+// HMAC-SHA256 对 RFC 4231 已知答案向量（金标准 = Python hmac 服务器双跑）。
+// case1/2/3 覆盖短 key / ASCII key / 超块长 key（>64B 先哈希）三条路径。
+void TestHmacSha256Rfc4231Vectors() {
+    const std::string case1_key(20, '\x0b');
+    Check(HmacSha256Hex(case1_key, "Hi There") ==
+              "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+          "hmac rfc4231 case1");
+    Check(HmacSha256Hex("Jefe", "what do ya want for nothing?") ==
+              "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+          "hmac rfc4231 case2");
+    const std::string case3_key(131, '\xaa');
+    Check(HmacSha256Hex(case3_key, "Test Using Larger Than Block-Size Key - Hash Key First") ==
+              "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
+          "hmac rfc4231 case3 (key longer than block)");
+    // 恰好 64B 的 key（边界：不触发 key 哈希路径）。
+    const std::string block_key(64, 'k');
+    Check(HmacSha256Hex(block_key, "block-size key").size() == 64, "hmac output is 64 hex chars");
+    // 与 Go hex(HMAC-SHA256(...)) 同形：回调签名 KAT（见
+    // tests/card_cast_execution_tests.cpp 的 BattleCallbackHeaders 断言）。
+    Check(HmacSha256Hex(
+              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              "{\"battle_server_id\":\"battle-local-1\",\"match_id\":\"match-1\",\"events\":[]}") ==
+              "5d20a470869511b7e0be3ed2c81fbeefc9d6ac06078c6fb0b608a798c49cc206",
+          "hmac battle events callback signature KAT");
+}
+
 int main() {
     TestSha256NistVectors();
     TestShortHashParity();
     TestDeterminism();
+    TestHmacSha256Rfc4231Vectors();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " lobby_rng test(s) failed\n";

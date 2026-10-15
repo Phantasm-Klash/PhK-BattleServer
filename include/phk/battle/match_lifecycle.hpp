@@ -145,6 +145,10 @@ struct MatchLifecycleConfig {
     std::vector<std::string> player_ids;
     std::string lobby_endpoint;  // "host:port"; empty disables submission
     std::string result_path = "/internal/battle/result";
+    // T6：结果回传签名密钥（同 BattleServerConfig::callback_secret）。结果
+    // body 以它为密钥签 X-PhK-Battle-Signature（大厅 HandleBattleResult 对
+    // 精确原始 body 校验）；为空时大厅 403 battle_callback_signature_invalid。
+    std::string callback_secret;
     std::uint64_t boss_max_hp = kBossRaceDefaultBossHp;
     std::uint32_t tick_rate_hz = kBossRaceTickRateHz;
     std::uint64_t max_ticks = 0;  // 0 = no cap (lobby kills the process)

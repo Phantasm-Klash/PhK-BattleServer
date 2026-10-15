@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "phk/battle/card_events_report.hpp"
+#include "phk/battle/lobby_rng.hpp"  // HmacSha256Hex (T6 签名)
 #include "phk/battle/server.hpp"
 #include "phk/battle/simulation.hpp"
 
@@ -722,6 +723,44 @@ void TestBattleEventsPayloadShape() {
     Check(phk::battle::kMaxBattleEventsPerSubmit == 64, "per-submit cap mirrors lobby (64)");
 }
 
+// T6：BattleCallbackHeaders = 公开两头 + 对精确 body 的 HMAC 签名。
+// 签名为离线（Python hmac）预算的 KAT 值，跨 Go/C++ 逐字节对齐。
+void TestBattleCallbackHeadersSigned() {
+    using phk::battle::BattleCallbackHeaders;
+    using phk::battle::HmacSha256Hex;
+
+    const std::string secret =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const std::string body =
+        "{\"battle_server_id\":\"battle-local-1\",\"match_id\":\"match-1\",\"events\":[]}";
+
+    const auto headers = BattleCallbackHeaders(body, secret);
+    Check(headers.size() == 3, "signed callback headers carry three entries");
+    Check(headers[0].first == "X-PhK-Service-Origin" && headers[0].second == "battle_server",
+          "public pre-filter origin header unchanged");
+    Check(headers[1].first == "X-PhK-Battle-Callback" && headers[1].second == "true",
+          "public pre-filter callback header unchanged");
+    Check(headers[2].first == "X-PhK-Battle-Signature", "signature header name");
+    Check(headers[2].second ==
+              "5d20a470869511b7e0be3ed2c81fbeefc9d6ac06078c6fb0b608a798c49cc206",
+          "signature KAT (Python hmac cross-check)");
+    Check(headers[2].second == HmacSha256Hex(secret, body),
+          "signature equals HMAC over the exact body");
+
+    // 秘密为空：只发公开两头（大厅会 403，错配立即可见，不静默回退）。
+    const auto unsigned_headers = BattleCallbackHeaders(body, "");
+    Check(unsigned_headers.size() == 2, "empty secret yields only the public pair");
+
+    // 换一个字节的 body，签名必须变（大厅侧篡改即拒的依据）。
+    const std::string tampered = body;
+    std::string mutated;
+    for (char ch : tampered) {
+        mutated.push_back(ch == 'a' ? 'b' : ch);
+    }
+    Check(HmacSha256Hex(secret, mutated) != headers[2].second,
+          "tampered body changes the signature");
+}
+
 // 端到端：票据播种 → 出牌 → TickMatch → SubmitCardEvents →
 // 捕获请求断言（路径 / service-callback 头 / payload）。
 void TestSubmitCardEventsWire() {
@@ -732,6 +771,9 @@ void TestSubmitCardEventsWire() {
     config.now_ms = 1782489605000;
     config.server_id = "battle-local-1";
     config.lobby_endpoint = "127.0.0.1:" + std::to_string(http.port());
+    // T6：注册响应下发的回调秘密；断言见下（签名覆盖线上精确 body）。
+    config.callback_secret =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     BattleServer server(config);
 
     const auto registered = server.RegisterTicket(
@@ -752,6 +794,11 @@ void TestSubmitCardEventsWire() {
     Check(http.request_line() == "POST /v1/battle/events HTTP/1.1", "events route");
     Check(http.header("X-PhK-Service-Origin") == "battle_server", "service origin header on wire");
     Check(http.header("X-PhK-Battle-Callback") == "true", "battle callback header on wire");
+    Check(
+        http.header("X-PhK-Battle-Signature") ==
+            phk::battle::HmacSha256Hex(config.callback_secret, http.body()),
+        "signature covers the exact posted body on the wire"
+    );
     Check(http.header("Content-Type") == "application/json", "content type json");
     Check(
         http.body().find("\"battle_server_id\":\"battle-local-1\"") != std::string::npos,
@@ -866,6 +913,7 @@ int main() {
     TestRejectionPaths();
     TestBossDamageAndDefeatRow();
     TestBattleEventsPayloadShape();
+    TestBattleCallbackHeadersSigned();
     TestSubmitCardEventsWire();
     TestSubmitCardEventsFailureKeepsRows();
     TestTakeRestoreCardCastEvents();

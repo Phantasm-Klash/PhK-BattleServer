@@ -68,6 +68,7 @@ void PrintUsage() {
         << "  --ruleset <id>        ruleset version (default mvp-boss-race-s0)\n"
         << "  --boss-hp <N>         boss max hp override\n"
         << "  --max-ticks <N>       safety tick cap (0 = unlimited)\n"
+        << "  --callback-secret <hex>  battle callback HMAC secret (registration response)\n"
         << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
         << "  --battle-server-id <id>  pin tickets to this battle server id\n"
         << "  --ticket-key-id <id>  pin tickets to this lobby signing key id\n"
@@ -113,6 +114,10 @@ bool ParseArgs(int argc, char** argv, phk::battle::MatchLifecycleConfig* config)
         } else if (arg == "--ticket-key-id") {
             if (!next(&value)) return false;
             config->ticket_key_id = value;
+        } else if (arg == "--callback-secret") {
+            if (!next(&value)) return false;
+            // T6：结果回传 HMAC 密钥（注册响应的 callback_secret）。
+            config->callback_secret = value;
         } else if (arg == "--require-ticket") {
             if (!next(&value)) return false;
             if (!ParseRequireTicket(value, &config->require_ticket)) return false;

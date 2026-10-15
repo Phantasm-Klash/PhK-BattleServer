@@ -1,3 +1,4 @@
+#include "phk/battle/card_events_report.hpp"  // BattleCallbackHeaders (T6 签名)
 #include "phk/battle/match_lifecycle.hpp"
 
 #include <netdb.h>
@@ -843,7 +844,15 @@ void MatchServer::SubmitResultIfNeeded() {
         std::string host;
         std::uint16_t port = 0;
         if (ParseHostPort(config_.lobby_endpoint, &host, &port)) {
-            last_submission_ = HttpPostJson(host, port, config_.result_path, json);
+            // T6：公开两头 + 对精确 body 的 HMAC 签名（callback_secret 为空时
+            // 只发公开两头，大厅 403，错配立即可见）。
+            last_submission_ = HttpPostJson(
+                host,
+                port,
+                config_.result_path,
+                json,
+                3000,
+                BattleCallbackHeaders(json, config_.callback_secret));
         } else {
             last_submission_.ok = false;
             last_submission_.error = "bad_lobby_endpoint";

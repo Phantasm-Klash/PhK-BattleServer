@@ -36,7 +36,22 @@ inline constexpr const char* kBattleEventsCallbackValue = "true";
 // 默认回传路径（handler.go:266 路由 POST /v1/battle/events）。
 inline constexpr const char* kBattleEventsPath = "/v1/battle/events";
 
+// T6 服务回调签名头：hex(HMAC-SHA256(callback_secret, 原始 body))。
+// 大厅侧 verifyBattleCallbackSignature（httpapi/handler.go）对精确原始
+// body 恒定时间校验；callback_secret 由注册响应下发（见 server.hpp /
+// match_lifecycle.hpp 的 callback_secret 字段注释）。
+inline constexpr const char* kBattleCallbackSignatureHeader = "X-PhK-Battle-Signature";
+
 [[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleEventsCallbackHeaders();
+
+// 通用 service-callback 头：公开两头（预过滤，语义不变）+ 对 body 的
+// HMAC 签名。events 与 result 两条回传路径共用；callback_secret 为空时
+// 只发公开两头——大厅会以 403 battle_callback_signature_invalid 拒绝，
+// 部署错配立即可见（不会静默回退到旧的无签名行为）。
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleCallbackHeaders(
+    const std::string& body,
+    const std::string& callback_secret
+);
 
 // BattleEventsSubmitRequest 的确定性 JSON（字段名与 Go struct tag 一致）：
 //   battle_server_id / match_id / events[]

@@ -3,6 +3,8 @@
 //                        但输入为 UTF-8 原始字节，与 Go crypto/sha256 语义一致）
 //   - ShortHashHex     : simulation.go shortHash
 //   - LobbyDeterministicUnit : simulation.go deterministicUnit
+//   - HmacSha256Hex    : RFC 2104/4231 HMAC-SHA256（T6 服务回调签名，
+//                        与 Go crypto/hmac 输出逐字节同形）
 //
 // 版权：东方同人逆向成果，仅用于自研玩法。
 
@@ -157,6 +159,39 @@ double LobbyDeterministicUnit(
         value = value * 16u + static_cast<std::uint64_t>(HexValue(ch));
     }
     return static_cast<double>(value % 10000u) / 10000.0;
+}
+
+std::string HmacSha256Hex(const std::string& key, const std::string& message) {
+    // RFC 2104：块长 64B；key 超长先 SHA-256(key)，再零填充到块长；
+    // HMAC = SHA256(opad || SHA256(ipad || message))，hex 小写输出。
+    constexpr std::size_t kBlockSize = 64;
+    std::string normalized_key(key);
+    if (normalized_key.size() > kBlockSize) {
+        const std::array<std::uint8_t, 32> digested = Sha256Bytes(normalized_key);
+        normalized_key.assign(reinterpret_cast<const char*>(digested.data()), digested.size());
+    }
+    normalized_key.resize(kBlockSize, '\0');
+
+    std::string inner(kBlockSize, '\0');
+    std::string outer(kBlockSize, '\0');
+    for (std::size_t i = 0; i < kBlockSize; ++i) {
+        const auto key_byte = static_cast<std::uint8_t>(normalized_key[i]);
+        inner[i] = static_cast<char>(key_byte ^ 0x36u);
+        outer[i] = static_cast<char>(key_byte ^ 0x5cu);
+    }
+    inner.append(message);
+    const std::array<std::uint8_t, 32> inner_digest = Sha256Bytes(inner);
+    outer.append(reinterpret_cast<const char*>(inner_digest.data()), inner_digest.size());
+    const std::array<std::uint8_t, 32> mac = Sha256Bytes(outer);
+
+    static constexpr char kHexDigits[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(64);
+    for (std::uint8_t byte : mac) {
+        out.push_back(kHexDigits[(byte >> 4) & 0x0fu]);
+        out.push_back(kHexDigits[byte & 0x0fu]);
+    }
+    return out;
 }
 
 }  // namespace phk::battle

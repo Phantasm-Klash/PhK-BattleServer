@@ -1436,7 +1436,9 @@ HttpPostResult BattleServer::SubmitCardEvents(const std::string& match_id) {
         config_.events_path,
         json,
         3000,
-        BattleEventsCallbackHeaders()
+        // T6：公开两头（预过滤）+ 对精确 body 的 HMAC 签名；callback_secret
+        // 为空时只发公开两头，大厅 403（错配立即可见）。
+        BattleCallbackHeaders(json, config_.callback_secret)
     );
     // HTTP 失败（连接/超时/非 2xx）：行放回队首，下次重发（不丢事件）。
     if (!result.ok || result.status_code < 200 || result.status_code >= 300) {

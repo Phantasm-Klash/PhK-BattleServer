@@ -26,6 +26,11 @@ struct BattleServerConfig {
     // card_events_report.hpp 的 kBattleEventsPath。
     std::string lobby_endpoint;
     std::string events_path = "/v1/battle/events";
+    // T6：每对战服回调秘密（注册响应 BattleServerStatus.callback_secret，
+    // 即 hex(HMAC-SHA256(lobby 主秘密, server_id))）。每个回传 body 都以
+    // 它为密钥签 X-PhK-Battle-Signature；为空时大厅以 403
+    // battle_callback_signature_invalid 拒绝全部回传（错配立即可见）。
+    std::string callback_secret;
 };
 
 struct BossMatchConfig {
