@@ -1,5 +1,7 @@
 #include "phk/battle/server.hpp"
 
+#include "phk/battle/card_events_report.hpp"  // BuildBattleEventsJson / callback 头
+
 #include <algorithm>
 #include <charconv>
 #include <cctype>
@@ -1395,6 +1397,60 @@ SubmitBattleResultResult BattleServer::SubmitBattleResult(const SignedBattleResu
     result.reason = "ok";
     result.settlement_key = "battle-result:" + signed_result.result.match_id;
     return result;
+}
+
+HttpPostResult BattleServer::SubmitCardEvents(const std::string& match_id) {
+    HttpPostResult result;
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        result.error = "match_unknown";
+        return result;
+    }
+    BattleSimulation& simulation = simulation_it->second;
+    // 每次最多 kMaxBattleEventsPerSubmit 行（lobby maxBattleEventsPerSubmit）；
+    // 余下的留在收集器里，下次调用继续发。
+    std::vector<CardCastEvent> rows = simulation.TakeCardCastEvents(kMaxBattleEventsPerSubmit);
+    if (rows.empty()) {
+        // 无行可发：lobby 拒空 events（battle_events.go "events are required"），
+        // 直接 no-op，不发起 HTTP。
+        result.ok = true;
+        return result;
+    }
+    if (config_.lobby_endpoint.empty()) {
+        // 未配置回传端点：no-op 并把行放回（不丢事件）。
+        simulation.RestoreCardCastEvents(rows);
+        result.error = "no_lobby_endpoint";
+        return result;
+    }
+    std::string host;
+    std::uint16_t port = 0;
+    if (!ParseHostPort(config_.lobby_endpoint, &host, &port)) {
+        simulation.RestoreCardCastEvents(rows);
+        result.error = "bad_lobby_endpoint";
+        return result;
+    }
+    const std::string json = BuildBattleEventsJson(config_.server_id, match_id, rows);
+    result = HttpPostJson(
+        host,
+        port,
+        config_.events_path,
+        json,
+        3000,
+        BattleEventsCallbackHeaders()
+    );
+    // HTTP 失败（连接/超时/非 2xx）：行放回队首，下次重发（不丢事件）。
+    if (!result.ok || result.status_code < 200 || result.status_code >= 300) {
+        simulation.RestoreCardCastEvents(rows);
+    }
+    return result;
+}
+
+std::size_t BattleServer::PendingCardEventCount(const std::string& match_id) const {
+    const auto simulation_it = simulations_by_match_.find(match_id);
+    if (simulation_it == simulations_by_match_.end()) {
+        return 0;
+    }
+    return simulation_it->second.CardCastEvents().size();
 }
 
 CancelMatchResult BattleServer::CancelMatch(const std::string& match_id) {

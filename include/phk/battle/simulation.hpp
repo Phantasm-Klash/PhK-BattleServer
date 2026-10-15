@@ -199,6 +199,11 @@ struct CardCastEvent {
     std::string reason;
 };
 
+// 事件行收集器容量上限（有界防 OOM；超限丢最旧）。lobby 每次提交上限 64 行
+// （battle_events.go:23 maxBattleEventsPerSubmit），宿主应按 tick 周期调用
+// TakeCardCastEvents 排空；本上限只防宿主完全不上报时的无界增长。
+inline constexpr std::size_t kCardCastEventRowLimit = 1024;
+
 class BattleSimulation {
 public:
     explicit BattleSimulation(SimulationConfig config);
@@ -250,6 +255,10 @@ public:
     // 执行器收集的事件行（ oldest first；Step 2 消费/清空）。
     [[nodiscard]] const std::vector<CardCastEvent>& CardCastEvents() const;
     void ClearCardCastEvents();
+    // 取走并移除前 limit 行（Step 2 回传消费；limit=0 表示不限）。
+    // 失败重发时用 RestoreCardCastEvents 放回队首。
+    [[nodiscard]] std::vector<CardCastEvent> TakeCardCastEvents(std::size_t limit = 0);
+    void RestoreCardCastEvents(const std::vector<CardCastEvent>& rows);
 
 private:
     struct PlayerState {
@@ -296,6 +305,8 @@ private:
     // boss 伤害、效果与 card_accepted/card_effect_applied 事件行。
     void ExecuteCastCard(const std::string& player_id, int slot, std::int64_t tick);
     void ApplyCastCardModeAction(const BattleModeAction& action, std::int64_t tick);
+    // 事件行入队（容量上限内丢最旧）。
+    void PushCardCastEvent(CardCastEvent row);
     void RunCardEffect(
         const PlayerState& caster,
         const std::string& caster_id,

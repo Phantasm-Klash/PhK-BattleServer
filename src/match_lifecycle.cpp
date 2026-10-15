@@ -491,7 +491,8 @@ HttpPostResult HttpPostJson(
     std::uint16_t port,
     const std::string& path,
     const std::string& json_body,
-    int timeout_ms
+    int timeout_ms,
+    const std::vector<std::pair<std::string, std::string>>& extra_headers
 ) {
     HttpPostResult result;
 
@@ -532,6 +533,9 @@ HttpPostResult HttpPostJson(
     request += "Host: " + host + ":" + port_text + "\r\n";
     request += "Content-Type: application/json\r\n";
     request += "Content-Length: " + std::to_string(json_body.size()) + "\r\n";
+    for (const auto& header : extra_headers) {
+        request += header.first + ": " + header.second + "\r\n";
+    }
     request += "Connection: close\r\n";
     request += "\r\n";
     request += json_body;

@@ -47,6 +47,7 @@ message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 
 add_library(phk_battle_core
     src/card_effects.cpp
+    src/card_events_report.cpp
     src/card_hand.cpp
     src/chain_log.cpp
     src/boss_race.cpp

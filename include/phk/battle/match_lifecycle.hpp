@@ -86,12 +86,16 @@ struct HttpPostResult {
     std::uint16_t* port
 );
 
+// 既有 submit-result 路径使用不带额外头的默认形态（向后兼容）；
+// service-callback 路由（如 /v1/battle/events）经 extra_headers 传鉴权头
+// （见 card_events_report.hpp 的 BattleEventsCallbackHeaders）。
 [[nodiscard]] HttpPostResult HttpPostJson(
     const std::string& host,
     std::uint16_t port,
     const std::string& path,
     const std::string& json_body,
-    int timeout_ms = 3000
+    int timeout_ms = 3000,
+    const std::vector<std::pair<std::string, std::string>>& extra_headers = {}
 );
 
 // ---------------------------------------------------------------------------

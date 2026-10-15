@@ -2258,6 +2258,44 @@ void BattleSimulation::ClearCardCastEvents() {
     card_cast_events_.clear();
 }
 
+void BattleSimulation::PushCardCastEvent(CardCastEvent row) {
+    if (card_cast_events_.size() >= kCardCastEventRowLimit) {
+        // 有界：超限丢最旧一行（宿主长期不上报的防御，正常排空不会触发）。
+        card_cast_events_.erase(card_cast_events_.begin());
+    }
+    card_cast_events_.push_back(std::move(row));
+}
+
+std::vector<CardCastEvent> BattleSimulation::TakeCardCastEvents(std::size_t limit) {
+    const std::size_t count = limit == 0 || limit >= card_cast_events_.size()
+        ? card_cast_events_.size()
+        : limit;
+    std::vector<CardCastEvent> taken(
+        card_cast_events_.begin(),
+        card_cast_events_.begin() + static_cast<std::ptrdiff_t>(count)
+    );
+    card_cast_events_.erase(
+        card_cast_events_.begin(),
+        card_cast_events_.begin() + static_cast<std::ptrdiff_t>(count)
+    );
+    return taken;
+}
+
+void BattleSimulation::RestoreCardCastEvents(const std::vector<CardCastEvent>& rows) {
+    if (rows.empty()) {
+        return;
+    }
+    card_cast_events_.insert(card_cast_events_.begin(), rows.begin(), rows.end());
+    // 回传失败的行放回队首；容量上限内保留最新，超限丢最旧（有界防 OOM）。
+    if (card_cast_events_.size() > kCardCastEventRowLimit) {
+        card_cast_events_.erase(
+            card_cast_events_.begin(),
+            card_cast_events_.begin() + static_cast<std::ptrdiff_t>(
+                card_cast_events_.size() - kCardCastEventRowLimit)
+        );
+    }
+}
+
 void BattleSimulation::ApplyCastCardModeAction(const BattleModeAction& action, std::int64_t tick) {
     // 传输层已校验 cast_card 必带 card_slot 且 ∈ 0..7（simulation.cpp:899-915）；
     // 缺失时按哨兵 -1（不出牌、无副作用）防御处理。
@@ -2287,7 +2325,7 @@ void BattleSimulation::ExecuteCastCard(const std::string& player_id, int slot, s
         row.player_id = player_id;
         row.slot = slot;
         row.reason = cast.reason;
-        card_cast_events_.push_back(std::move(row));
+        PushCardCastEvent(std::move(row));
         return;
     }
     const CardDefinition& definition = *cast.definition;
@@ -2304,7 +2342,7 @@ void BattleSimulation::ExecuteCastCard(const std::string& player_id, int slot, s
             row.tick = tick;
             row.player_id = player_id;
             row.reason = config_.boss_instance_id;
-            card_cast_events_.push_back(std::move(row));
+            PushCardCastEvent(std::move(row));
         }
     }
 
@@ -2315,7 +2353,7 @@ void BattleSimulation::ExecuteCastCard(const std::string& player_id, int slot, s
     accepted.card_id = definition.card_id;
     accepted.event_value = definition.damage;
     accepted.slot = slot;
-    card_cast_events_.push_back(std::move(accepted));
+    PushCardCastEvent(std::move(accepted));
 
     RunCardEffect(player, player_id, BuildCardActivation(definition, tick), tick);
 }
@@ -2404,7 +2442,7 @@ void BattleSimulation::RunCardEffect(
     row.card_id = activation.card_id;
     row.event_value = effect.event_value;
     row.target_user_id = effect.target_user_id;
-    card_cast_events_.push_back(std::move(row));
+    PushCardCastEvent(std::move(row));
 }
 
 void BattleSimulation::ApplyBulletDeltas(const std::vector<CardBulletDelta>& deltas) {

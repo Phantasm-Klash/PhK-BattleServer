@@ -13,11 +13,25 @@
 //
 // 版权：东方同人逆向成果，仅用于自研玩法。
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "phk/battle/card_events_report.hpp"
+#include "phk/battle/server.hpp"
 #include "phk/battle/simulation.hpp"
 
 namespace {
@@ -33,6 +47,7 @@ void Check(bool condition, const std::string& label) {
 
 using phk::battle::BattleInput;
 using phk::battle::BattleModeAction;
+using phk::battle::BattleServer;
 using phk::battle::BattleSimulation;
 using phk::battle::SimulationConfig;
 
@@ -442,6 +457,404 @@ void TestBossDamageAndDefeatRow() {
     Check(trace_has_defeat, "boss_defeated also in replay event trace");
 }
 
+
+// ---- Step 2：payload 构造与回传（H-1） ----
+
+// 捕获一个 HTTP 请求（request line / headers / body / 计数），响应 200。
+class CapturingHttpServer {
+public:
+    CapturingHttpServer() {
+        listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listen_fd_ < 0) return;
+        int reuse = 1;
+        ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) return;
+        socklen_t len = sizeof(addr);
+        ::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&addr), &len);
+        port_ = ntohs(addr.sin_port);
+        ::listen(listen_fd_, 4);
+        thread_ = std::thread([this] { Serve(); });
+    }
+
+    ~CapturingHttpServer() { Stop(); }
+
+    std::uint16_t port() const { return port_; }
+
+    std::string request_line() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return request_line_;
+    }
+
+    std::string header(const std::string& name) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& entry : headers_) {
+            if (entry.first.size() == name.size() &&
+                std::equal(
+                    entry.first.begin(), entry.first.end(), name.begin(),
+                    [](char a, char b) {
+                        return std::tolower(static_cast<unsigned char>(a)) ==
+                            std::tolower(static_cast<unsigned char>(b));
+                    })) {
+                return entry.second;
+            }
+        }
+        return "";
+    }
+
+    std::string body() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return body_;
+    }
+
+    std::size_t request_count() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return request_count_;
+    }
+
+    void Stop() {
+        if (listen_fd_ >= 0) {
+            ::shutdown(listen_fd_, SHUT_RDWR);
+            ::close(listen_fd_);
+            listen_fd_ = -1;
+        }
+        if (thread_.joinable()) thread_.join();
+    }
+
+private:
+    void Serve() {
+        for (;;) {
+            const int client = ::accept(listen_fd_, nullptr, nullptr);
+            if (client < 0) return;
+
+            std::string request;
+            char buffer[4096];
+            std::size_t header_end = std::string::npos;
+            std::size_t content_length = 0;
+            for (;;) {
+                const ssize_t n = ::recv(client, buffer, sizeof(buffer), 0);
+                if (n <= 0) break;
+                request.append(buffer, static_cast<std::size_t>(n));
+                if (header_end == std::string::npos) {
+                    header_end = request.find("\r\n\r\n");
+                    if (header_end != std::string::npos) {
+                        const std::string headers = request.substr(0, header_end);
+                        const std::string key = "Content-Length:";
+                        const auto pos = headers.find(key);
+                        if (pos != std::string::npos) {
+                            content_length = static_cast<std::size_t>(
+                                std::strtoul(headers.c_str() + pos + key.size(), nullptr, 10));
+                        }
+                    }
+                }
+                if (header_end != std::string::npos &&
+                    request.size() - (header_end + 4) >= content_length) {
+                    break;
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++request_count_;
+                const auto line_end = request.find("\r\n");
+                request_line_ = request.substr(0, line_end);
+                if (header_end != std::string::npos) {
+                    const std::string header_block = request.substr(0, header_end);
+                    std::size_t cursor = header_block.find("\r\n");
+                    while (cursor != std::string::npos) {
+                        const std::size_t next = header_block.find("\r\n", cursor + 2);
+                        const std::string line = header_block.substr(
+                            cursor + 2,
+                            (next == std::string::npos ? header_block.size() : next) - cursor - 2
+                        );
+                        const auto colon = line.find(':');
+                        if (colon != std::string::npos) {
+                            const std::string key = line.substr(0, colon);
+                            std::string value = line.substr(colon + 1);
+                            const auto first = value.find_first_not_of(" \t");
+                            const auto last = value.find_last_not_of(" \t");
+                            value = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
+                            headers_.emplace_back(key, value);
+                        }
+                        cursor = next;
+                    }
+                    body_ = request.substr(header_end + 4);
+                }
+            }
+
+            const char* response =
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+            ::send(client, response, std::strlen(response), 0);
+            ::close(client);
+        }
+    }
+
+    int listen_fd_ = -1;
+    std::uint16_t port_ = 0;
+    std::thread thread_;
+    std::mutex mutex_;
+    std::string request_line_;
+    std::vector<std::pair<std::string, std::string>> headers_;
+    std::string body_;
+    std::size_t request_count_ = 0;
+};
+
+// 已验票据（dev 签名形状，mode=certification 非 boss），手牌/能量按用例定制。
+phk::battle::SignedBattleTicket MakeSignedTicket(
+    const std::vector<std::string>& hand_card_ids,
+    double initial_energy
+) {
+    phk::battle::SignedBattleTicket signed_ticket;
+    signed_ticket.ticket.ticket_id = "ticket-cast-001";
+    signed_ticket.ticket.match_id = kMatchId;
+    signed_ticket.ticket.user_id = "user-alice";
+    signed_ticket.ticket.player_id = "p1";
+    signed_ticket.ticket.mode_id = "certification";
+    signed_ticket.ticket.battle_server_id = "battle-local-1";
+    signed_ticket.ticket.endpoint = "127.0.0.1:7901";
+    signed_ticket.ticket.deck_snapshot_hash = "sha256:deck";
+    signed_ticket.ticket.ruleset_version = "ruleset-local-s0";
+    signed_ticket.ticket.ticket_nonce_hex = "00112233445566778899aabb";
+    signed_ticket.ticket.issued_at_ms = 1782489600000;
+    signed_ticket.ticket.expires_at_ms = 1782489660000;
+    signed_ticket.ticket.business_session_id = "session-ref:dev-alice";
+    signed_ticket.ticket.hand_card_ids = hand_card_ids;
+    signed_ticket.ticket.initial_energy = initial_energy;
+    signed_ticket.ticket.server_seed_decimal = "8035909259742954606";
+    signed_ticket.key_id = "dev-ed25519-local";
+    signed_ticket.public_key_hex = std::string(64, 'a');
+    signed_ticket.signature_hex = std::string(128, 'b');
+    signed_ticket.server_authoritative = true;
+    return signed_ticket;
+}
+
+// payload 形状逐项对大厅 BattleEventRow / BattleEventsSubmitRequest
+// （battle_events.go:41-71）的字段名、omitempty 语义断言。
+void TestBattleEventsPayloadShape() {
+    using phk::battle::BuildBattleEventsJson;
+    using phk::battle::CardCastEvent;
+
+    CardCastEvent rejected;
+    rejected.event_type = "card_rejected";
+    rejected.tick = 12;
+    rejected.player_id = "p1";
+    rejected.slot = 2;
+    rejected.reason = "cast_card_on_cooldown";
+
+    CardCastEvent accepted;
+    accepted.event_type = "card_accepted";
+    accepted.tick = 13;
+    accepted.player_id = "p1";
+    accepted.card_id = "mirror_lance";
+    accepted.event_value = 26;
+    accepted.slot = 0;  // Go omitempty：0 省略
+
+    CardCastEvent effect;
+    effect.event_type = "card_effect_applied";
+    effect.tick = 13;
+    effect.player_id = "p1";
+    effect.card_id = "mirror_lance";
+    effect.event_value = 7;
+    effect.target_user_id = "p2";
+
+    CardCastEvent boss;
+    boss.event_type = "boss_defeated";
+    boss.tick = 14;
+    boss.player_id = "p1";
+    boss.reason = "world-boss:match-cast-001";
+
+    const std::string json = BuildBattleEventsJson(
+        "battle-local-1", kMatchId, {rejected, accepted, effect, boss});
+    // 信封（BattleEventsSubmitRequest struct tag）
+    Check(json.find("\"battle_server_id\":\"battle-local-1\"") != std::string::npos, "payload battle_server_id");
+    Check(json.find("\"match_id\":\"match-cast-001\"") != std::string::npos, "payload match_id");
+    Check(json.find("\"events\":[") != std::string::npos, "payload events array");
+    // card_rejected：type/tick/user_id/card_id/value 恒发，slot=2，reason
+    Check(
+        json.find("\"type\":\"card_rejected\",\"tick\":12,\"user_id\":\"p1\","
+                  "\"card_id\":\"\",\"value\":0,\"slot\":2,"
+                  "\"reason\":\"cast_card_on_cooldown\"") != std::string::npos,
+        "card_rejected row shape (BattleEventRow field names)"
+    );
+    // card_accepted：slot=0 省略（Go omitempty）
+    Check(
+        json.find("\"type\":\"card_accepted\",\"tick\":13,\"user_id\":\"p1\","
+                  "\"card_id\":\"mirror_lance\",\"value\":26}") != std::string::npos,
+        "card_accepted row shape (slot 0 omitted like Go)"
+    );
+    // card_effect_applied：target_user_id 在、slot 未设置省略
+    Check(
+        json.find("\"type\":\"card_effect_applied\",\"tick\":13,\"user_id\":\"p1\","
+                  "\"card_id\":\"mirror_lance\",\"value\":7,"
+                  "\"target_user_id\":\"p2\"") != std::string::npos,
+        "card_effect_applied row shape (target_user_id present, slot omitted)"
+    );
+    // boss_defeated：card_id 恒发（空串），reason 携带 boss id
+    Check(
+        json.find("\"type\":\"boss_defeated\",\"tick\":14,\"user_id\":\"p1\","
+                  "\"card_id\":\"\",\"value\":0,"
+                  "\"reason\":\"world-boss:match-cast-001\"") != std::string::npos,
+        "boss_defeated row shape (empty card_id, reason carries boss id)"
+    );
+    // JSON 转义（reason 含引号/反斜杠）
+    CardCastEvent escaped = rejected;
+    escaped.reason = "a\"b\\c";
+    const std::string json2 = BuildBattleEventsJson("s", "m", {escaped});
+    Check(
+        json2.find("\"reason\":\"a\\\"b\\\\c\"") != std::string::npos,
+        "json escaping in reason field"
+    );
+    // 回调头（service-callback 守卫要求的两头）
+    const auto headers = phk::battle::BattleEventsCallbackHeaders();
+    Check(headers.size() == 2, "two callback headers");
+    Check(
+        headers[0].first == "X-PhK-Service-Origin" && headers[0].second == "battle_server",
+        "service origin header"
+    );
+    Check(
+        headers[1].first == "X-PhK-Battle-Callback" && headers[1].second == "true",
+        "battle callback header"
+    );
+    // 每次提交行数上限常量与大厅一致（battle_events.go:23）
+    Check(phk::battle::kMaxBattleEventsPerSubmit == 64, "per-submit cap mirrors lobby (64)");
+}
+
+// 端到端：票据播种 → 出牌 → TickMatch → SubmitCardEvents →
+// 捕获请求断言（路径 / service-callback 头 / payload）。
+void TestSubmitCardEventsWire() {
+    CapturingHttpServer http;
+    Check(http.port() != 0, "capture server listening");
+
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    config.server_id = "battle-local-1";
+    config.lobby_endpoint = "127.0.0.1:" + std::to_string(http.port());
+    BattleServer server(config);
+
+    const auto registered = server.RegisterTicket(
+        MakeSignedTicket({"mirror_lance", "focus_lens", "focus_lens", "focus_lens"}, 10.0));
+    Check(registered.ok, "ticket registered (" + registered.reason + ")");
+    Check(server.PendingCardEventCount(kMatchId) == 0, "no rows before any cast");
+
+    BattleModeAction action = MakeCastAction("p1", 1, 1, 0);
+    Check(server.AcceptModeAction(action).ok, "accept cast via server");
+    server.TickMatch(kMatchId);
+    Check(server.PendingCardEventCount(kMatchId) == 2, "two rows pending (accepted + effect)");
+
+    const auto submit = server.SubmitCardEvents(kMatchId);
+    Check(submit.ok, "submit ok (" + submit.error + ")");
+    Check(submit.status_code == 200, "submit status 200");
+    Check(server.PendingCardEventCount(kMatchId) == 0, "rows drained after success");
+
+    Check(http.request_line() == "POST /v1/battle/events HTTP/1.1", "events route");
+    Check(http.header("X-PhK-Service-Origin") == "battle_server", "service origin header on wire");
+    Check(http.header("X-PhK-Battle-Callback") == "true", "battle callback header on wire");
+    Check(http.header("Content-Type") == "application/json", "content type json");
+    Check(
+        http.body().find("\"battle_server_id\":\"battle-local-1\"") != std::string::npos,
+        "posted battle_server_id"
+    );
+    Check(
+        http.body().find("\"match_id\":\"match-cast-001\"") != std::string::npos,
+        "posted match_id"
+    );
+    Check(
+        http.body().find("\"type\":\"card_accepted\"") != std::string::npos,
+        "posted card_accepted row"
+    );
+    Check(
+        http.body().find("\"type\":\"card_effect_applied\"") != std::string::npos,
+        "posted card_effect_applied row"
+    );
+    Check(
+        http.body().find("\"card_id\":\"mirror_lance\"") != std::string::npos,
+        "posted card id"
+    );
+
+    // 无行可发：no-op，不再发起 HTTP（lobby 拒空 events）。
+    const auto again = server.SubmitCardEvents(kMatchId);
+    Check(again.ok, "second submit ok");
+    Check(again.status_code == 0, "second submit is a no-op (no HTTP)");
+    Check(http.request_count() == 1, "exactly one HTTP request total");
+
+    http.Stop();
+}
+
+// 回传失败（连接被拒）与未配置端点：行保留待重发，不丢事件。
+void TestSubmitCardEventsFailureKeepsRows() {
+    // 未配置端点。
+    {
+        phk::battle::BattleServerConfig config;
+        config.now_ms = 1782489605000;
+        BattleServer server(config);
+        Check(
+            server.RegisterTicket(
+                MakeSignedTicket({"mirror_lance", "focus_lens", "focus_lens", "focus_lens"}, 10.0)).ok,
+            "ticket registered (no endpoint case)"
+        );
+        BattleModeAction action = MakeCastAction("p1", 1, 1, 0);
+        Check(server.AcceptModeAction(action).ok, "accept cast");
+        server.TickMatch(kMatchId);
+        const auto submit = server.SubmitCardEvents(kMatchId);
+        Check(!submit.ok, "submit without endpoint fails");
+        Check(submit.error == "no_lobby_endpoint", "no_lobby_endpoint error");
+        Check(server.PendingCardEventCount(kMatchId) == 2, "rows kept without endpoint");
+    }
+    // 端点指向关闭端口（连接被拒）。
+    {
+        phk::battle::BattleServerConfig config;
+        config.now_ms = 1782489605000;
+        config.lobby_endpoint = "127.0.0.1:1";
+        BattleServer server(config);
+        Check(
+            server.RegisterTicket(
+                MakeSignedTicket({"mirror_lance", "focus_lens", "focus_lens", "focus_lens"}, 10.0)).ok,
+            "ticket registered (refused case)"
+        );
+        BattleModeAction action = MakeCastAction("p1", 1, 1, 0);
+        Check(server.AcceptModeAction(action).ok, "accept cast");
+        server.TickMatch(kMatchId);
+        const auto submit = server.SubmitCardEvents(kMatchId);
+        Check(!submit.ok, "submit to closed port fails");
+        Check(server.PendingCardEventCount(kMatchId) == 2, "rows restored after failure");
+    }
+}
+
+// Take/Restore 语义（64 行上限由 SubmitCardEvents 强制）。
+void TestTakeRestoreCardCastEvents() {
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", 0, 0), "add p1");
+    Check(
+        simulation.SeedPlayerHand(
+            "p1",
+            {"mirror_lance", "mirror_lance", "mirror_lance", "mirror_lance"},
+            10.0,
+            "5"
+        ),
+        "seed 4 mirror_lance"
+    );
+    for (int index = 0; index < 4; ++index) {
+        BattleModeAction action = MakeCastAction("p1", static_cast<std::uint64_t>(index + 1), 1, 0);
+        // 四张同卡同 tick：第一张 accepted，其余 on_cooldown → 共 4+ 行。
+        Check(simulation.AcceptModeAction(action).ok, "accept cast " + std::to_string(index));
+    }
+    simulation.Tick();
+    const std::size_t pending = simulation.CardCastEvents().size();
+    Check(pending >= 5, "multiple rows collected (" + std::to_string(pending) + ")");
+
+    const auto taken = simulation.TakeCardCastEvents(2);
+    Check(taken.size() == 2, "take 2 rows");
+    Check(simulation.CardCastEvents().size() == pending - 2, "remaining rows after take");
+    simulation.RestoreCardCastEvents(taken);
+    Check(simulation.CardCastEvents().size() == pending, "rows restored to front");
+    const auto taken_all = simulation.TakeCardCastEvents();
+    Check(taken_all.size() == pending, "take all with limit 0");
+    Check(simulation.CardCastEvents().empty(), "collector empty after take all");
+}
+
 }  // namespace
 
 int main() {
@@ -452,6 +865,10 @@ int main() {
     TestFinaleArcClearsField();
     TestRejectionPaths();
     TestBossDamageAndDefeatRow();
+    TestBattleEventsPayloadShape();
+    TestSubmitCardEventsWire();
+    TestSubmitCardEventsFailureKeepsRows();
+    TestTakeRestoreCardCastEvents();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " card cast execution test(s) failed\n";

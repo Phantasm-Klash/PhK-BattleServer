@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "phk/battle/handshake.hpp"
+#include "phk/battle/match_lifecycle.hpp"  // HttpPostResult（回传复用）
 #include "phk/battle/protocol.hpp"
 #include "phk/battle/result.hpp"
 #include "phk/battle/simulation.hpp"
@@ -20,6 +21,11 @@ struct BattleServerConfig {
     std::string signing_key_id = "dev-ed25519-local";
     std::int64_t now_ms = 0;
     std::uint32_t max_players = 8;
+    // T3 step4 / H-1：卡牌事件回传（POST /v1/battle/events）。lobby_endpoint
+    // 为空时 SubmitCardEvents 为 no-op 并保留行待发；events_path 默认
+    // card_events_report.hpp 的 kBattleEventsPath。
+    std::string lobby_endpoint;
+    std::string events_path = "/v1/battle/events";
 };
 
 struct BossMatchConfig {
@@ -213,6 +219,13 @@ public:
 		std::string stage_id = ""
 	) const;
 	SubmitBattleResultResult SubmitBattleResult(const SignedBattleResult& signed_result);
+	// T3 step4 / H-1：把该对局收集到的卡牌事件行 POST 到大厅
+	// （config_.lobby_endpoint + config_.events_path，service-callback 头）。
+	// 每次最多 kMaxBattleEventsPerSubmit(64) 行；HTTP 失败时行还原待下次
+	// 重发；lobby_endpoint 为空为 no-op（行保留）。
+	[[nodiscard]] HttpPostResult SubmitCardEvents(const std::string& match_id);
+	// 该对局尚未上报的事件行数（诊断/测试）。
+	[[nodiscard]] std::size_t PendingCardEventCount(const std::string& match_id) const;
 	CancelMatchResult CancelMatch(const std::string& match_id);
 	RetireMatchResult RetireMatch(const std::string& match_id);
 
