@@ -98,6 +98,221 @@ void TestInputCodecRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. signed ticket enforcement on the app (per-match) path
+// ---------------------------------------------------------------------------
+namespace ticket_test {
+
+phk::battle::SignedBattleTicket MakeTicket(
+    const std::string& match_id,
+    const std::string& player_id,
+    std::int64_t now_ms,
+    const std::string& ticket_id = "ticket_0001"
+) {
+    phk::battle::SignedBattleTicket signed_ticket;
+    phk::battle::BattleTicket& ticket = signed_ticket.ticket;
+    ticket.version = phk::battle::VersionStamp();
+    ticket.ticket_id = ticket_id;
+    ticket.match_id = match_id;
+    ticket.user_id = "user_0001";
+    ticket.player_id = player_id;
+    ticket.mode_id = "mvp_boss_race";
+    ticket.battle_server_id = "bs-104-1";
+    ticket.endpoint = "104.233.217.232:7400";
+    ticket.deck_snapshot_hash = "sha256:" + std::string(64, 'a');
+    ticket.ruleset_version = ticket.version.ruleset_version;
+    ticket.ticket_nonce_hex = std::string(48, 'b');
+    ticket.issued_at_ms = now_ms - 1000;
+    ticket.expires_at_ms = now_ms + 600000;
+    ticket.business_session_id = "session_0001";
+    ticket.hand_card_ids = {"focus_lens", "graze_engine"};
+    ticket.initial_energy = 3.5;
+    ticket.server_seed_decimal = "987654321";
+    signed_ticket.signature_alg = "ED25519";
+    signed_ticket.key_id = "lobby-key-1";
+    signed_ticket.signature_hex = std::string(128, 'c');
+    signed_ticket.public_key_hex = std::string(64, 'd');
+    signed_ticket.server_authoritative = true;
+    return signed_ticket;
+}
+
+phk::battle::MatchLifecycleConfig MakeTicketConfig(phk::battle::MatchTicketRequirement mode) {
+    phk::battle::MatchLifecycleConfig config;
+    config.port = 0;
+    config.match_id = "match_ticket_000001";
+    config.seed = 42u;
+    config.player_ids = {"player_a", "player_b"};
+    config.boss_max_hp = 100;
+    config.require_ticket = mode;
+    config.battle_server_id = "bs-104-1";
+    config.ticket_key_id = "lobby-key-1";
+    config.now_ms = 1800000000000ll;
+    return config;
+}
+
+const std::int64_t kNow = 1800000000000ll;
+
+// Ticket verifies -> the conversation binds and the input is accepted.
+void TestTicketVerifiedBindsPlayer() {
+    auto config = MakeTicketConfig(phk::battle::MatchTicketRequirement::On);
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "ticket(on): server starts (" + error + ")");
+
+    const auto ticket = MakeTicket(config.match_id, "player_a", kNow);
+    const auto payload = phk::battle::EncodeBattleInputWithTicketPayload(
+        MakeInput(config.match_id, "player_a", 1, 1, true), ticket);
+    Check(server.InjectPayload(0x0000A011u, payload), "ticket(on): payload injected");
+
+    Check(server.BoundPlayerCount() == 1, "ticket(on): player bound on valid ticket");
+    Check(server.AcceptedInputCount() == 1, "ticket(on): input accepted");
+    Check(server.TicketRejectionCount() == 0, "ticket(on): no rejections");
+    Check(server.TicketAuditLog().size() == 1, "ticket(on): one audit entry");
+    Check(!server.TicketAuditLog().empty() &&
+          server.TicketAuditLog().back().reason == "ok", "ticket(on): audit reason is ok");
+    server.Stop();
+}
+
+// Every rejection path must bind nothing and record an explicit reason.
+void TestTicketRejectionsRecordReason() {
+    struct Case {
+        const char* label;
+        const char* expected_reason;
+        bool attach_ticket;
+        std::string match_id;
+        std::string ticket_id;
+        std::int64_t expires_at_ms;
+    };
+    const std::vector<Case> cases = {
+        {"missing ticket", "ticket_missing", false, "", "", 0},
+        {"ticket for another match", "ticket_match_mismatch", true, "match_other_000001", "t_other", 0},
+        {"expired ticket", "ticket_expired", true, "match_ticket_000001", "t_expired", kNow - 1},
+        {"replayed ticket", "ticket_replay", true, "match_ticket_000001", "t_replay", 0},
+    };
+
+    for (const Case& test_case : cases) {
+        auto config = MakeTicketConfig(phk::battle::MatchTicketRequirement::On);
+        phk::battle::MatchServer server(config);
+        std::string error;
+        Check(server.Start(&error), std::string("ticket(on): server starts (") + test_case.label + ")");
+
+        if (test_case.expected_reason == std::string("ticket_replay")) {
+            // Consume the ticket id once, then present it again from a new conv.
+            const auto first = MakeTicket(config.match_id, "player_a", kNow, test_case.ticket_id);
+            server.InjectPayload(0x0000A021u, phk::battle::EncodeBattleInputWithTicketPayload(
+                MakeInput(config.match_id, "player_a", 1, 1, true), first));
+        }
+
+        auto ticket = MakeTicket(config.match_id, "player_a", kNow, test_case.ticket_id);
+        if (!test_case.match_id.empty()) {
+            ticket.ticket.match_id = test_case.match_id;
+        }
+        if (test_case.expires_at_ms != 0) {
+            ticket.ticket.expires_at_ms = test_case.expires_at_ms;
+        }
+
+        std::vector<std::uint8_t> payload = test_case.attach_ticket
+            ? phk::battle::EncodeBattleInputWithTicketPayload(
+                MakeInput(config.match_id, "player_a", 1, 1, true), ticket)
+            : phk::battle::EncodeBattleInputPayload(
+                MakeInput(config.match_id, "player_a", 1, 1, true));
+        server.InjectPayload(0x0000A031u, payload);
+
+        Check(server.BoundPlayerCount() == (test_case.expected_reason == std::string("ticket_replay") ? 1u : 0u),
+              std::string("ticket(on): ") + test_case.label + " does not bind the rejected conv");
+        Check(server.AcceptedInputCount() == (test_case.expected_reason == std::string("ticket_replay") ? 1u : 0u),
+              std::string("ticket(on): ") + test_case.label + " drops the input");
+        Check(server.TicketRejectionCount() >= 1,
+              std::string("ticket(on): ") + test_case.label + " counts a rejection");
+        Check(!server.TicketAuditLog().empty() &&
+              server.TicketAuditLog().back().reason == test_case.expected_reason,
+              std::string("ticket(on): ") + test_case.label + " records reason " +
+                  test_case.expected_reason + " (got " +
+                  (server.TicketAuditLog().empty() ? std::string("<none>") : server.TicketAuditLog().back().reason) +
+                  ")");
+        Check(!server.TicketAuditLog().empty() && server.TicketAuditLog().back().rejected,
+              std::string("ticket(on): ") + test_case.label + " audit entry is marked rejected");
+        server.Stop();
+    }
+}
+
+// warn mode: observe, do not interrupt. off mode: legacy behaviour, untouched.
+void TestTicketWarnAndOffModes() {
+    // warn: a ticket-less client still binds, but the gap is logged.
+    {
+        auto config = MakeTicketConfig(phk::battle::MatchTicketRequirement::Warn);
+        phk::battle::MatchServer server(config);
+        std::string error;
+        Check(server.Start(&error), "ticket(warn): server starts");
+        server.InjectPayload(0x0000A041u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", 1, 1, true)));
+        Check(server.BoundPlayerCount() == 1, "ticket(warn): legacy client still binds");
+        Check(server.TicketRejectionCount() == 0, "ticket(warn): no hard rejection");
+        Check(!server.TicketAuditLog().empty() &&
+              server.TicketAuditLog().back().reason == "ticket_missing",
+              "ticket(warn): missing ticket is recorded");
+        Check(!server.TicketAuditLog().empty() && !server.TicketAuditLog().back().rejected,
+              "ticket(warn): entry is a warning, not a rejection");
+        server.Stop();
+    }
+
+    // off: no verification at all, and an unknown player id is still refused,
+    // but now with a reason instead of a silent return.
+    {
+        auto config = MakeTicketConfig(phk::battle::MatchTicketRequirement::Off);
+        phk::battle::MatchServer server(config);
+        std::string error;
+        Check(server.Start(&error), "ticket(off): server starts");
+        server.InjectPayload(0x0000A051u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", 1, 1, true)));
+        Check(server.BoundPlayerCount() == 1, "ticket(off): binds without any ticket");
+        Check(server.AcceptedInputCount() == 1, "ticket(off): input accepted");
+        Check(server.TicketAuditLog().empty(), "ticket(off): no ticket audit at all");
+
+        server.InjectPayload(0x0000A052u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_intruder", 1, 1, true)));
+        Check(server.BoundPlayerCount() == 1, "ticket(off): unknown player not bound");
+        Check(server.TicketRejectionCount() == 1, "ticket(off): unknown player counted");
+        Check(!server.TicketAuditLog().empty() &&
+              server.TicketAuditLog().back().reason == "player_not_in_roster",
+              "ticket(off): unknown player records a reason (was silent before)");
+        server.Stop();
+    }
+}
+
+// The optional ticket block must round-trip and must not break legacy frames.
+void TestTicketFrameCodec() {
+    const auto input = MakeInput("match_ticket_000001", "player_a", 7, 9, true);
+    const auto ticket = MakeTicket("match_ticket_000001", "player_a", kNow);
+
+    const auto with_ticket = phk::battle::EncodeBattleInputWithTicketPayload(input, ticket);
+    phk::battle::BattleInput decoded_input;
+    Check(phk::battle::DecodeBattleInputPayload(with_ticket, &decoded_input),
+          "ticket codec: frame with ticket still decodes as input");
+    Check(decoded_input.player_id == input.player_id && decoded_input.seq == input.seq,
+          "ticket codec: input body intact");
+
+    phk::battle::SignedBattleTicket decoded_ticket;
+    Check(phk::battle::DecodeBattleInputTicketPayload(with_ticket, &decoded_ticket),
+          "ticket codec: ticket block decodes");
+    Check(decoded_ticket.ticket.ticket_id == ticket.ticket.ticket_id, "ticket codec: ticket_id");
+    Check(decoded_ticket.ticket.match_id == ticket.ticket.match_id, "ticket codec: match_id");
+    Check(decoded_ticket.ticket.player_id == ticket.ticket.player_id, "ticket codec: player_id");
+    Check(decoded_ticket.ticket.hand_card_ids == ticket.ticket.hand_card_ids, "ticket codec: hand cards");
+    Check(decoded_ticket.ticket.initial_energy == ticket.ticket.initial_energy, "ticket codec: initial_energy");
+    Check(decoded_ticket.ticket.server_seed_decimal == ticket.ticket.server_seed_decimal, "ticket codec: seed");
+    Check(decoded_ticket.signature_hex == ticket.signature_hex, "ticket codec: signature");
+    Check(decoded_ticket.server_authoritative, "ticket codec: server_authoritative");
+
+    const auto legacy = phk::battle::EncodeBattleInputPayload(input);
+    Check(!phk::battle::DecodeBattleInputTicketPayload(legacy, &decoded_ticket),
+          "ticket codec: legacy frame carries no ticket");
+    Check(phk::battle::DecodeBattleInputPayload(legacy, &decoded_input),
+          "ticket codec: legacy frame still decodes");
+}
+
+}  // namespace ticket_test
+
+// ---------------------------------------------------------------------------
 // 2. deterministic result payload + JSON
 // ---------------------------------------------------------------------------
 phk::battle::MatchResultPayload RunRaceToResult(std::uint64_t seed, std::uint64_t boss_hp) {
@@ -412,6 +627,10 @@ void TestHttpPostClient() {
 
 int main() {
     TestInputCodecRoundTrip();
+    ticket_test::TestTicketFrameCodec();
+    ticket_test::TestTicketVerifiedBindsPlayer();
+    ticket_test::TestTicketRejectionsRecordReason();
+    ticket_test::TestTicketWarnAndOffModes();
     TestResultPayloadAndJson();
     TestSocketSmokeRace();
     TestHttpPostClient();

@@ -11,6 +11,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -39,6 +40,23 @@ std::vector<std::string> SplitComma(const std::string& text) {
     return parts;
 }
 
+bool ParseRequireTicket(const std::string& value, phk::battle::MatchTicketRequirement* out) {
+    if (value == "off") {
+        *out = phk::battle::MatchTicketRequirement::Off;
+        return true;
+    }
+    if (value == "warn") {
+        *out = phk::battle::MatchTicketRequirement::Warn;
+        return true;
+    }
+    if (value == "on") {
+        *out = phk::battle::MatchTicketRequirement::On;
+        return true;
+    }
+    std::cerr << "invalid --require-ticket value: " << value << " (expected off|warn|on)\n";
+    return false;
+}
+
 void PrintUsage() {
     std::cout
         << "usage: phk_battle_server [options]\n"
@@ -50,6 +68,9 @@ void PrintUsage() {
         << "  --ruleset <id>        ruleset version (default mvp-boss-race-s0)\n"
         << "  --boss-hp <N>         boss max hp override\n"
         << "  --max-ticks <N>       safety tick cap (0 = unlimited)\n"
+        << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
+        << "  --battle-server-id <id>  pin tickets to this battle server id\n"
+        << "  --ticket-key-id <id>  pin tickets to this lobby signing key id\n"
         << "  --help                show this help\n";
 }
 
@@ -86,6 +107,19 @@ bool ParseArgs(int argc, char** argv, phk::battle::MatchLifecycleConfig* config)
         } else if (arg == "--max-ticks") {
             if (!next(&value)) return false;
             config->max_ticks = std::strtoull(value.c_str(), nullptr, 10);
+        } else if (arg == "--battle-server-id") {
+            if (!next(&value)) return false;
+            config->battle_server_id = value;
+        } else if (arg == "--ticket-key-id") {
+            if (!next(&value)) return false;
+            config->ticket_key_id = value;
+        } else if (arg == "--require-ticket") {
+            if (!next(&value)) return false;
+            if (!ParseRequireTicket(value, &config->require_ticket)) return false;
+        } else if (arg.rfind("--require-ticket=", 0) == 0) {
+            if (!ParseRequireTicket(arg.substr(std::strlen("--require-ticket=")), &config->require_ticket)) {
+                return false;
+            }
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             std::exit(0);
@@ -120,7 +154,9 @@ int main(int argc, char** argv) {
     }
 
     const std::uint16_t port = server.Port();
-    std::cout << "READY port=" << port << " match=" << config.match_id << std::endl;
+    std::cout << "READY port=" << port << " match=" << config.match_id
+              << " require_ticket=" << phk::battle::MatchTicketRequirementName(config.require_ticket)
+              << std::endl;
 
     const std::uint32_t tick_rate = server.Config().tick_rate_hz == 0 ? 60 : server.Config().tick_rate_hz;
     const auto tick_interval = std::chrono::microseconds(1000000 / tick_rate);

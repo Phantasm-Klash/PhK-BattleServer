@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -75,6 +76,41 @@ bool ReadString(const std::vector<std::uint8_t>& data, std::size_t* cursor, std:
     out->assign(data.begin() + *cursor, data.begin() + *cursor + len);
     *cursor += len;
     return true;
+}
+
+void PushI64(std::vector<std::uint8_t>& out, std::int64_t value) {
+    PushU64(out, static_cast<std::uint64_t>(value));
+}
+
+bool ReadI64(const std::vector<std::uint8_t>& data, std::size_t* cursor, std::int64_t* out) {
+    std::uint64_t raw = 0;
+    if (!ReadU64(data, cursor, &raw)) return false;
+    *out = static_cast<std::int64_t>(raw);
+    return true;
+}
+
+// Doubles travel as decimal text: %.17g round-trips a double exactly and keeps
+// the frame byte-identical across compilers/ABIs.
+void PushDouble(std::vector<std::uint8_t>& out, double value) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+    PushString(out, buffer);
+}
+
+bool ReadDouble(const std::vector<std::uint8_t>& data, std::size_t* cursor, double* out) {
+    std::string text;
+    if (!ReadString(data, cursor, &text)) return false;
+    char* end = nullptr;
+    const double value = std::strtod(text.c_str(), &end);
+    if (end == text.c_str()) return false;
+    *out = value;
+    return true;
+}
+
+std::int64_t WallClockNowMs() {
+    return static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
 std::string JsonEscape(const std::string& text) {
@@ -160,31 +196,155 @@ std::vector<std::uint8_t> EncodeBattleInputPayload(const BattleInput& input) {
     return out;
 }
 
+namespace {
+
+// Presence byte that opens the optional ticket block.
+constexpr std::uint8_t kTicketBlockAbsent = 0;
+constexpr std::uint8_t kTicketBlockPresent = 1;
+
+// Reads the fixed input body that both codecs share; leaves `*cursor` just past
+// `mode_action_id` (i.e. where the optional ticket block starts).
+bool ReadBattleInputBody(
+    const std::vector<std::uint8_t>& payload,
+    std::size_t* cursor,
+    BattleInput* out
+) {
+    std::uint32_t protocol_version = 0;
+    if (!ReadU32(payload, cursor, &protocol_version)) return false;
+
+    BattleInput input;
+    input.version.protocol_version = static_cast<int>(protocol_version);
+    if (!ReadString(payload, cursor, &input.match_id)) return false;
+    if (!ReadString(payload, cursor, &input.player_id)) return false;
+    if (!ReadU64(payload, cursor, &input.tick)) return false;
+    if (!ReadU64(payload, cursor, &input.seq)) return false;
+    if (!ReadU32(payload, cursor, &input.direction_bits)) return false;
+    if (*cursor >= payload.size()) return false;
+    const std::uint8_t flags = payload[(*cursor)++];
+    input.slow = (flags & 0x01u) != 0;
+    input.shoot = (flags & 0x02u) != 0;
+    input.bomb = (flags & 0x04u) != 0;
+    if (*cursor >= payload.size()) return false;
+    input.card_slot = static_cast<std::int8_t>(payload[(*cursor)++]);
+    if (!ReadString(payload, cursor, &input.mode_action_id)) return false;
+
+    *out = std::move(input);
+    return true;
+}
+
+void WriteTicketBlock(std::vector<std::uint8_t>& out, const SignedBattleTicket& signed_ticket) {
+    const BattleTicket& ticket = signed_ticket.ticket;
+    PushU32(out, static_cast<std::uint32_t>(ticket.version.protocol_version));
+    PushString(out, ticket.version.business_api_version);
+    PushString(out, ticket.version.battle_api_version);
+    PushString(out, ticket.version.ruleset_version);
+    PushString(out, ticket.ticket_id);
+    PushString(out, ticket.match_id);
+    PushString(out, ticket.user_id);
+    PushString(out, ticket.player_id);
+    PushString(out, ticket.mode_id);
+    PushString(out, ticket.battle_server_id);
+    PushString(out, ticket.endpoint);
+    PushString(out, ticket.deck_snapshot_hash);
+    PushString(out, ticket.ruleset_version);
+    PushString(out, ticket.ticket_nonce_hex);
+    PushI64(out, ticket.issued_at_ms);
+    PushI64(out, ticket.expires_at_ms);
+    PushString(out, ticket.business_session_id);
+    PushU32(out, static_cast<std::uint32_t>(ticket.hand_card_ids.size()));
+    for (const std::string& card_id : ticket.hand_card_ids) {
+        PushString(out, card_id);
+    }
+    PushDouble(out, ticket.initial_energy);
+    PushString(out, ticket.server_seed_decimal);
+    PushString(out, signed_ticket.signature_alg);
+    PushString(out, signed_ticket.key_id);
+    PushString(out, signed_ticket.signature_hex);
+    PushString(out, signed_ticket.public_key_hex);
+    out.push_back(signed_ticket.server_authoritative ? 1u : 0u);
+}
+
+bool ReadTicketBlock(
+    const std::vector<std::uint8_t>& payload,
+    std::size_t* cursor,
+    SignedBattleTicket* out
+) {
+    BattleTicket& ticket = out->ticket;
+    std::uint32_t protocol_version = 0;
+    if (!ReadU32(payload, cursor, &protocol_version)) return false;
+    ticket.version.protocol_version = static_cast<int>(protocol_version);
+    if (!ReadString(payload, cursor, &ticket.version.business_api_version)) return false;
+    if (!ReadString(payload, cursor, &ticket.version.battle_api_version)) return false;
+    if (!ReadString(payload, cursor, &ticket.version.ruleset_version)) return false;
+    if (!ReadString(payload, cursor, &ticket.ticket_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.match_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.user_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.player_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.mode_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.battle_server_id)) return false;
+    if (!ReadString(payload, cursor, &ticket.endpoint)) return false;
+    if (!ReadString(payload, cursor, &ticket.deck_snapshot_hash)) return false;
+    if (!ReadString(payload, cursor, &ticket.ruleset_version)) return false;
+    if (!ReadString(payload, cursor, &ticket.ticket_nonce_hex)) return false;
+    if (!ReadI64(payload, cursor, &ticket.issued_at_ms)) return false;
+    if (!ReadI64(payload, cursor, &ticket.expires_at_ms)) return false;
+    if (!ReadString(payload, cursor, &ticket.business_session_id)) return false;
+    std::uint32_t hand_count = 0;
+    if (!ReadU32(payload, cursor, &hand_count)) return false;
+    if (hand_count > 64u) return false;
+    ticket.hand_card_ids.clear();
+    for (std::uint32_t i = 0; i < hand_count; ++i) {
+        std::string card_id;
+        if (!ReadString(payload, cursor, &card_id)) return false;
+        ticket.hand_card_ids.push_back(std::move(card_id));
+    }
+    if (!ReadDouble(payload, cursor, &ticket.initial_energy)) return false;
+    if (!ReadString(payload, cursor, &ticket.server_seed_decimal)) return false;
+    if (!ReadString(payload, cursor, &out->signature_alg)) return false;
+    if (!ReadString(payload, cursor, &out->key_id)) return false;
+    if (!ReadString(payload, cursor, &out->signature_hex)) return false;
+    if (!ReadString(payload, cursor, &out->public_key_hex)) return false;
+    if (*cursor >= payload.size()) return false;
+    out->server_authoritative = payload[(*cursor)++] != 0;
+    return true;
+}
+
+}  // namespace
+
 bool DecodeBattleInputPayload(const std::vector<std::uint8_t>& payload, BattleInput* out) {
     if (out == nullptr || payload.empty()) return false;
     if (payload[0] != static_cast<std::uint8_t>(BattlePayloadType::Input)) return false;
 
     std::size_t cursor = 1;
-    std::uint32_t protocol_version = 0;
-    if (!ReadU32(payload, &cursor, &protocol_version)) return false;
+    return ReadBattleInputBody(payload, &cursor, out);
+}
 
+std::vector<std::uint8_t> EncodeBattleInputWithTicketPayload(
+    const BattleInput& input,
+    const SignedBattleTicket& ticket
+) {
+    std::vector<std::uint8_t> out = EncodeBattleInputPayload(input);
+    out.push_back(kTicketBlockPresent);
+    WriteTicketBlock(out, ticket);
+    return out;
+}
+
+bool DecodeBattleInputTicketPayload(const std::vector<std::uint8_t>& payload, SignedBattleTicket* out) {
+    if (out == nullptr || payload.empty()) return false;
+    if (payload[0] != static_cast<std::uint8_t>(BattlePayloadType::Input)) return false;
+
+    std::size_t cursor = 1;
     BattleInput input;
-    input.version.protocol_version = static_cast<int>(protocol_version);
-    if (!ReadString(payload, &cursor, &input.match_id)) return false;
-    if (!ReadString(payload, &cursor, &input.player_id)) return false;
-    if (!ReadU64(payload, &cursor, &input.tick)) return false;
-    if (!ReadU64(payload, &cursor, &input.seq)) return false;
-    if (!ReadU32(payload, &cursor, &input.direction_bits)) return false;
-    if (cursor >= payload.size()) return false;
-    const std::uint8_t flags = payload[cursor++];
-    input.slow = (flags & 0x01u) != 0;
-    input.shoot = (flags & 0x02u) != 0;
-    input.bomb = (flags & 0x04u) != 0;
-    if (cursor >= payload.size()) return false;
-    input.card_slot = static_cast<std::int8_t>(payload[cursor++]);
-    if (!ReadString(payload, &cursor, &input.mode_action_id)) return false;
+    if (!ReadBattleInputBody(payload, &cursor, &input)) return false;
+    if (cursor >= payload.size()) return false;  // legacy frame: no ticket block
 
-    *out = std::move(input);
+    const std::uint8_t flag = payload[cursor++];
+    if (flag == kTicketBlockAbsent) return false;
+    if (flag != kTicketBlockPresent) return false;
+
+    SignedBattleTicket decoded;
+    if (!ReadTicketBlock(payload, &cursor, &decoded)) return false;
+    *out = std::move(decoded);
     return true;
 }
 
@@ -419,6 +579,15 @@ HttpPostResult HttpPostJson(
 // ---------------------------------------------------------------------------
 // MatchServer
 // ---------------------------------------------------------------------------
+const char* MatchTicketRequirementName(MatchTicketRequirement value) {
+    switch (value) {
+        case MatchTicketRequirement::Off: return "off";
+        case MatchTicketRequirement::Warn: return "warn";
+        case MatchTicketRequirement::On: return "on";
+    }
+    return "unknown";
+}
+
 MatchServer::MatchServer(MatchLifecycleConfig config)
     : config_(std::move(config)),
       simulation_(MakeBossRaceConfig(config_)),
@@ -523,19 +692,130 @@ void MatchServer::HandleSessionPayload(
         return;
     }
 
+    SignedBattleTicket ticket;
+    const bool has_ticket = DecodeBattleInputTicketPayload(payload, &ticket);
+
     const auto bound = player_by_conv_.find(session.conv);
     if (bound == player_by_conv_.end()) {
-        const bool known = std::find(
-            config_.player_ids.begin(), config_.player_ids.end(), input.player_id) != config_.player_ids.end();
-        if (!known) return;
-        player_by_conv_[session.conv] = input.player_id;
-        conv_by_player_[input.player_id] = session.conv;
+        if (!BindSession(session, input, ticket, has_ticket)) {
+            return;
+        }
     } else if (bound->second != input.player_id) {
+        RecordTicketAudit(session.conv, input.player_id, "", "player_conv_mismatch", true);
         return;
     }
 
     if (simulation_.SubmitInput(input)) {
         accepted_inputs_ += 1;
+    }
+}
+
+bool MatchServer::BindSession(
+    const KcpSessionInfo& session,
+    const BattleInput& input,
+    const SignedBattleTicket& ticket,
+    bool has_ticket
+) {
+    const MatchTicketRequirement requirement = config_.require_ticket;
+    const bool enforcing = requirement == MatchTicketRequirement::On;
+    // Warn mode keeps the legacy (insecure) binding as a fallback so live
+    // matches are never interrupted while the lobby wiring is being rolled out.
+    const bool fallback = requirement != MatchTicketRequirement::On;
+    const std::string& ticket_id = has_ticket ? ticket.ticket.ticket_id : std::string();
+
+    if (requirement == MatchTicketRequirement::Off) {
+        return BindPlayerByRoster(session, input);
+    }
+
+    if (!has_ticket) {
+        RecordTicketAudit(session.conv, input.player_id, "", "ticket_missing", enforcing);
+        return fallback && BindPlayerByRoster(session, input);
+    }
+
+    TicketVerificationOptions options;
+    options.now_ms = config_.now_ms > 0 ? config_.now_ms : WallClockNowMs();
+    options.required_battle_server_id = config_.battle_server_id;
+    options.required_key_id = config_.ticket_key_id;
+    const VerificationResult verification = ticket_verifier_.Verify(ticket, options);
+    if (!verification.ok) {
+        RecordTicketAudit(session.conv, input.player_id, ticket_id, verification.reason, enforcing);
+        return fallback && BindPlayerByRoster(session, input);
+    }
+
+    // The app process serves exactly one match, so a valid ticket for *another*
+    // match must never bind here.
+    if (ticket.ticket.match_id != config_.match_id) {
+        RecordTicketAudit(session.conv, input.player_id, ticket_id, "ticket_match_mismatch", enforcing);
+        return fallback && BindPlayerByRoster(session, input);
+    }
+    if (ticket.ticket.player_id != input.player_id) {
+        RecordTicketAudit(session.conv, input.player_id, ticket_id, "ticket_player_mismatch", enforcing);
+        return fallback && BindPlayerByRoster(session, input);
+    }
+    if (consumed_ticket_ids_.find(ticket_id) != consumed_ticket_ids_.end()) {
+        RecordTicketAudit(session.conv, input.player_id, ticket_id, "ticket_replay", enforcing);
+        return fallback && BindPlayerByRoster(session, input);
+    }
+
+    if (!BindPlayerByRoster(session, input)) {
+        return false;
+    }
+    consumed_ticket_ids_.insert(ticket_id);
+    RecordTicketAudit(session.conv, input.player_id, ticket_id, "ok", false);
+    return true;
+}
+
+bool MatchServer::BindPlayerByRoster(const KcpSessionInfo& session, const BattleInput& input) {
+    const bool known = std::find(
+        config_.player_ids.begin(), config_.player_ids.end(), input.player_id) != config_.player_ids.end();
+    if (!known) {
+        // Never drop silently again: an unknown player id used to vanish here,
+        // which is why "no snapshots" was so hard to diagnose.
+        RecordTicketAudit(session.conv, input.player_id, "", "player_not_in_roster", true);
+        return false;
+    }
+    player_by_conv_[session.conv] = input.player_id;
+    conv_by_player_[input.player_id] = session.conv;
+    return true;
+}
+
+void MatchServer::RecordTicketAudit(
+    std::uint32_t conv,
+    const std::string& player_id,
+    const std::string& ticket_id,
+    const std::string& reason,
+    bool rejected
+) {
+    if (rejected) {
+        ++ticket_rejections_;
+    }
+    if (ticket_audit_.size() < kMatchTicketAuditLimit) {
+        MatchTicketAudit entry;
+        entry.conv = conv;
+        entry.player_id = player_id;
+        entry.ticket_id = ticket_id;
+        entry.reason = reason;
+        entry.rejected = rejected;
+        ticket_audit_.push_back(std::move(entry));
+    }
+    if (ticket_audit_logged_ < kMatchTicketLogLimit) {
+        ++ticket_audit_logged_;
+        std::fprintf(
+            stderr,
+            "[match-ticket] match=%s conv=%u player=%s ticket=%s action=%s reason=%s\n",
+            config_.match_id.c_str(),
+            conv,
+            player_id.c_str(),
+            ticket_id.c_str(),
+            rejected ? "reject" : "accept",
+            reason.c_str());
+    } else if (ticket_audit_logged_ == kMatchTicketLogLimit) {
+        ++ticket_audit_logged_;
+        std::fprintf(
+            stderr,
+            "[match-ticket] match=%s audit_log_suppressed rejections=%zu\n",
+            config_.match_id.c_str(),
+            ticket_rejections_);
     }
 }
 
@@ -598,6 +878,14 @@ std::uint64_t MatchServer::SnapshotBroadcastCount() const {
 
 std::uint64_t MatchServer::AcceptedInputCount() const {
     return accepted_inputs_;
+}
+
+const std::vector<MatchTicketAudit>& MatchServer::TicketAuditLog() const {
+    return ticket_audit_;
+}
+
+std::size_t MatchServer::TicketRejectionCount() const {
+    return ticket_rejections_;
 }
 
 }  // namespace phk::battle
