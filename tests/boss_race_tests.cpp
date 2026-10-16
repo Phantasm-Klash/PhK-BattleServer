@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -302,9 +304,92 @@ void TestInputTickWindowOverflowGuard() {
     Check(!sim.SubmitInput(input), "reject far-future max tick");
 }
 
+// ---- 黄金向量导出（线程A A6） ------------------------------------------------
+//
+// 生成方向：C++ 为权威，导出 JSON；TS 读同一 fixture 重放并逐位断言。
+// 触发：环境变量 PHK_BOSS_RACE_FIXTURE=<输出路径> 运行时导出（不参与断言）。
+//
+// 固定输入：match_seed=0x0B05B0SS，boss=tian，player_a 用 ReimuA1/Reimu 自机、
+// tick>=10 起每 tick 射击；player_b 默认自机、从不射击。确定性保证双端一致。
+void WriteGoldenFixture(const std::string& path) {
+    phk::battle::BossRaceConfig config;
+    config.match_id = "golden_boss_race";
+    config.match_seed = 987654321ull;
+    config.boss_max_hp = 0;  // 目录 HP（tian = 20000）
+    config.boss_id = "tian";
+    config.ruleset_version = "tna-1.40";
+    config.pattern_period_ticks = 45;
+    phk::battle::PlayerLoadoutSpec loadout;
+    loadout.player_id = "player_a";
+    loadout.character_id = "wide";
+    loadout.shot_type = "ReimuA1";
+    loadout.bomb_type = "Reimu";
+    config.loadouts.push_back(loadout);
+
+    auto sim = phk::battle::BossRaceSimulation(config);
+    sim.AddPlayer("player_a", -20000, 60000);
+    sim.AddPlayer("player_b", 20000, 60000);
+
+    const std::uint64_t tick_count = 240;
+    std::FILE* out = std::fopen(path.c_str(), "wb");
+    if (out == nullptr) {
+        std::cerr << "cannot open fixture path: " << path << "\n";
+        return;
+    }
+    std::fprintf(out, "{\n");
+    std::fprintf(out, "  \"matchId\": \"%s\",\n", config.match_id.c_str());
+    std::fprintf(out, "  \"matchSeed\": %llu,\n", static_cast<unsigned long long>(config.match_seed));
+    std::fprintf(out, "  \"bossId\": \"%s\",\n", config.boss_id.c_str());
+    std::fprintf(out, "  \"rulesetVersion\": \"%s\",\n", config.ruleset_version.c_str());
+    std::fprintf(out, "  \"tickRateHz\": 60,\n");
+    std::fprintf(out, "  \"patternPeriodTicks\": 45,\n");
+    std::fprintf(out, "  \"tickCount\": %llu,\n", static_cast<unsigned long long>(tick_count));
+    std::fprintf(out, "  \"players\": [\n");
+    std::fprintf(out, "    {\"playerId\": \"player_a\", \"xMilli\": -20000, \"yMilli\": 60000, \"shotType\": \"ReimuA1\", \"bombType\": \"Reimu\"},\n");
+    std::fprintf(out, "    {\"playerId\": \"player_b\", \"xMilli\": 20000, \"yMilli\": 60000, \"shotType\": \"\", \"bombType\": \"\"}\n");
+    std::fprintf(out, "  ],\n");
+    std::fprintf(out, "  \"ticks\": [\n");
+
+    std::uint64_t seq_a = 0;
+    std::uint64_t seq_b = 0;
+    for (std::uint64_t tick = 1; tick <= tick_count; ++tick) {
+        auto input_a = MakeInput(config.match_id, "player_a", tick, ++seq_a, tick >= 10);
+        auto input_b = MakeInput(config.match_id, "player_b", tick, ++seq_b, false);
+        sim.SubmitInput(input_a);
+        sim.SubmitInput(input_b);
+        const auto snapshot = sim.Tick();
+
+        std::fprintf(out, "    {\"tick\": %llu, \"stateHash\": \"%s\", \"players\": [",
+                     static_cast<unsigned long long>(snapshot.tick), snapshot.state_hash.c_str());
+        for (std::size_t i = 0; i < snapshot.players.size(); ++i) {
+            const auto& player = snapshot.players[i];
+            std::fprintf(out, "%s{\"playerId\": \"%s\", \"xMilli\": %d, \"yMilli\": %d, \"bossCurrentHp\": %llu, \"damageDealt\": %llu}",
+                         i == 0 ? "" : ", ", player.player_id.c_str(), player.x_milli, player.y_milli,
+                         static_cast<unsigned long long>(player.boss_current_hp),
+                         static_cast<unsigned long long>(player.damage_dealt));
+        }
+        std::fprintf(out, "], \"bullets\": [");
+        for (std::size_t i = 0; i < snapshot.bullets.size(); ++i) {
+            const auto& bullet = snapshot.bullets[i];
+            std::fprintf(out, "%s{\"id\": \"%s\", \"xMilli\": %d, \"yMilli\": %d, \"vxMilli\": %d, \"vyMilli\": %d}",
+                         i == 0 ? "" : ", ", bullet.bullet_id.c_str(), bullet.x_milli, bullet.y_milli,
+                         bullet.vx_milli, bullet.vy_milli);
+        }
+        std::fprintf(out, "]}%s\n", tick == tick_count ? "" : ",");
+    }
+    std::fprintf(out, "  ]\n}\n");
+    std::fclose(out);
+    std::cout << "golden fixture written: " << path << "\n";
+}
+
 }  // namespace
 
 int main() {
+    if (const char* fixture_path = std::getenv("PHK_BOSS_RACE_FIXTURE"); fixture_path != nullptr) {
+        WriteGoldenFixture(fixture_path);
+        return 0;
+    }
+
     TestPatternCatalog();
     TestFirstToDefeatWins();
     TestDeterministicBullets();
