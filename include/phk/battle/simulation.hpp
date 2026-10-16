@@ -196,12 +196,14 @@ struct TransferableCardState {
 // 出牌执行器收集的一行事件（T3 step4）。字段与大厅 BattleEventRow
 // （Gensoulkyo/runtime/core/battle_events.go:41-50）一一对应，Step 2 逐字段
 // 映射成回传 JSON。event_value 语义 = 受影响的子弹计数（spawned/removed/
-// cleared；card_accepted 时为卡伤害），不是费用。
+// cleared；card_accepted 时为卡伤害），不是费用。hit / graze 行为 B3 接触行：
+// event_value 镜像 Go（hit = bullet.Damage、graze = 字面 1，Go 侧实际均 1），
+// 且**不带 card_id**（大厅 battle_events.go:249-256 对两者早退）。
 //
 // 故意不进 event_trace_/event_stream_hash_/event_count_：后三者参与
 // ReplaySummary 与 CanonicalStateHash，卡行进重放哈希会扰动既有确定性断言。
 struct CardCastEvent {
-    std::string event_type;   // card_accepted | card_effect_applied | card_rejected | boss_defeated | all_players_disconnected
+    std::string event_type;   // card_accepted | card_effect_applied | card_rejected | boss_defeated | all_players_disconnected | hit | graze
     std::int64_t tick = 0;
     std::string player_id;
     std::string card_id;

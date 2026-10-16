@@ -2743,6 +2743,9 @@ void BattleSimulation::AdvanceBullets() {
 // 无论是否无敌**子弹一律移除**；同 tick 一颗子弹只结算一个玩家，命中即 break）；
 // 否则 <= 擦弹半径+子弹半径 ⇒ 擦弹（按 grazed_bullet_ids 去重）。
 // 用整数平方距离（d2 <= R*R）等价于 Go 的 Hypot<=R，且无浮点不确定性。
+// B3 step2：命中/擦弹同时向 card_cast_events_ 发一行（hit / graze，无 card_id），
+// 复用 ≤64 行/批 → BuildBattleEventsJson → HMAC 上报路径；只写收集器，
+// **不进任何 canonical 哈希**（见 simulation.hpp:201-202）。
 void BattleSimulation::ResolveBulletContacts() {
     const std::int64_t tick = static_cast<std::int64_t>(current_tick_);
     for (auto bullet_it = bullets_.begin(); bullet_it != bullets_.end();) {
@@ -2760,6 +2763,16 @@ void BattleSimulation::ResolveBulletContacts() {
                 if (tick > player.invulnerable_until) {
                     ++player.hit_count;
                     player.invulnerable_until = tick + kPlayerHitInvulnerableTicks;
+                    // B3 step2：命中行（Go simulation.go:210，内层分支内 ⇒ 被
+                    // 无敌窗口吸收的命中不发）。Value = Go bullet.Damage；Go 所有
+                    // 子弹 damage 恒为 1（addBulletLocked 的 4 个调用点均传 1），
+                    // C++ BulletState 无 damage 字段，故直接镜像有效值 1。
+                    CardCastEvent hit_row;
+                    hit_row.event_type = "hit";
+                    hit_row.tick = tick;
+                    hit_row.player_id = player.player_id;
+                    hit_row.event_value = 1;
+                    PushCardCastEvent(std::move(hit_row));
                 }
                 removed = true;
                 break;
@@ -2767,6 +2780,14 @@ void BattleSimulation::ResolveBulletContacts() {
             if (distance_sq <= graze_radius * graze_radius) {
                 if (player.grazed_bullet_ids.insert(bullet.bullet_id).second) {
                     ++player.graze_count;
+                    // B3 step2：擦弹行（Go simulation.go:222，Value 为字面 1）。
+                    // 只在去重集首次插入成功时发射，镜像 Go GrazedBullets 去重。
+                    CardCastEvent graze_row;
+                    graze_row.event_type = "graze";
+                    graze_row.tick = tick;
+                    graze_row.player_id = player.player_id;
+                    graze_row.event_value = 1;
+                    PushCardCastEvent(std::move(graze_row));
                 }
             }
         }

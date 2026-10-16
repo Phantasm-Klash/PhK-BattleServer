@@ -59,6 +59,8 @@ inline constexpr const char* kBattleCallbackSignatureHeader = "X-PhK-Battle-Sign
 //   type / tick / user_id / card_id / value 恒发；
 //   target_user_id / reason 空则省略；slot <= 0 省略（Go omitempty 对 0 省略，
 //   CardCastEvent 以 -1 表示"未设置"，两者在 JSON 上同形）。
+//   例外：B3 接触行 hit / graze 带 user_id + value 但**省略 card_id**
+//   （大厅 battle_events.go:249-256 对两者早退，不检查 card_id）。
 [[nodiscard]] std::string BuildBattleEventsJson(
     const std::string& battle_server_id,
     const std::string& match_id,

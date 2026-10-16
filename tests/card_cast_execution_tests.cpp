@@ -371,6 +371,102 @@ void TestBulletContactInvulnerableWindow() {
     }
 }
 
+// ---- B3 step2：接触行（hit / graze）真正从真实入口发出 ----
+
+void TestBulletContactRowsEmitted() {
+    // (1) 命中：站在弹源上的玩家恰好产生一行 hit（正确玩家 / 值 / tick，无卡）。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 0), "emit hit: add p1 at spawn origin");
+        Check(simulation.AddPlayer("p2", 90000, 0), "emit hit: add p2 far away");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 5：4 颗子弹在原点接触，首颗命中并刷新无敌帧
+        }
+        Check(CountEvents(simulation, "hit") == 1, "emit hit: exactly one hit row");
+        Check(CountEvents(simulation, "graze") == 0, "emit hit: the hit branch does not graze");
+        const phk::battle::CardCastEvent* row = FindEvent(simulation, "hit");
+        Check(row != nullptr && row->player_id == "p1", "emit hit: row names the touched player");
+        Check(row != nullptr && row->tick == 5, "emit hit: row carries the contact tick");
+        Check(
+            row != nullptr && row->event_value == 1,
+            "emit hit: value mirrors Go bullet.Damage (all bullets damage 1)"
+        );
+        Check(row != nullptr && row->card_id.empty(), "emit hit: contact row carries no card id");
+        Check(row != nullptr && row->slot == -1 && row->reason.empty(), "emit hit: no slot/reason set");
+    }
+    // (2) 擦弹：站在擦弹环（命中环之外）的玩家产生 graze 行，每颗子弹一行。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 20000, 0), "emit graze: add p1 inside the graze ring");
+        Check(simulation.AddPlayer("p2", 90000, 0), "emit graze: add p2 far away");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 5：4 颗子弹都落在擦弹环（不命中）
+        }
+        Check(CountEvents(simulation, "hit") == 0, "emit graze: the graze ring never hits");
+        Check(CountEvents(simulation, "graze") == 4, "emit graze: one row per distinct bullet");
+        const phk::battle::CardCastEvent* row = FindEvent(simulation, "graze");
+        Check(row != nullptr && row->player_id == "p1", "emit graze: row names the grazing player");
+        Check(row != nullptr && row->tick == 5, "emit graze: row carries the contact tick");
+        Check(row != nullptr && row->event_value == 1, "emit graze: value mirrors Go literal 1");
+        Check(row != nullptr && row->card_id.empty(), "emit graze: contact row carries no card id");
+    }
+    // (3) 被无敌窗口吸收的命中**不发** hit 行（Go simulation.go:210 在内层分支内）。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 0), "emit absorb: add p1 at spawn origin");
+        Check(simulation.AddPlayer("p2", 90000, 0), "emit absorb: add p2 far away");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 5：首命中 ⇒ 无敌帧到 95
+        }
+        Check(CountEvents(simulation, "hit") == 1, "emit absorb: first hit at tick 5");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 10：新子弹接触，但仍在窗口内 ⇒ 吸收
+        }
+        Check(CountEvents(simulation, "hit") == 1, "emit absorb: absorbed contact emits no hit row");
+        const phk::battle::CardCastEvent* row = FindEvent(simulation, "hit");
+        Check(row != nullptr && row->tick == 5, "emit absorb: the sole hit row is the unabsorbed one");
+    }
+    // (4) 行经 ≤64/批 的 TakeCardCastEvents 路径，并按大厅字段名序列化。
+    {
+        BattleSimulation simulation(DuelConfig());
+        // 离轴站位：任何轴向子弹都进不了命中环（最近约 16.5k milli > 8500），
+        // 但始终在擦弹环内 ⇒ 每颗子弹恰好一行 graze、零 hit。
+        Check(simulation.AddPlayer("p1", 15000, 15000), "emit batch: add p1 off-axis in the graze ring");
+        // p2 也离轴且远离两条子弹走廊（≥66k milli），避免它的行污染计数。
+        Check(simulation.AddPlayer("p2", -90000, -70000), "emit batch: add p2 off-axis, far away");
+        for (int i = 0; i < 90; ++i) {
+            simulation.Tick();  // 每 5 tick 生成 4 颗子弹 ⇒ 18 * 4 = 72 行 graze
+        }
+        Check(CountEvents(simulation, "hit") == 0, "emit batch: off-axis player is never hit");
+        const std::size_t total = simulation.CardCastEvents().size();
+        Check(total == 72, "emit batch: 72 graze rows collected");
+        const auto batch = simulation.TakeCardCastEvents(phk::battle::kMaxBattleEventsPerSubmit);
+        Check(batch.size() == 64, "emit batch: at most 64 rows leave in one batch");
+        Check(simulation.CardCastEvents().size() == total - 64, "emit batch: the remainder stays queued");
+        Check(batch.front().event_type == "graze", "emit batch: contact rows flow through the batch path");
+
+        // 序列化：字段名与大厅 BattleEventRow 一致；接触行不带 card_id。
+        const std::string json = phk::battle::BuildBattleEventsJson("srv", kMatchId, batch);
+        Check(
+            json.find("\"type\":\"graze\",\"tick\":5,\"user_id\":\"p1\",\"value\":1}") != std::string::npos,
+            "emit batch: graze row serializes as type/tick/user_id/value"
+        );
+        Check(json.find("\"card_id\"") == std::string::npos, "emit batch: contact rows omit card_id");
+
+        phk::battle::CardCastEvent hit_row;
+        hit_row.event_type = "hit";
+        hit_row.tick = 5;
+        hit_row.player_id = "p1";
+        hit_row.event_value = 1;
+        const std::string hit_json = phk::battle::BuildBattleEventsJson("srv", kMatchId, {hit_row});
+        Check(
+            hit_json.find("\"type\":\"hit\",\"tick\":5,\"user_id\":\"p1\",\"value\":1}") != std::string::npos,
+            "emit batch: hit row serializes as type/tick/user_id/value"
+        );
+        Check(hit_json.find("\"card_id\"") == std::string::npos, "emit batch: hit row omits card_id");
+    }
+}
+
 // ---- 拒绝路径（每条例断 card_rejected 行 + 状态零变更） ----
 
 void TestRejectionPaths() {
@@ -1118,18 +1214,22 @@ void TestAllPlayersDisconnectedSignal() {
             "all-disc: both players dropped at the timeout"
         );
         Check(CountEvents(simulation, type) == 1, "all-disc: exactly one signal row");
-        const phk::battle::CardCastEvent* row = FindEvent(simulation, type);
-        Check(row != nullptr && row->tick == 3, "all-disc: row carries the terminal tick");
+        const phk::battle::CardCastEvent* row_ptr = FindEvent(simulation, type);
+        Check(row_ptr != nullptr && row_ptr->tick == 3, "all-disc: row carries the terminal tick");
         Check(
-            row != nullptr && row->player_id.empty() && row->card_id.empty(),
+            row_ptr != nullptr && row_ptr->player_id.empty() && row_ptr->card_id.empty(),
             "all-disc: match-level row has no player/card id"
         );
+        // 复制该行再继续 tick：B3 起后续 tick 会追加接触行，令事件向量重新分配
+        // 并失效此前保存的指针（原实现跨 tick 持有 FindEvent 的指针是隐患）。
+        const phk::battle::CardCastEvent row =
+            row_ptr != nullptr ? *row_ptr : phk::battle::CardCastEvent{};
         simulation.Tick();
         simulation.Tick();
         Check(CountEvents(simulation, type) == 1, "all-disc: signal is not repeated per tick");
 
         // JSON 形状：对局级行只带 type + tick。
-        const std::string json = BuildBattleEventsJson("srv", kMatchId, {*row});
+        const std::string json = BuildBattleEventsJson("srv", kMatchId, {row});
         Check(
             json.find("{\"type\":\"all_players_disconnected\",\"tick\":3}") != std::string::npos,
             "all-disc: JSON row is type + tick only"
@@ -1171,6 +1271,7 @@ int main() {
     TestAegisWardCastViaModeAction();
     TestFinaleArcClearsField();
     TestBulletContactInvulnerableWindow();
+    TestBulletContactRowsEmitted();
     TestRejectionPaths();
     TestBossDamageAndDefeatRow();
     TestBattleEventsPayloadShape();

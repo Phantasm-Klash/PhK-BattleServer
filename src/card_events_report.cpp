@@ -103,7 +103,11 @@ std::string BuildBattleEventsJson(
             continue;
         }
         out += ",\"user_id\":" + JsonString(row.player_id);
-        out += ",\"card_id\":" + JsonString(row.card_id);
+        // B3 step2：接触行（hit / graze）带 user_id + value 但**不带 card_id**
+        // （大厅 battle_events.go:249-256 对两者早退，不检查 card_id）。
+        if (row.event_type != "hit" && row.event_type != "graze") {
+            out += ",\"card_id\":" + JsonString(row.card_id);
+        }
         out += ",\"value\":" + std::to_string(row.event_value);
         if (!row.target_user_id.empty()) {
             out += ",\"target_user_id\":" + JsonString(row.target_user_id);
