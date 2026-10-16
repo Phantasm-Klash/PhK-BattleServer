@@ -104,6 +104,9 @@ void PrintUsage() {
         << "  --boss-id <id>        room boss selection (tian|hui; empty = default timeline)\n"
         << "  --loadout <specs>     per-player loadout: p:char:shot:bomb[,...]\n"
         << "  --max-ticks <N>       safety tick cap (0 = unlimited)\n"
+        << "  --tick-rate <Hz>      server tick rate (60, 64, 128; default 60)\n"
+        << "  --tick-scale <f>      test pacing: scales the wall-clock tick interval\n"
+        << "                        (1 = real time, 0 = run ticks as fast as the CPU allows)\n"
         << "  --callback-secret <hex>  battle callback HMAC secret (registration response)\n"
         << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
         << "  --battle-server-id <id>  pin tickets to this battle server id\n"
@@ -111,7 +114,12 @@ void PrintUsage() {
         << "  --help                show this help\n";
 }
 
-bool ParseArgs(int argc, char** argv, phk::battle::MatchLifecycleConfig* config) {
+bool ParseArgs(
+    int argc,
+    char** argv,
+    phk::battle::MatchLifecycleConfig* config,
+    double* tick_scale
+) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         auto next = [&](std::string* out) -> bool {
@@ -150,6 +158,22 @@ bool ParseArgs(int argc, char** argv, phk::battle::MatchLifecycleConfig* config)
         } else if (arg == "--max-ticks") {
             if (!next(&value)) return false;
             config->max_ticks = std::strtoull(value.c_str(), nullptr, 10);
+        } else if (arg == "--tick-rate") {
+            if (!next(&value)) return false;
+            const long hz = std::strtol(value.c_str(), nullptr, 10);
+            if (hz < 0 || hz > 1000) {
+                std::cerr << "invalid --tick-rate: " << value << "\n";
+                return false;
+            }
+            config->tick_rate_hz = static_cast<std::uint32_t>(hz);
+        } else if (arg == "--tick-scale") {
+            if (!next(&value)) return false;
+            const double scale = std::strtod(value.c_str(), nullptr);
+            if (scale < 0.0) {
+                std::cerr << "invalid --tick-scale: " << value << "\n";
+                return false;
+            }
+            *tick_scale = scale;
         } else if (arg == "--battle-server-id") {
             if (!next(&value)) return false;
             config->battle_server_id = value;
@@ -184,8 +208,11 @@ int main(int argc, char** argv) {
     phk::battle::MatchLifecycleConfig config;
     config.match_id = "match_local_000001";
     config.player_ids = {"player_a", "player_b"};
+    // Wall-clock pacing only: 1.0 keeps the real tick rate, anything lower runs
+    // the same simulation faster, which is what automated runs need.
+    double tick_scale = 1.0;
 
-    if (!ParseArgs(argc, argv, &config)) {
+    if (!ParseArgs(argc, argv, &config, &tick_scale)) {
         PrintUsage();
         return 2;
     }
@@ -207,6 +234,11 @@ int main(int argc, char** argv) {
 
     const std::uint32_t tick_rate = server.Config().tick_rate_hz == 0 ? 60 : server.Config().tick_rate_hz;
     const auto tick_interval = std::chrono::microseconds(1000000 / tick_rate);
+    // The simulation is per-tick, so pacing is wall-clock only: --tick-scale
+    // shrinks the interval (0 = no pacing at all) and automated runs can walk a
+    // full match in a fraction of the time without changing a single bullet.
+    const auto paced_interval = std::chrono::microseconds(
+        static_cast<std::int64_t>(tick_interval.count() * tick_scale));
     auto next_tick = std::chrono::steady_clock::now();
 
     std::uint64_t ticks = 0;
@@ -234,8 +266,10 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        next_tick += tick_interval;
-        std::this_thread::sleep_until(next_tick);
+        if (paced_interval.count() > 0) {
+            next_tick += paced_interval;
+            std::this_thread::sleep_until(next_tick);
+        }
     }
 
     server.Stop();
