@@ -45,12 +45,18 @@ if(NOT PHK_PROTOCOL_CPP_INCLUDE_DIR)
 endif()
 message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 
+# .dem v1 container uses zlib for the body (COORDINATION §0.2).
+find_package(ZLIB REQUIRED)
+
 add_library(phk_battle_core
     src/card_effects.cpp
     src/card_events_report.cpp
     src/card_hand.cpp
     src/chain_log.cpp
+    src/dem.cpp
     src/boss_race.cpp
+    src/danmaku/boss_catalog.cpp
+    src/danmaku/bullet_mode_map.cpp
     src/danmaku/bullet_motion.cpp
     src/danmaku/emitter.cpp
     src/danmaku/pattern_timeline.cpp
@@ -74,6 +80,8 @@ target_include_directories(phk_battle_core
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ikcp
         ${PHK_PROTOCOL_CPP_INCLUDE_DIR}
 )
+
+target_link_libraries(phk_battle_core PUBLIC ZLIB::ZLIB)
 
 # Vendored third-party C code: keep it warning-free from our own -Wall flags.
 set_source_files_properties(third_party/ikcp/ikcp.c PROPERTIES COMPILE_OPTIONS "-w")
