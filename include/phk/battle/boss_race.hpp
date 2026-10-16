@@ -5,8 +5,10 @@
 #include <string>
 #include <vector>
 
+#include "phk/battle/danmaku/boss_catalog.hpp"
 #include "phk/battle/danmaku/bullet_motion.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
+#include "phk/battle/danmaku/player_loadout.hpp"
 #include "phk/battle/protocol.hpp"
 
 // MVP "mvp_boss_race" simulation.
@@ -35,6 +37,19 @@ enum class BossRaceState {
     Finished,
 };
 
+// 每玩家自机 loadout（任务「自机机制」）。字段名与 Go 侧 BattleAgentLoadout
+// 及 .dem header 的 players[].loadout{character_id,shot_type,bomb_type} 对齐：
+//   * character_id 目前仅作展示/透传（协议白名单在 Go）；
+//   * shot_type ∈ danmaku::PlayerShotTable() 的 name（如 "ReimuA1"）；
+//   * bomb_type ∈ danmaku::PlayerBombTable() 的 name（如 "Reimu"）。
+// 任一为空 = 走默认自机行为（复现现状）。
+struct PlayerLoadoutSpec {
+    std::string player_id;
+    std::string character_id;
+    std::string shot_type;
+    std::string bomb_type;
+};
+
 struct BossRaceConfig {
     std::string match_id;
     std::string mode_id = kMvpBossRaceModeId;
@@ -43,6 +58,10 @@ struct BossRaceConfig {
     std::uint64_t boss_max_hp = kBossRaceDefaultBossHp;
     std::uint32_t tick_rate_hz = kBossRaceTickRateHz;
     std::uint32_t pattern_period_ticks = kBossRacePatternPeriodTicks;
+    // 房间级 boss 选择（空 = 默认 timeline，逐字节保持现状）。
+    std::string boss_id;
+    // 每玩家自机 loadout（空 = 默认自机行为）。
+    std::vector<PlayerLoadoutSpec> loadouts;
 };
 
 struct BossRaceBullet {
@@ -107,6 +126,14 @@ public:
     [[nodiscard]] const std::string& WinnerPlayerId() const;
     [[nodiscard]] std::string PatternIdForTick(std::uint64_t tick) const;
 
+    // 已解析的 boss 目录项（boss_id 为空或未知时返回 nullptr = 默认 timeline）。
+    [[nodiscard]] const danmaku::BossCatalogEntry* BossEntry() const;
+    // 该 tick 使用的库内 pattern index（boss 目录展开；默认路径 = 原 10 模式轮转）。
+    [[nodiscard]] std::size_t PatternIndexForTick(std::uint64_t tick) const;
+    // 玩家已解析的自机射击/炸弹 spec（无 loadout / 名称未知返回 nullptr）。
+    [[nodiscard]] const danmaku::PlayerShotSpec* PlayerShotSpecFor(const std::string& player_id) const;
+    [[nodiscard]] const danmaku::PlayerBombSpec* PlayerBombSpecFor(const std::string& player_id) const;
+
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     bool SetPlayerConnected(const std::string& player_id, bool connected);
 
@@ -142,6 +169,7 @@ private:
         danmaku::BulletMotion motion;
     };
 
+    void ResolveBossAndLoadouts();
     void StartIfReady();
     void ApplyPlayerTick(std::uint64_t tick);
     void SpawnBulletsForTick(std::uint64_t tick);
@@ -161,6 +189,11 @@ private:
     std::map<std::string, PlayerState> players_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::vector<LiveBullet> live_bullets_;
+    // 解析后的 boss / 自机（构造期固定，运行期不可变 → 确定性）。
+    const danmaku::BossCatalogEntry* boss_entry_ = nullptr;
+    std::map<std::string, PlayerLoadoutSpec> loadout_by_player_;
+    std::map<std::string, const danmaku::PlayerShotSpec*> shot_by_player_;
+    std::map<std::string, const danmaku::PlayerBombSpec*> bomb_by_player_;
 };
 
 }  // namespace phk::battle

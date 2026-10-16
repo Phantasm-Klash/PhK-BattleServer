@@ -109,11 +109,43 @@ BossRaceSimulation::BossRaceSimulation(BossRaceConfig config) : config_(std::mov
     if (config_.tick_rate_hz == 0) {
         config_.tick_rate_hz = kBossRaceTickRateHz;
     }
-    if (config_.boss_max_hp == 0) {
-        config_.boss_max_hp = kBossRaceDefaultBossHp;
-    }
     if (config_.pattern_period_ticks == 0) {
         config_.pattern_period_ticks = kBossRacePatternPeriodTicks;
+    }
+    ResolveBossAndLoadouts();
+    if (config_.boss_max_hp == 0) {
+        // boss 目录存在时以目录 HP 为准，否则回退默认（默认路径逐字节不变）。
+        config_.boss_max_hp = boss_entry_ != nullptr ? boss_entry_->boss_max_hp : kBossRaceDefaultBossHp;
+    }
+}
+
+// 解析 boss 目录项与每玩家自机 loadout。构造函数里调用一次，运行期只读。
+void BossRaceSimulation::ResolveBossAndLoadouts() {
+    boss_entry_ = danmaku::FindBossCatalogEntry(config_.boss_id);
+    loadout_by_player_.clear();
+    shot_by_player_.clear();
+    bomb_by_player_.clear();
+    for (const PlayerLoadoutSpec& loadout : config_.loadouts) {
+        if (loadout.player_id.empty()) {
+            continue;
+        }
+        loadout_by_player_[loadout.player_id] = loadout;
+        if (!loadout.shot_type.empty()) {
+            for (const danmaku::PlayerShotSpec& spec : danmaku::PlayerShotTable()) {
+                if (loadout.shot_type == spec.name) {
+                    shot_by_player_[loadout.player_id] = &spec;
+                    break;
+                }
+            }
+        }
+        if (!loadout.bomb_type.empty()) {
+            for (const danmaku::PlayerBombSpec& spec : danmaku::PlayerBombTable()) {
+                if (loadout.bomb_type == spec.name) {
+                    bomb_by_player_[loadout.player_id] = &spec;
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -137,10 +169,33 @@ const std::string& BossRaceSimulation::WinnerPlayerId() const {
     return winner_player_id_;
 }
 
+std::size_t BossRaceSimulation::PatternIndexForTick(std::uint64_t tick) const {
+    const std::uint32_t period = config_.pattern_period_ticks == 0 ? kBossRacePatternPeriodTicks : config_.pattern_period_ticks;
+    const std::size_t wave_index = static_cast<std::size_t>(tick / period);
+    if (boss_entry_ != nullptr) {
+        // boss 目录：按阶段组展开，循环整条 timeline。
+        return danmaku::BossTimelinePatternIndexAt(*boss_entry_, wave_index);
+    }
+    // 默认路径：原 10 个真实模式轮转（逐字节保持现状）。
+    return wave_index % kBossRacePatternCount;
+}
+
 std::string BossRaceSimulation::PatternIdForTick(std::uint64_t tick) const {
-    const std::uint32_t period = config_.pattern_period_ticks;
-    const std::size_t index = static_cast<std::size_t>((tick / period) % kBossRacePatternCount);
-    return BossRacePatternIds()[index];
+    return BossRacePatternIds()[PatternIndexForTick(tick)];
+}
+
+const danmaku::BossCatalogEntry* BossRaceSimulation::BossEntry() const {
+    return boss_entry_;
+}
+
+const danmaku::PlayerShotSpec* BossRaceSimulation::PlayerShotSpecFor(const std::string& player_id) const {
+    const auto it = shot_by_player_.find(player_id);
+    return it == shot_by_player_.end() ? nullptr : it->second;
+}
+
+const danmaku::PlayerBombSpec* BossRaceSimulation::PlayerBombSpecFor(const std::string& player_id) const {
+    const auto it = bomb_by_player_.find(player_id);
+    return it == bomb_by_player_.end() ? nullptr : it->second;
 }
 
 bool BossRaceSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
@@ -236,10 +291,30 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
         player.y_milli = ClampMilli(player.y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
 
         // Shooting damages this player's own Boss copy.
-        if (input.shoot && player.boss_current_hp > 0) {
-            const std::uint64_t damage = std::min(kBossRaceDamagePerShotTick, player.boss_current_hp);
-            player.boss_current_hp -= damage;
-            player.damage_dealt += damage;
+        // 默认（未配置自机 loadout）：每 tick 固定 kBossRaceDamagePerShotTick，
+        // 与现状逐字节一致。配置了 shot_type/bomb_type 时改用真实自机表：
+        //   * shot_type → danmaku::PlayerShotTable() 的 damage（主弹伤害）；
+        //   * bomb_type → danmaku::PlayerBombTable() 的 damage（该 tick 触发的炸弹）。
+        if (player.boss_current_hp > 0) {
+            std::uint64_t tick_damage = 0;
+            if (input.shoot) {
+                tick_damage += kBossRaceDamagePerShotTick;
+                if (const danmaku::PlayerShotSpec* spec = PlayerShotSpecFor(player.player_id);
+                    spec != nullptr && spec->damage >= 0) {
+                    tick_damage = static_cast<std::uint64_t>(spec->damage);
+                }
+            }
+            if (input.bomb) {
+                if (const danmaku::PlayerBombSpec* bomb = PlayerBombSpecFor(player.player_id);
+                    bomb != nullptr && bomb->damage >= 0) {
+                    tick_damage += static_cast<std::uint64_t>(bomb->damage);
+                }
+            }
+            if (tick_damage > 0) {
+                const std::uint64_t damage = std::min(tick_damage, player.boss_current_hp);
+                player.boss_current_hp -= damage;
+                player.damage_dealt += damage;
+            }
         }
     }
     if (tick_it != pending_inputs_by_tick_.end()) {
@@ -272,9 +347,15 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
     if (tick == 0 || (tick % config_.pattern_period_ticks) != 0) {
         return;
     }
-    const std::size_t pattern_index =
-        static_cast<std::size_t>((tick / config_.pattern_period_ticks) % kBossRacePatternCount);
+    const std::size_t pattern_index = PatternIndexForTick(tick);
     const danmaku::PatternDef& def = danmaku::BossRacePatternLibrary()[pattern_index];
+
+    // boss 移动：整数三角波发射点偏移（未配置 boss → (0,0)，与现状一致）。
+    std::int32_t boss_offset_x = 0;
+    std::int32_t boss_offset_y = 0;
+    if (boss_entry_ != nullptr) {
+        danmaku::BossEmitterOffsetMilli(boss_entry_->movement, tick, &boss_offset_x, &boss_offset_y);
+    }
 
     for (auto& item : players_) {
         PlayerState& player = item.second;
@@ -286,8 +367,8 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
         }
 
         danmaku::EmitContext ctx;
-        ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli);
-        ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli);
+        ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
+        ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli + boss_offset_y);
 
         danmaku::MotionTargets targets;
         targets.has_my_ship = true;
@@ -443,9 +524,15 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
             targets.my_ship_x = kScreenCenterX + ToPixels(owner_it->second.x_milli);
             targets.my_ship_y = kScreenCenterY + ToPixels(owner_it->second.y_milli);
         }
+        // boss 移动：追踪弹的「敌军」目标随 boss 三角波移动（未配置 boss → 原点）。
+        std::int32_t boss_offset_x = 0;
+        std::int32_t boss_offset_y = 0;
+        if (boss_entry_ != nullptr) {
+            danmaku::BossEmitterOffsetMilli(boss_entry_->movement, tick, &boss_offset_x, &boss_offset_y);
+        }
         targets.has_enemy = true;
-        targets.enemy_x = kScreenCenterX + ToPixels(kBossOriginXMilli);
-        targets.enemy_y = kScreenCenterY + ToPixels(kBossOriginYMilli);
+        targets.enemy_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
+        targets.enemy_y = kScreenCenterY + ToPixels(kBossOriginYMilli + boss_offset_y);
 
         // 确定性 RNG：输入 (match_seed, tick, pattern_index, spawn_index)。
         danmaku::DeterministicRng rng(config_.match_seed, tick, live.pattern_index, live.spawn_index);

@@ -152,6 +152,9 @@ struct MatchLifecycleConfig {
     std::uint64_t boss_max_hp = kBossRaceDefaultBossHp;
     std::uint32_t tick_rate_hz = kBossRaceTickRateHz;
     std::uint64_t max_ticks = 0;  // 0 = no cap (lobby kills the process)
+    // 房间 boss 选择（仅房主可设；空 = 默认 timeline）+ 每玩家自机 loadout。
+    std::string boss_id;
+    std::vector<PlayerLoadoutSpec> loadouts;
 
     // --- signed ticket enforcement (app path) -----------------------------
     MatchTicketRequirement require_ticket = MatchTicketRequirement::Warn;

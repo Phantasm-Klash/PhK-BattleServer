@@ -40,6 +40,40 @@ std::vector<std::string> SplitComma(const std::string& text) {
     return parts;
 }
 
+// 冒号分隔，**保留空字段**（自机未选时 shot/bomb 为空串）。
+std::vector<std::string> SplitColon(const std::string& text) {
+    std::vector<std::string> parts;
+    std::string current;
+    std::istringstream stream(text);
+    while (std::getline(stream, current, ':')) {
+        parts.push_back(current);
+    }
+    // std::getline 不返回尾随空字段；按需补一个。
+    if (!text.empty() && text.back() == ':') {
+        parts.push_back("");
+    }
+    return parts;
+}
+
+// --loadout <p:char:shot:bomb>[,...] → PlayerLoadoutSpec 列表。
+// 每条必须 4 段且 player_id 非空；格式不符的条目忽略（battle-agent 已保证格式）。
+std::vector<phk::battle::PlayerLoadoutSpec> ParseLoadouts(const std::string& text) {
+    std::vector<phk::battle::PlayerLoadoutSpec> out;
+    for (const std::string& entry : SplitComma(text)) {
+        const std::vector<std::string> fields = SplitColon(entry);
+        if (fields.size() != 4 || fields[0].empty()) {
+            continue;
+        }
+        phk::battle::PlayerLoadoutSpec loadout;
+        loadout.player_id = fields[0];
+        loadout.character_id = fields[1];
+        loadout.shot_type = fields[2];
+        loadout.bomb_type = fields[3];
+        out.push_back(std::move(loadout));
+    }
+    return out;
+}
+
 bool ParseRequireTicket(const std::string& value, phk::battle::MatchTicketRequirement* out) {
     if (value == "off") {
         *out = phk::battle::MatchTicketRequirement::Off;
@@ -67,6 +101,8 @@ void PrintUsage() {
         << "  --lobby <host:port>   lobby endpoint for result POST\n"
         << "  --ruleset <id>        ruleset version (default mvp-boss-race-s0)\n"
         << "  --boss-hp <N>         boss max hp override\n"
+        << "  --boss-id <id>        room boss selection (tian|hui; empty = default timeline)\n"
+        << "  --loadout <specs>     per-player loadout: p:char:shot:bomb[,...]\n"
         << "  --max-ticks <N>       safety tick cap (0 = unlimited)\n"
         << "  --callback-secret <hex>  battle callback HMAC secret (registration response)\n"
         << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
@@ -105,6 +141,12 @@ bool ParseArgs(int argc, char** argv, phk::battle::MatchLifecycleConfig* config)
         } else if (arg == "--boss-hp") {
             if (!next(&value)) return false;
             config->boss_max_hp = std::strtoull(value.c_str(), nullptr, 10);
+        } else if (arg == "--boss-id") {
+            if (!next(&value)) return false;
+            config->boss_id = value;
+        } else if (arg == "--loadout") {
+            if (!next(&value)) return false;
+            config->loadouts = ParseLoadouts(value);
         } else if (arg == "--max-ticks") {
             if (!next(&value)) return false;
             config->max_ticks = std::strtoull(value.c_str(), nullptr, 10);

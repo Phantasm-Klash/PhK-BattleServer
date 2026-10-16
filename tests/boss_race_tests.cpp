@@ -146,6 +146,149 @@ void TestPatternSchedulerCoversTenPatterns() {
     }
 }
 
+// ---- 线程A「游戏内容」：boss 目录 + 自机 loadout ----------------------------
+
+void TestBossCatalogTimelineExpansion() {
+    phk::battle::BossRaceConfig config = MakeConfig(2026u, 0);
+    config.boss_id = "tian";
+    auto sim = phk::battle::BossRaceSimulation(config);
+
+    const auto* entry = sim.BossEntry();
+    Check(entry != nullptr, "tian resolves to a boss catalog entry");
+    if (entry != nullptr) {
+        Check(entry->id == "tian", "boss entry id is tian");
+        Check(entry->boss_max_hp == 20000, "tian hp comes from the catalog");
+    }
+    Check(sim.Config().boss_max_hp == 20000, "simulation adopts the catalog boss hp");
+
+    const std::uint32_t period = sim.Config().pattern_period_ticks;
+    // 阶段组展开：kome_ring x4 → arrow_aimed_fan x3 → ring_spiral x4 →
+    // kome_homing x3 → chou_four_dir x4（总 18 波），随后循环回波 0。
+    Check(sim.PatternIdForTick(period * 1) == "kome_ring", "wave 1 → kome_ring");
+    Check(sim.PatternIdForTick(period * 4) == "arrow_aimed_fan", "wave 4 → arrow_aimed_fan");
+    Check(sim.PatternIdForTick(period * 7) == "ring_spiral", "wave 7 → ring_spiral");
+    Check(sim.PatternIdForTick(period * 11) == "kome_homing", "wave 11 → kome_homing");
+    Check(sim.PatternIdForTick(period * 14) == "chou_four_dir", "wave 14 → chou_four_dir");
+    Check(sim.PatternIdForTick(period * 18) == "kome_ring", "wave 18 loops back to kome_ring");
+    // 越界回退：极大 tick 仍落在库内（不越界）。
+    const std::string far = sim.PatternIdForTick(period * 100000ull);
+    Check(!far.empty(), "far tick still resolves to a library pattern id");
+}
+
+void TestBossEmitterOffsetTriangular() {
+    using namespace phk::battle::danmaku;
+    const BossCatalogEntry* tian = FindBossCatalogEntry("tian");
+    Check(tian != nullptr, "tian catalog entry present");
+    if (tian == nullptr) {
+        return;
+    }
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    BossEmitterOffsetMilli(tian->movement, 0, &x, &y);
+    Check(x == -60000 && y == 0, "tian tick 0 → -amplitude on x");
+    BossEmitterOffsetMilli(tian->movement, 300, &x, &y);
+    Check(x == 60000 && y == 0, "tian tick half → +amplitude on x");
+    BossEmitterOffsetMilli(tian->movement, 600, &x, &y);
+    Check(x == -60000 && y == 0, "tian tick period → -amplitude on x");
+    BossEmitterOffsetMilli(tian->movement, 150, &x, &y);
+    Check(x == 0 && y == 0, "tian tick half/2 → 0 offset");
+    // 整数整除精确：(2*60000)/300 = 400。
+    BossEmitterOffsetMilli(tian->movement, 75, &x, &y);
+    Check(x == -30000, "tian tick 75 → -30000");
+
+    const BossCatalogEntry* hui = FindBossCatalogEntry("hui");
+    Check(hui != nullptr, "hui catalog entry present");
+    if (hui != nullptr) {
+        BossEmitterOffsetMilli(hui->movement, 240, &x, &y);
+        Check(x == 0 && y == 30000, "hui is vertical (bob_y)");
+    }
+    BossMovementSpec still;
+    BossEmitterOffsetMilli(still, 123, &x, &y);
+    Check(x == 0 && y == 0, "static movement yields zero offset");
+}
+
+void TestBossSelectionIsDeterministicAndDistinct() {
+    phk::battle::BossRaceConfig tian_cfg = MakeConfig(97531u, 0);
+    tian_cfg.boss_id = "tian";
+    phk::battle::BossRaceConfig hui_cfg = MakeConfig(97531u, 0);
+    hui_cfg.boss_id = "hui";
+    phk::battle::BossRaceConfig default_cfg = MakeConfig(97531u, 100000);
+
+    auto run = [](phk::battle::BossRaceConfig config) {
+        auto sim = phk::battle::BossRaceSimulation(config);
+        sim.AddPlayer("player_a", -20000, 60000);
+        sim.AddPlayer("player_b", 20000, 60000);
+        std::uint64_t seq = 0;
+        for (std::uint64_t tick = 1; tick <= 400; ++tick) {
+            sim.SubmitInput(MakeInput(sim.Config().match_id, "player_a", tick, ++seq, false));
+            sim.SubmitInput(MakeInput(sim.Config().match_id, "player_b", tick, ++seq, false));
+            sim.Tick();
+        }
+        return sim.Snapshot().state_hash;
+    };
+
+    const std::string tian_a = run(tian_cfg);
+    const std::string tian_b = run(tian_cfg);
+    Check(tian_a == tian_b, "same boss + seed → identical state hash");
+    Check(tian_a != run(hui_cfg), "tian and hui produce different states");
+    Check(tian_a != run(default_cfg), "boss timeline differs from the default scheduler");
+}
+
+void TestUnknownBossFallsBackToDefault() {
+    phk::battle::BossRaceConfig unknown = MakeConfig(4242u, 100000);
+    unknown.boss_id = "bogus";
+    auto sim = phk::battle::BossRaceSimulation(unknown);
+    Check(sim.BossEntry() == nullptr, "unknown boss falls back to the default timeline");
+    Check(sim.Config().boss_max_hp == 100000, "unknown boss keeps the configured hp");
+
+    phk::battle::BossRaceConfig plain = MakeConfig(4242u, 100000);
+    auto sim_plain = phk::battle::BossRaceSimulation(plain);
+    Check(sim.PatternIdForTick(45ull * 7) == sim_plain.PatternIdForTick(45ull * 7), "unknown boss == default scheduler");
+}
+
+void TestPlayerLoadoutSelectsShotAndBomb() {
+    phk::battle::BossRaceConfig config = MakeConfig(112233u, 1000000);
+    phk::battle::PlayerLoadoutSpec loadout;
+    loadout.player_id = "player_a";
+    loadout.character_id = "wide";
+    loadout.shot_type = "ReimuA1";  // damage 50
+    loadout.bomb_type = "Reimu";    // damage 45
+    config.loadouts.push_back(loadout);
+    auto sim = phk::battle::BossRaceSimulation(config);
+    Check(sim.AddPlayer("player_a", 0, 60000), "add loaded player_a");
+    Check(sim.AddPlayer("player_b", 20000, 60000), "add default player_b");
+
+    const auto* shot = sim.PlayerShotSpecFor("player_a");
+    Check(shot != nullptr && shot->name == std::string("ReimuA1"), "player_a resolves ReimuA1");
+    Check(sim.PlayerShotSpecFor("player_b") == nullptr, "player_b has no shot spec");
+    const auto* bomb = sim.PlayerBombSpecFor("player_a");
+    Check(bomb != nullptr && bomb->name == std::string("Reimu"), "player_a resolves Reimu bomb");
+
+    // tick 1：a 用 ReimuA1(50)，b 用默认(10)。
+    sim.SubmitInput(MakeInput(sim.Config().match_id, "player_a", 1, 1, true));
+    sim.SubmitInput(MakeInput(sim.Config().match_id, "player_b", 1, 1, true));
+    sim.Tick();
+    std::uint64_t damage_a = 0;
+    std::uint64_t damage_b = 0;
+    for (const auto& player : sim.Snapshot().players) {
+        if (player.player_id == "player_a") damage_a = player.damage_dealt;
+        if (player.player_id == "player_b") damage_b = player.damage_dealt;
+    }
+    Check(damage_a == 50, "loaded shot deals the catalog damage (50)");
+    Check(damage_b == 10, "unloaded shot keeps the default damage (10)");
+
+    // tick 2：a 不使用射击但触发炸弹（Reimu bomb damage 45）。
+    auto bomb_input = MakeInput(sim.Config().match_id, "player_a", 2, 2, false);
+    bomb_input.bomb = true;
+    sim.SubmitInput(bomb_input);
+    sim.SubmitInput(MakeInput(sim.Config().match_id, "player_b", 2, 2, false));
+    sim.Tick();
+    for (const auto& player : sim.Snapshot().players) {
+        if (player.player_id == "player_a") damage_a = player.damage_dealt;
+    }
+    Check(damage_a == 95, "loaded bomb adds the catalog bomb damage (45)");
+}
+
 void TestInputTickWindowOverflowGuard() {
     auto sim = phk::battle::BossRaceSimulation(MakeConfig(9u, 100000));
     Check(sim.AddPlayer("player_a", 0, 60000), "add player for overflow check");
@@ -168,6 +311,11 @@ int main() {
     TestPatternSchedulerCoversTenPatterns();
     TestRealBulletsCarryKindAndMotion();
     TestInputTickWindowOverflowGuard();
+    TestBossCatalogTimelineExpansion();
+    TestBossEmitterOffsetTriangular();
+    TestBossSelectionIsDeterministicAndDistinct();
+    TestUnknownBossFallsBackToDefault();
+    TestPlayerLoadoutSelectsShotAndBomb();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

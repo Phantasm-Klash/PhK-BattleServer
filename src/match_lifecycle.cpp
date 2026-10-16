@@ -145,6 +145,14 @@ BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
     boss.match_seed = config.seed;
     boss.boss_max_hp = config.boss_max_hp;
     boss.tick_rate_hz = config.tick_rate_hz;
+    boss.boss_id = config.boss_id;
+    boss.loadouts = config.loadouts;
+    // boss 目录优先：boss_id 命中目录时以目录 HP 为权威（与 Go/TS 三端一致）。
+    // 未配置 boss（默认路径）时保持 config.boss_max_hp 不变，逐字节复现现状。
+    if (const danmaku::BossCatalogEntry* entry = danmaku::FindBossCatalogEntry(config.boss_id);
+        entry != nullptr) {
+        boss.boss_max_hp = entry->boss_max_hp;
+    }
     return boss;
 }
 
