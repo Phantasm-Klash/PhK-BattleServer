@@ -154,4 +154,10 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_chain_log_tests PRIVATE phk_battle_core)
     add_test(NAME phk_chain_log_tests COMMAND phk_chain_log_tests)
+
+    add_executable(phk_dem_tests
+        tests/dem_tests.cpp
+    )
+    target_link_libraries(phk_dem_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_dem_tests COMMAND phk_dem_tests)
 endif()

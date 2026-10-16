@@ -452,30 +452,30 @@ const DemJsonValue* DemField(const DemJsonValue& object, const std::string& key)
     return nullptr;
 }
 
-bool DemBindInt(const DemJsonValue& value, std::int64_t* out) {
-    if (value.kind != DemJsonValue::Kind::Number) return false;
+bool DemBindInt(const DemJsonValue* value, std::int64_t* out) {
+    if (value == nullptr || value->kind != DemJsonValue::Kind::Number) return false;
     errno = 0;
     char* end = nullptr;
-    const long long parsed = std::strtoll(value.number_text.c_str(), &end, 10);
-    if (errno != 0 || end == value.number_text.c_str() || *end != '\0') return false;
+    const long long parsed = std::strtoll(value->number_text.c_str(), &end, 10);
+    if (errno != 0 || end == value->number_text.c_str() || *end != '\0') return false;
     *out = static_cast<std::int64_t>(parsed);
     return true;
 }
 
-bool DemBindUint(const DemJsonValue& value, std::uint64_t* out) {
-    if (value.kind != DemJsonValue::Kind::Number) return false;
-    if (!value.number_text.empty() && value.number_text[0] == '-') return false;
+bool DemBindUint(const DemJsonValue* value, std::uint64_t* out) {
+    if (value == nullptr || value->kind != DemJsonValue::Kind::Number) return false;
+    if (!value->number_text.empty() && value->number_text[0] == '-') return false;
     errno = 0;
     char* end = nullptr;
-    const unsigned long long parsed = std::strtoull(value.number_text.c_str(), &end, 10);
-    if (errno != 0 || end == value.number_text.c_str() || *end != '\0') return false;
+    const unsigned long long parsed = std::strtoull(value->number_text.c_str(), &end, 10);
+    if (errno != 0 || end == value->number_text.c_str() || *end != '\0') return false;
     *out = static_cast<std::uint64_t>(parsed);
     return true;
 }
 
-bool DemBindString(const DemJsonValue& value, std::string* out) {
-    if (value.kind != DemJsonValue::Kind::String) return false;
-    *out = value.string_value;
+bool DemBindString(const DemJsonValue* value, std::string* out) {
+    if (value == nullptr || value->kind != DemJsonValue::Kind::String) return false;
+    *out = value->string_value;
     return true;
 }
 
@@ -489,32 +489,32 @@ bool DecodeDemHeaderJson(const std::string& json, DemHeader* out) {
 
     DemHeader header;
     const DemJsonValue* field = nullptr;
-    if (!DemBindString(*DemField(root, "match_id"), &header.match_id)) return false;
-    if (!DemBindString(*DemField(root, "mode_id"), &header.mode_id)) return false;
-    if (!DemBindString(*DemField(root, "boss_id"), &header.boss_id)) return false;
-    if (!DemBindString(*DemField(root, "ruleset_version"), &header.ruleset_version)) return false;
-    if (!DemBindString(*DemField(root, "server_seed"), &header.server_seed)) return false;
+    if (!DemBindString(DemField(root, "match_id"), &header.match_id)) return false;
+    if (!DemBindString(DemField(root, "mode_id"), &header.mode_id)) return false;
+    if (!DemBindString(DemField(root, "boss_id"), &header.boss_id)) return false;
+    if (!DemBindString(DemField(root, "ruleset_version"), &header.ruleset_version)) return false;
+    if (!DemBindString(DemField(root, "server_seed"), &header.server_seed)) return false;
     std::uint64_t tick_rate_hz = 0;
-    if (!DemBindUint(*DemField(root, "tick_rate_hz"), &tick_rate_hz)) return false;
+    if (!DemBindUint(DemField(root, "tick_rate_hz"), &tick_rate_hz)) return false;
     if (tick_rate_hz > std::numeric_limits<std::uint32_t>::max()) return false;
     header.tick_rate_hz = static_cast<std::uint32_t>(tick_rate_hz);
-    if (!DemBindInt(*DemField(root, "final_tick"), &header.final_tick)) return false;
-    if (!DemBindString(*DemField(root, "final_state_hash"), &header.final_state_hash)) return false;
-    if (!DemBindInt(*DemField(root, "created_at"), &header.created_at)) return false;
-    if (!DemBindUint(*DemField(root, "entry_count"), &header.entry_count)) return false;
-    if (!DemBindString(*DemField(root, "chain_head_digest"), &header.chain_head_digest)) return false;
+    if (!DemBindInt(DemField(root, "final_tick"), &header.final_tick)) return false;
+    if (!DemBindString(DemField(root, "final_state_hash"), &header.final_state_hash)) return false;
+    if (!DemBindInt(DemField(root, "created_at"), &header.created_at)) return false;
+    if (!DemBindUint(DemField(root, "entry_count"), &header.entry_count)) return false;
+    if (!DemBindString(DemField(root, "chain_head_digest"), &header.chain_head_digest)) return false;
 
     field = DemField(root, "players");
     if (field == nullptr || field->kind != DemJsonValue::Kind::Array) return false;
     for (const DemJsonValue& item : field->array) {
         DemPlayer player;
-        if (!DemBindString(*DemField(item, "player_id"), &player.player_id)) return false;
-        if (!DemBindString(*DemField(item, "user_id"), &player.user_id)) return false;
+        if (!DemBindString(DemField(item, "player_id"), &player.player_id)) return false;
+        if (!DemBindString(DemField(item, "user_id"), &player.user_id)) return false;
         const DemJsonValue* loadout = DemField(item, "loadout");
         if (loadout == nullptr) return false;
-        if (!DemBindString(*DemField(*loadout, "character_id"), &player.loadout.character_id)) return false;
-        if (!DemBindString(*DemField(*loadout, "shot_type"), &player.loadout.shot_type)) return false;
-        if (!DemBindString(*DemField(*loadout, "bomb_type"), &player.loadout.bomb_type)) return false;
+        if (!DemBindString(DemField(*loadout, "character_id"), &player.loadout.character_id)) return false;
+        if (!DemBindString(DemField(*loadout, "shot_type"), &player.loadout.shot_type)) return false;
+        if (!DemBindString(DemField(*loadout, "bomb_type"), &player.loadout.bomb_type)) return false;
         header.players.push_back(std::move(player));
     }
     *out = std::move(header);
