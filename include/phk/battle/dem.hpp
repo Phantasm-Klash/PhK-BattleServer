@@ -90,6 +90,9 @@ struct DemHeader {
     std::uint32_t tick_rate_hz = 0;
     std::int64_t final_tick = 0;
     std::string final_state_hash;
+    // Boss 满血值（0 = 未记录，重放端用自己的默认/目录值）。没有它，用
+    // --boss-hp 录出来的容器无法忠实重放：玩家 HP 进了 state hash。
+    std::uint64_t boss_max_hp = 0;
     std::vector<DemPlayer> players;
     std::int64_t created_at = 0;  // unix 秒
     std::uint64_t entry_count = 0;

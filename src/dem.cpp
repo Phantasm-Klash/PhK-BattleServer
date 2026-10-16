@@ -161,6 +161,10 @@ std::string EncodeDemHeaderJson(const DemHeader& header) {
     out += ",\"tick_rate_hz\":" + std::to_string(header.tick_rate_hz);
     out += ",\"final_tick\":" + std::to_string(header.final_tick);
     out += ",\"final_state_hash\":" + DemJsonString(header.final_state_hash);
+    // 只在记录到时写出（0 = 沿用重放端默认），这样老容器字节不变。
+    if (header.boss_max_hp > 0) {
+        out += ",\"boss_max_hp\":" + std::to_string(header.boss_max_hp);
+    }
     out += ",\"players\":[";
     for (std::size_t i = 0; i < header.players.size(); ++i) {
         const DemPlayer& player = header.players[i];
@@ -501,6 +505,12 @@ bool DecodeDemHeaderJson(const std::string& json, DemHeader* out) {
     header.tick_rate_hz = static_cast<std::uint32_t>(tick_rate_hz);
     if (!DemBindInt(DemField(root, "final_tick"), &header.final_tick)) return false;
     if (!DemBindString(DemField(root, "final_state_hash"), &header.final_state_hash)) return false;
+    // 可选：容器不写这个键时（老容器 / 未记录）保持 0，重放端沿用自己的默认。
+    if (DemField(root, "boss_max_hp") != nullptr) {
+        std::uint64_t boss_max_hp = 0;
+        if (!DemBindUint(DemField(root, "boss_max_hp"), &boss_max_hp)) return false;
+        header.boss_max_hp = boss_max_hp;
+    }
     if (!DemBindInt(DemField(root, "created_at"), &header.created_at)) return false;
     if (!DemBindUint(DemField(root, "entry_count"), &header.entry_count)) return false;
     if (!DemBindString(DemField(root, "chain_head_digest"), &header.chain_head_digest)) return false;

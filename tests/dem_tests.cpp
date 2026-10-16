@@ -99,6 +99,7 @@ DemHeader BaseHeader() {
     header.tick_rate_hz = 60;
     header.final_tick = 120;
     header.final_state_hash = "deadbeefdeadbeef";
+    header.boss_max_hp = 300;
     DemPlayerLoadout loadout;
     loadout.character_id = "reimu";
     loadout.shot_type = "spread";
@@ -184,6 +185,9 @@ void TestRoundtrip() {
     Check(got.boss_id == header.boss_id && got.server_seed == header.server_seed, "roundtrip boss/seed");
     Check(got.tick_rate_hz == header.tick_rate_hz && got.final_tick == header.final_tick, "roundtrip tick fields");
     Check(got.final_state_hash == header.final_state_hash, "roundtrip final_state_hash");
+    // Boss HP is part of the state hash: without it a recording made with
+    // --boss-hp cannot be replayed to the same final state.
+    Check(got.boss_max_hp == header.boss_max_hp, "roundtrip boss_max_hp");
     Check(got.entry_count == header.entry_count && got.entry_count == 5u, "roundtrip entry_count");
     Check(got.chain_head_digest == header.chain_head_digest, "roundtrip chain_head_digest");
     Check(got.players.size() == 1 && got.players[0].player_id == "p1" &&
@@ -289,6 +293,27 @@ void TestHeaderJsonRoundtrip() {
     DemHeader bad;
     Check(!DecodeDemHeaderJson("{not json", &bad), "header json rejects garbage");
     Check(!DecodeDemHeaderJson("{\"match_id\":\"x\"}", &bad), "header json rejects missing fields");
+}
+
+// boss_max_hp 是**可选**键：没有它（老容器、或没用 --boss-hp 的对局）容器字节
+// 必须与加这个字段之前完全一致，解析回来是 0（重放端沿用自己的默认值）。
+void TestBossMaxHpOptional() {
+    const DemHeader header = BaseHeader();
+    const std::string withHp = EncodeDemHeaderJson(header);
+    Check(withHp.find("\"boss_max_hp\":300") != std::string::npos, "recorded boss_max_hp is written");
+
+    DemHeader noHp = BaseHeader();
+    noHp.boss_max_hp = 0;
+    const std::string without = EncodeDemHeaderJson(noHp);
+    Check(without.find("boss_max_hp") == std::string::npos, "boss_max_hp omitted when 0");
+
+    DemHeader decoded;
+    Check(DecodeDemHeaderJson(without, &decoded), "container without boss_max_hp decodes");
+    Check(decoded.boss_max_hp == 0, "missing boss_max_hp decodes to 0");
+
+    DemHeader decodedWith;
+    Check(DecodeDemHeaderJson(withHp, &decodedWith), "container with boss_max_hp decodes");
+    Check(decodedWith.boss_max_hp == 300, "recorded boss_max_hp survives the round trip");
 }
 
 // ---- ④ 空链 ----
@@ -407,6 +432,7 @@ int main() {
     TestRoundtrip();
     TestTamperDetection();
     TestHeaderJsonRoundtrip();
+    TestBossMaxHpOptional();
     TestEmptyChain();
     TestOversizeField();
     TestWriteGuards();

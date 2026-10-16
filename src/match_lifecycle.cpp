@@ -913,6 +913,8 @@ DemHeader MatchServer::BuildDemHeader() const {
     header.tick_rate_hz = cfg.tick_rate_hz;
     header.final_tick = static_cast<std::int64_t>(simulation_.CurrentTick());
     header.final_state_hash = simulation_.CanonicalStateHash();
+    // boss 满血值进 state hash，重放必须拿到同一个值（--boss-hp 才有意义）。
+    header.boss_max_hp = cfg.boss_max_hp;
     header.players = BuildDemPlayers(cfg, config_.player_ids, dem_recorder_.UserIds());
     header.created_at = static_cast<std::int64_t>(WallClockNowMs() / 1000);
     header.entry_count = dem_recorder_.Size();
