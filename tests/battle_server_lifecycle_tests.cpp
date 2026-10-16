@@ -13,8 +13,12 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -678,6 +682,84 @@ void TestDemRecordingFromAppPath() {
     Check(parsed.document.entries[2].player_id == "p2", "dem(app): second input player");
 }
 
+// Full match on the app path: race to a defeat, which makes the server submit
+// its result and write the .dem the replay pipeline later serves. This is the
+// end-to-end proof that a *finished* match produces a container (the unit above
+// only finalises a hand-driven recorder).
+void TestDemProducedWhenMatchFinishes() {
+    const std::string dir = "/tmp/phk-dem-lifecycle";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    setenv("PHK_DEM_DIR", dir.c_str(), 1);
+    setenv("PHK_DEM_UPLOAD", "0", 1);  // no lobby in the test environment
+
+    phk::battle::MatchLifecycleConfig config;
+    config.match_id = "match_dem_finish_1";
+    config.mode_id = "mvp_boss_race";
+    config.seed = 777001;
+    config.ruleset_version = "ruleset-local-s0";
+    config.player_ids = {"p1", "p2"};
+    config.require_ticket = phk::battle::MatchTicketRequirement::Off;
+    // No boss_id on purpose: the catalog HP would override boss_max_hp, and this
+    // case wants a two-shot race so the server reaches Finished quickly.
+    config.boss_max_hp = 20;
+    config.battle_server_id = "bs-dem-1";
+    config.max_ticks = 600;
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "dem(finish): server starts (" + error + ")");
+
+    std::uint64_t seq = 0;
+    for (std::uint64_t tick = 1; tick <= 40 && !server.finished(); ++tick) {
+        std::uint32_t conv = 0x0000D200u;
+        for (const std::string& player : config.player_ids) {
+            phk::battle::BattleInput input;
+            input.match_id = config.match_id;
+            input.player_id = player;
+            input.tick = tick;
+            input.seq = ++seq;
+            input.direction_bits = 0;
+            input.shoot = true;
+            input.card_slot = -1;
+            Check(
+                server.InjectPayload(conv++, phk::battle::EncodeBattleInputPayload(input)),
+                "dem(finish): inject input");
+        }
+        server.AdvanceTick();
+    }
+    Check(server.finished(), "dem(finish): race finished");
+    Check(server.DemEntryCount() >= 3, "dem(finish): inputs are on the dem chain");
+
+    const std::string path = dir + "/" + config.match_id + ".dem";
+    std::ifstream in(path, std::ios::binary);
+    Check(in.is_open(), "dem(finish): .dem written to " + path);
+    if (!in.is_open()) {
+        return;
+    }
+    const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    Check(!bytes.empty(), "dem(finish): container is not empty");
+
+    const auto parsed = phk::battle::ParseDemDocument(bytes);
+    Check(parsed.ok, "dem(finish): container parses (" + parsed.reason + ")");
+    if (!parsed.ok) {
+        return;
+    }
+    Check(parsed.document.header.match_id == config.match_id, "dem(finish): header match_id");
+    Check(
+        parsed.document.header.ruleset_version == config.ruleset_version,
+        "dem(finish): header ruleset_version");
+    Check(parsed.document.header.boss_id.empty(), "dem(finish): default path records no boss id");
+    Check(parsed.document.header.final_tick > 0, "dem(finish): final tick recorded");
+    Check(!parsed.document.header.final_state_hash.empty(), "dem(finish): final state hash recorded");
+    Check(
+        parsed.document.header.entry_count == parsed.document.entries.size(),
+        "dem(finish): header entry_count matches the body");
+    Check(parsed.document.header.entry_count == server.DemEntryCount(), "dem(finish): entry count matches the recorder");
+    std::filesystem::remove(path, ec);
+}
+
 }  // namespace
 
 int main() {
@@ -690,6 +772,7 @@ int main() {
     TestSocketSmokeRace();
     TestHttpPostClient();
     TestDemRecordingFromAppPath();
+    TestDemProducedWhenMatchFinishes();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " lifecycle test(s) failed\n";
