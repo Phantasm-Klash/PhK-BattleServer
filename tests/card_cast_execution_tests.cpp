@@ -203,6 +203,12 @@ void TestMirrorLanceCastViaModeAction() {
         Check(effect->event_value == 7, "opponent_pattern spawned 7 (event_value)");
         Check(effect->target_user_id == "p2", "opponent_pattern targets lowest other id");
     }
+    // 坐标回归：效果层必须用竞技场空间的 boss 原点 (0,0)。照搬 Go 的
+    // (480,112) 时子弹落在 x_milli=480000，越界被同 tick 剔除，这里会是 0。
+    Check(
+        simulation.BulletCount() == 7,
+        "opponent_pattern bullets survive the tick (arena-space boss origin)"
+    );
     Check(simulation.HandSize("p1") == 3, "played slot removed (deck empty: no draw)");
     Check(simulation.PlayerEnergy("p1") == 6.0, "energy 10 - cost 4");
     Check(CountEvents(simulation, "card_rejected") == 0, "no rejection on legal cast");

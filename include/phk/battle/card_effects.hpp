@@ -31,9 +31,20 @@ constexpr double kCardOpponentPatternSpeed = 5.0;
 constexpr double kCardOpponentPatternRadius = 4.5;
 constexpr const char* kCardOpponentPatternColor = "violet";
 
-// 场地常量（simulation.go:10-11）。
-constexpr double kBossOriginX = 480.0;
-constexpr double kBossOriginY = 112.0;
+// Boss 原点——**竞技场坐标空间**（不是 Go 大厅的空间）。
+//
+// Go 大厅的 (480,112)（simulation.go:10-11）属于大厅自己的坐标系；对战端的
+// 竞技场是以 (0,0) 为中心的场地：玩家被夹在 ±kArenaHalfWidthMilli /
+// ±kArenaHalfHeightMilli（simulation.hpp:18-19，即 ±120 / ±90 px），boss 自身
+// 弹幕也从中心生成（simulation.cpp SpawnBulletsForTick 的 boss 分支
+// x_milli = y_milli = 0），而 RunCardEffect 构造的玩家快照是 x_milli/1000
+// （竞技场 px）。
+//
+// 若照搬 480：ApplyBulletDeltas 会把 delta.x × 1000 落到竞技场 milli，得到
+// 480000 > 120000 ⇒ 子弹一生成就被同 tick 的 AdvanceBullets 剔除（表现为
+// 卡牌"打了但看不见"），且 atan2(target - origin) 的朝向也会算错。
+constexpr double kBossOriginX = 0.0;
+constexpr double kBossOriginY = 0.0;
 
 // 全场子弹上限（simulation.go:18 maxBullets）——addBulletLocked 的封顶。
 constexpr std::size_t kMaxBullets = 384;

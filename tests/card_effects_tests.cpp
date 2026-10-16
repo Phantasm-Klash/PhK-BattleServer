@@ -95,10 +95,11 @@ void TestOpponentPatternTargetsLowestOpponent() {
     Check(result.event_value == 7, "fan: event_value must be 7");
     Check(result.bullet_deltas.size() == 7u, "fan: expected 7 spawn deltas");
 
-    // Python 金标准（seed 场景：目标 (600,500)，boss 原点 (480,112)）。
+    // Python 金标准（seed 场景：目标 (600,500)，boss 原点 = 竞技场中心 (0,0)）。
+    // 效果层按 Go 的 round(v, 4) 把速度四舍五入到 4 位小数（探针实测值）。
     const double expected[7][2] = {
-        {3.6678, 3.3981}, {3.0220, 3.9834}, {2.2844, 4.4477}, {1.4773, 4.7768},
-        {0.6254, 4.9607}, {-0.2455, 4.9940}, {-1.1090, 4.8755},
+        {4.9270, 0.8515}, {4.7042, 1.6941}, {4.3386, 2.4853}, {3.8411, 3.2009},
+        {3.2269, 3.8193}, {2.5147, 4.3216}, {1.7260, 4.6926},
     };
     for (int i = 0; i < 7; ++i) {
         const CardBulletDelta& delta = result.bullet_deltas[static_cast<std::size_t>(i)];
@@ -107,7 +108,7 @@ void TestOpponentPatternTargetsLowestOpponent() {
         Check(delta.bullet_id == "m1_b00000" + std::to_string(i + 1), label + ": bullet id, got " + delta.bullet_id);
         Check(delta.pattern_id == "mirror_lance", label + ": pattern");
         Check(delta.kind == "nway", label + ": kind");
-        Check(Near(delta.x, 480.0) && Near(delta.y, 112.0), label + ": boss origin");
+        Check(Near(delta.x, phk::battle::kBossOriginX) && Near(delta.y, phk::battle::kBossOriginY), label + ": arena boss origin");
         Check(Near(delta.vx, expected[i][0], 1e-9), label + ": vx");
         Check(Near(delta.vy, expected[i][1], 1e-9), label + ": vy");
         Check(Near(delta.radius, 4.5), label + ": radius");
