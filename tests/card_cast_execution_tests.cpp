@@ -1021,6 +1021,78 @@ void TestInputSilenceDisconnectsAndReconnectResumes() {
     Check(simulation.CurrentTick() == reconnect.tick, "reconnect does not rewind/reset the tick");
 }
 
+// T10 rule 2：整队被动掉线 → 恰好一行 all_players_disconnected（不是每 tick 一行），
+// 且该对局级行不带 user_id / card_id；只要有玩家保持连接就一行都不发。
+void TestAllPlayersDisconnectedSignal() {
+    using phk::battle::BuildBattleEventsJson;
+    const std::string type = phk::battle::kAllPlayersDisconnectedEventType;
+    Check(type == "all_players_disconnected", "match-level event type name");
+
+    // (1) 两名玩家都静默 → 超时后整队掉线，恰好一行，且只发一次。
+    {
+        SimulationConfig config = DuelConfig();
+        config.input_timeout_ticks = 2;
+        BattleSimulation simulation(config);
+        Check(simulation.AddPlayer("p1", -20000, 0), "all-disc: add p1");
+        Check(simulation.AddPlayer("p2", 20000, 0), "all-disc: add p2");
+        Check(simulation.AcceptInput(MakeInput("p1", 1, 1, -1)).ok, "all-disc: p1 input t1");
+        Check(simulation.AcceptInput(MakeInput("p2", 1, 1, -1)).ok, "all-disc: p2 input t1");
+        simulation.Tick();  // t1: real inputs consumed, silence counters reset
+        Check(CountEvents(simulation, type) == 0, "all-disc: no row while both connected");
+        simulation.Tick();  // t2: one silent tick, still within grace
+        Check(CountEvents(simulation, type) == 0, "all-disc: no row after one silent tick");
+        simulation.Tick();  // t3: second silent tick -> both dropped -> terminal
+        Check(
+            !simulation.IsPlayerConnected("p1") && !simulation.IsPlayerConnected("p2"),
+            "all-disc: both players dropped at the timeout"
+        );
+        Check(CountEvents(simulation, type) == 1, "all-disc: exactly one signal row");
+        const phk::battle::CardCastEvent* row = FindEvent(simulation, type);
+        Check(row != nullptr && row->tick == 3, "all-disc: row carries the terminal tick");
+        Check(
+            row != nullptr && row->player_id.empty() && row->card_id.empty(),
+            "all-disc: match-level row has no player/card id"
+        );
+        simulation.Tick();
+        simulation.Tick();
+        Check(CountEvents(simulation, type) == 1, "all-disc: signal is not repeated per tick");
+
+        // JSON 形状：对局级行只带 type + tick。
+        const std::string json = BuildBattleEventsJson("srv", kMatchId, {*row});
+        Check(
+            json.find("{\"type\":\"all_players_disconnected\",\"tick\":3}") != std::string::npos,
+            "all-disc: JSON row is type + tick only"
+        );
+        Check(json.find("\"user_id\"") == std::string::npos, "all-disc: JSON omits user_id");
+        Check(json.find("\"card_id\"") == std::string::npos, "all-disc: JSON omits card_id");
+    }
+
+    // (2) 一名玩家持续输入保持连接 → 一行都不发。
+    {
+        SimulationConfig config = DuelConfig();
+        config.input_timeout_ticks = 2;
+        BattleSimulation simulation(config);
+        Check(simulation.AddPlayer("p1", -20000, 0), "connected: add p1");
+        Check(simulation.AddPlayer("p2", 20000, 0), "connected: add p2");
+        Check(simulation.AcceptInput(MakeInput("p1", 1, 1, -1)).ok, "connected: p1 input t1");
+        Check(simulation.AcceptInput(MakeInput("p2", 1, 1, -1)).ok, "connected: p2 input t1");
+        simulation.Tick();
+        for (std::uint64_t tick = 2; tick <= 6; ++tick) {
+            Check(
+                simulation.AcceptInput(MakeInput("p2", tick, tick, -1)).ok,
+                "connected: p2 input t" + std::to_string(tick)
+            );
+            simulation.Tick();
+        }
+        Check(!simulation.IsPlayerConnected("p1"), "connected: silent p1 dropped");
+        Check(simulation.IsPlayerConnected("p2"), "connected: active p2 stays connected");
+        Check(
+            CountEvents(simulation, type) == 0,
+            "connected: no signal while any player is connected"
+        );
+    }
+}
+
 int main() {
     TestSeedAndSentinel();
     TestMirrorLanceCastViaModeAction();
@@ -1036,6 +1108,7 @@ int main() {
     TestDeckTicketRedrawsAfterCast();
     TestTakeRestoreCardCastEvents();
     TestInputSilenceDisconnectsAndReconnectResumes();
+    TestAllPlayersDisconnectedSignal();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " card cast execution test(s) failed\n";

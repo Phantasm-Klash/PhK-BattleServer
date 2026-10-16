@@ -96,6 +96,12 @@ std::string BuildBattleEventsJson(
         first = false;
         out += "{\"type\":" + JsonString(row.event_type);
         out += ",\"tick\":" + std::to_string(row.tick);
+        // T10 rule 2：对局级完成信号只带 type + tick，**不带 user_id / card_id**
+        // （大厅对该类型拒绝两者；battle_events.go:231-236 与 isMatchLevelBattleEvent）。
+        if (row.event_type == kAllPlayersDisconnectedEventType) {
+            out += "}";
+            continue;
+        }
         out += ",\"user_id\":" + JsonString(row.player_id);
         out += ",\"card_id\":" + JsonString(row.card_id);
         out += ",\"value\":" + std::to_string(row.event_value);

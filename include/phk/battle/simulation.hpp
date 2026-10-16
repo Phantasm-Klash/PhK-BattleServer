@@ -191,7 +191,7 @@ struct TransferableCardState {
 // 故意不进 event_trace_/event_stream_hash_/event_count_：后三者参与
 // ReplaySummary 与 CanonicalStateHash，卡行进重放哈希会扰动既有确定性断言。
 struct CardCastEvent {
-    std::string event_type;   // card_accepted | card_effect_applied | card_rejected | boss_defeated
+    std::string event_type;   // card_accepted | card_effect_applied | card_rejected | boss_defeated | all_players_disconnected
     std::int64_t tick = 0;
     std::string player_id;
     std::string card_id;
@@ -200,6 +200,12 @@ struct CardCastEvent {
     int slot = -1;
     std::string reason;
 };
+
+// T10 rule 2：对局级完成信号（battle_events.go:45 / isMatchLevelBattleEvent）。
+// 当整支队伍都被动掉线、boss 进程全部结束时发出，**不携带 user_id / card_id**
+// （大厅对该类型拒绝两者，battle_events.go:231-236）。大厅收到后裁定为"双方
+// 逃跑"（no-contest，不计分），对战服只提供信号、不自作主张。
+inline constexpr const char* kAllPlayersDisconnectedEventType = "all_players_disconnected";
 
 // 事件行收集器容量上限（有界防 OOM；超限丢最旧）。lobby 每次提交上限 64 行
 // （battle_events.go:23 maxBattleEventsPerSubmit），宿主应按 tick 周期调用
@@ -315,6 +321,9 @@ private:
     void ApplyCastCardModeAction(const BattleModeAction& action, std::int64_t tick);
     // 事件行入队（容量上限内丢最旧）。
     void PushCardCastEvent(CardCastEvent row);
+    // T10 rule 2：整支队伍都被动掉线时发一次对局级信号（去重 latch）。只在
+    // Tick() 尾部调用（current_tick_ 已推进），故 row.tick 是终局 tick。
+    void MaybeEmitAllPlayersDisconnected();
     void RunCardEffect(
         const PlayerState& caster,
         const std::string& caster_id,
@@ -380,6 +389,9 @@ private:
     std::int64_t card_purge_seed_ = 0;
     bool card_purge_seed_set_ = false;
     std::vector<CardCastEvent> card_cast_events_;
+    // T10 rule 2：整队被动掉线的对局级信号只发一次（派生自 connected 标志，
+    // 不进 CanonicalStateHash，避免扰动确定性金标准）。
+    bool all_players_disconnected_emitted_ = false;
     std::vector<std::string> input_trace_;
     std::vector<std::string> event_trace_;
     OperationChainLog operation_log_;

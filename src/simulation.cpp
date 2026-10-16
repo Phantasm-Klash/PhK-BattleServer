@@ -1180,6 +1180,9 @@ BattleSnapshot BattleSimulation::Tick() {
         SpawnBulletsForTick();
         AdvanceBullets();
     }
+    // T10 rule 2：本 tick 可能刚把最后一名玩家判为被动掉线；若整队已掉线，
+    // 在对局级事件行里发一次 all_players_disconnected（去重，只发一次）。
+    MaybeEmitAllPlayersDisconnected();
     return Snapshot("full");
 }
 
@@ -2302,6 +2305,25 @@ void BattleSimulation::PushCardCastEvent(CardCastEvent row) {
         card_cast_events_.erase(card_cast_events_.begin());
     }
     card_cast_events_.push_back(std::move(row));
+}
+
+void BattleSimulation::MaybeEmitAllPlayersDisconnected() {
+    if (all_players_disconnected_emitted_ || players_.empty()) {
+        return;
+    }
+    for (const auto& item : players_) {
+        if (item.second.connected) {
+            // 仍有玩家在局内：终局条件未达成。
+            return;
+        }
+    }
+    all_players_disconnected_emitted_ = true;
+    CardCastEvent row;
+    row.event_type = kAllPlayersDisconnectedEventType;
+    // 终局 tick = 最后一名玩家被判掉线的那一 tick（本函数只在 Tick() 尾部调用，
+    // current_tick_ 已推进）。对局级行不带 user_id / card_id（大厅据此拒绝）。
+    row.tick = static_cast<std::int64_t>(current_tick_);
+    PushCardCastEvent(std::move(row));
 }
 
 std::vector<CardCastEvent> BattleSimulation::TakeCardCastEvents(std::size_t limit) {
