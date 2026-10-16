@@ -11,7 +11,7 @@
 #include "phk/battle/dem.hpp"
 
 #include "phk/battle/lobby_rng.hpp"
-#include "phk/battle/card_events_report.hpp"  // kBattleCallbackSignatureHeader（T6 签名头）
+#include "phk/battle/card_events_report.hpp"  // BattleCallbackSignedHeaders（T6+B4-7.1 签名三头）
 #include "phk/battle/match_lifecycle.hpp"  // HttpPostJson / ParseHostPort（复用既有 client）
 
 #include <sys/stat.h>
@@ -1207,12 +1207,14 @@ std::vector<std::pair<std::string, std::string>> DemCallbackHeaders(
         {kDemServiceOriginHeader, kDemServiceOriginValue},
         {kDemBattleCallbackHeader, kDemBattleCallbackValue}
     };
-    // 同 BattleCallbackHeaders（card_events_report.cpp:71）：secret 为空时不加
-    // 签名头，大厅会以 403 battle_callback_signature_invalid 拒绝——部署错配
+    // B4-7.1：dem 路由与 events/results 走**同一守卫**，故必须同样发三头
+    // （Timestamp / Nonce / Signature）。此处不再复制签名逻辑，统一走
+    // BattleCallbackSignedHeaders（card_events_report.cpp）；secret 为空时返回空，
+    // 只发公开两头，大厅以 403 battle_callback_signature_invalid 拒绝——部署错配
     // 立即可见，不会静默回退到无签名上传。
-    if (!callback_secret.empty()) {
-        headers.emplace_back(kBattleCallbackSignatureHeader, HmacSha256Hex(callback_secret, body));
-    }
+    const std::vector<std::pair<std::string, std::string>> signed_headers =
+        BattleCallbackSignedHeaders(body, callback_secret);
+    headers.insert(headers.end(), signed_headers.begin(), signed_headers.end());
     return headers;
 }
 

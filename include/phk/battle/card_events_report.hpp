@@ -42,12 +42,51 @@ inline constexpr const char* kBattleEventsPath = "/v1/battle/events";
 // match_lifecycle.hpp 的 callback_secret 字段注释）。
 inline constexpr const char* kBattleCallbackSignatureHeader = "X-PhK-Battle-Signature";
 
+// B4-7.1 回调新鲜度头（与 Go 大厅 out/B4-7.1_replay_go.md §4 逐字节对齐）：
+// 两头必须**成对**发送——只给其一，大厅回 403 battle_callback_freshness_incomplete。
+// 两头的值都是**裸文本**（去首尾空白），不是 JSON 转义后的字符串。
+inline constexpr const char* kBattleTimestampHeader = "X-PhK-Battle-Timestamp";
+inline constexpr const char* kBattleNonceHeader = "X-PhK-Battle-Nonce";
+// 大厅 nonce 上限（>64 字节回 403 battle_callback_nonce_invalid）。
+inline constexpr std::size_t kBattleNonceMaxBytes = 64;
+
 [[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleEventsCallbackHeaders();
 
-// 通用 service-callback 头：公开两头（预过滤，语义不变）+ 对 body 的
-// HMAC 签名。events 与 result 两条回传路径共用；callback_secret 为空时
-// 只发公开两头——大厅会以 403 battle_callback_signature_invalid 拒绝，
-// 部署错配立即可见（不会静默回退到旧的无签名行为）。
+// 当前 unix 秒的十进制文本（大厅新鲜度窗口 ±300s，取真实墙钟）。
+[[nodiscard]] std::string BattleCallbackTimestampNow();
+
+// 生成一条**每条回调唯一**的 nonce（≤ kBattleNonceMaxBytes）。唯一性论证见
+// card_events_report.cpp：进程随机前缀 + 进程内单调计数器 ⇒ 同进程绝不重复，
+// 跨进程重启以 2^-64 概率避免碰撞，故 600s 保留窗内不重复。
+[[nodiscard]] std::string NewBattleCallbackNonce();
+
+// B4-7.1 签名材料：timestamp + "\n" + nonce + "\n" + body（LF 分隔，裸文本）。
+[[nodiscard]] std::string BattleCallbackSignedMaterial(
+    const std::string& timestamp,
+    const std::string& nonce,
+    const std::string& body
+);
+
+// 确定性入口（KAT/测试用）：显式 ts/nonce → {Timestamp, Nonce, Signature} 三头；
+// callback_secret 为空时返回空（不签名）。
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleCallbackSignedHeadersFor(
+    const std::string& body,
+    const std::string& callback_secret,
+    const std::string& timestamp,
+    const std::string& nonce
+);
+
+// 生产入口：现取 unix 秒 + 新 nonce，返回三头；callback_secret 为空时返回空。
+// events / results / dem 三条回传路径共用（dem 侧此前是复制实现，B4-7.1 收敛）。
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleCallbackSignedHeaders(
+    const std::string& body,
+    const std::string& callback_secret
+);
+
+// 通用 service-callback 头：公开两头（预过滤，语义不变）+ 三头新鲜度签名
+// （B4-7.1：Timestamp / Nonce / Signature）。events 与 result 两条回传路径共用；
+// callback_secret 为空时只发公开两头——大厅会以 403 battle_callback_signature_invalid
+// 拒绝，部署错配立即可见（不会静默回退到旧的无签名行为）。
 [[nodiscard]] std::vector<std::pair<std::string, std::string>> BattleCallbackHeaders(
     const std::string& body,
     const std::string& callback_secret

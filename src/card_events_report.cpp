@@ -5,6 +5,10 @@
 
 #include "phk/battle/card_events_report.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -59,7 +63,83 @@ std::string JsonString(const std::string& value) {
     return "\"" + JsonEscape(value) + "\"";
 }
 
+// B4-7.1 nonce 前缀：进程首次调用时取 8 字节 std::random_device → 16 个小写 hex，
+// 进程生命周期内恒定。跨进程重启后前缀重新随机。
+const std::string& BattleCallbackNoncePrefix() {
+    static const std::string prefix = [] {
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::random_device device;
+        std::string out;
+        out.reserve(16);
+        for (int i = 0; i < 8; ++i) {
+            const unsigned byte = device() & 0xffu;
+            out.push_back(kHex[(byte >> 4) & 0x0fu]);
+            out.push_back(kHex[byte & 0x0fu]);
+        }
+        return out;
+    }();
+    return prefix;
+}
+
+// B4-7.1 nonce 计数器：进程内单调递增，fetch_add 保证多线程下不重复。
+std::atomic<std::uint64_t>& BattleCallbackNonceCounter() {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter;
+}
+
 }  // namespace
+
+std::string BattleCallbackTimestampNow() {
+    // 真实墙钟（unix 秒）——大厅用它自己的墙钟校验 ±300s，故不能用可注入的假时间。
+    return std::to_string(static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
+}
+
+std::string NewBattleCallbackNonce() {
+    // nonce = <进程随机前缀 16 hex>-<进程内单调计数器>，长度 ≤ 16 + 1 + 20 = 37 ≤ 64。
+    // 同进程内计数器不回绕 ⇒ 绝不重复；跨重启靠随机前缀避免与旧进程碰撞（2^-64）。
+    const std::uint64_t sequence =
+        BattleCallbackNonceCounter().fetch_add(1, std::memory_order_relaxed);
+    return BattleCallbackNoncePrefix() + "-" + std::to_string(sequence);
+}
+
+std::string BattleCallbackSignedMaterial(
+    const std::string& timestamp,
+    const std::string& nonce,
+    const std::string& body
+) {
+    // 与 Go 侧 BattleCallbackSignedMaterial 逐字节一致：单个 LF（0x0A）分隔，裸文本。
+    return timestamp + "\n" + nonce + "\n" + body;
+}
+
+std::vector<std::pair<std::string, std::string>> BattleCallbackSignedHeadersFor(
+    const std::string& body,
+    const std::string& callback_secret,
+    const std::string& timestamp,
+    const std::string& nonce
+) {
+    if (callback_secret.empty()) {
+        return {};
+    }
+    return {
+        {kBattleTimestampHeader, timestamp},
+        {kBattleNonceHeader, nonce},
+        {kBattleCallbackSignatureHeader,
+         HmacSha256Hex(callback_secret, BattleCallbackSignedMaterial(timestamp, nonce, body))},
+    };
+}
+
+std::vector<std::pair<std::string, std::string>> BattleCallbackSignedHeaders(
+    const std::string& body,
+    const std::string& callback_secret
+) {
+    if (callback_secret.empty()) {
+        return {};
+    }
+    return BattleCallbackSignedHeadersFor(
+        body, callback_secret, BattleCallbackTimestampNow(), NewBattleCallbackNonce());
+}
 
 std::vector<std::pair<std::string, std::string>> BattleEventsCallbackHeaders() {
     return {
@@ -73,10 +153,9 @@ std::vector<std::pair<std::string, std::string>> BattleCallbackHeaders(
     const std::string& callback_secret
 ) {
     std::vector<std::pair<std::string, std::string>> headers = BattleEventsCallbackHeaders();
-    if (callback_secret.empty()) {
-        return headers;
-    }
-    headers.emplace_back(kBattleCallbackSignatureHeader, HmacSha256Hex(callback_secret, body));
+    const std::vector<std::pair<std::string, std::string>> signed_headers =
+        BattleCallbackSignedHeaders(body, callback_secret);
+    headers.insert(headers.end(), signed_headers.begin(), signed_headers.end());
     return headers;
 }
 

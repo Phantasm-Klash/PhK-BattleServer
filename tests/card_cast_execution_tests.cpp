@@ -908,10 +908,13 @@ void TestBattleEventsPayloadShape() {
     Check(phk::battle::kMaxBattleEventsPerSubmit == 64, "per-submit cap mirrors lobby (64)");
 }
 
-// T6：BattleCallbackHeaders = 公开两头 + 对精确 body 的 HMAC 签名。
-// 签名为离线（Python hmac）预算的 KAT 值，跨 Go/C++ 逐字节对齐。
+// T6 + B4-7.1：BattleCallbackHeaders = 公开两头 + 新鲜度三头
+// （Timestamp / Nonce / Signature）。签名材料为 ts + LF + nonce + LF + body。
+// KAT 为离线（Python hmac）预算值，跨 Go/C++ 逐字节对齐。
 void TestBattleCallbackHeadersSigned() {
     using phk::battle::BattleCallbackHeaders;
+    using phk::battle::BattleCallbackSignedHeadersFor;
+    using phk::battle::BattleCallbackSignedMaterial;
     using phk::battle::HmacSha256Hex;
 
     const std::string secret =
@@ -919,31 +922,95 @@ void TestBattleCallbackHeadersSigned() {
     const std::string body =
         "{\"battle_server_id\":\"battle-local-1\",\"match_id\":\"match-1\",\"events\":[]}";
 
+    // 材料逐字节：单个 LF 分隔，裸文本。
+    const std::string ts = "1782489605";
+    const std::string nonce = "0123456789abcdef0123456789abcdef";
+    Check(
+        BattleCallbackSignedMaterial(ts, nonce, body) == ts + "\n" + nonce + "\n" + body,
+        "signed material is ts LF nonce LF body"
+    );
+
+    // 确定性入口（KAT）：固定 ts/nonce ⇒ 固定签名。
+    const auto kat = BattleCallbackSignedHeadersFor(body, secret, ts, nonce);
+    Check(kat.size() == 3, "signed headers carry three entries");
+    Check(kat[0].first == "X-PhK-Battle-Timestamp" && kat[0].second == ts,
+          "timestamp header carries the raw ts");
+    Check(kat[1].first == "X-PhK-Battle-Nonce" && kat[1].second == nonce,
+          "nonce header carries the raw nonce");
+    Check(kat[2].first == "X-PhK-Battle-Signature", "signature header name");
+    Check(kat[2].second ==
+              "3f188bab967d373b211a09adaa5150fc3e0c16b351fe66da30b899703752ce0e",
+          "signature KAT over ts+LF+nonce+LF+body (Python hmac cross-check)");
+    Check(kat[2].second == HmacSha256Hex(secret, BattleCallbackSignedMaterial(ts, nonce, body)),
+          "signature equals HMAC over the freshness material");
+    Check(kat[2].second != HmacSha256Hex(secret, body),
+          "freshness material differs from legacy body-only signature");
+
+    // 生产入口：公开两头 + 三头新鲜度 = 五头，且签名覆盖它自己发出的 ts/nonce。
     const auto headers = BattleCallbackHeaders(body, secret);
-    Check(headers.size() == 3, "signed callback headers carry three entries");
+    Check(headers.size() == 5, "signed callback headers carry five entries");
     Check(headers[0].first == "X-PhK-Service-Origin" && headers[0].second == "battle_server",
           "public pre-filter origin header unchanged");
     Check(headers[1].first == "X-PhK-Battle-Callback" && headers[1].second == "true",
           "public pre-filter callback header unchanged");
-    Check(headers[2].first == "X-PhK-Battle-Signature", "signature header name");
-    Check(headers[2].second ==
-              "5d20a470869511b7e0be3ed2c81fbeefc9d6ac06078c6fb0b608a798c49cc206",
-          "signature KAT (Python hmac cross-check)");
-    Check(headers[2].second == HmacSha256Hex(secret, body),
-          "signature equals HMAC over the exact body");
+    Check(headers[2].first == "X-PhK-Battle-Timestamp", "timestamp header present");
+    Check(headers[3].first == "X-PhK-Battle-Nonce", "nonce header present");
+    Check(headers[4].first == "X-PhK-Battle-Signature", "signature header present");
+    Check(headers[4].second ==
+              HmacSha256Hex(
+                  secret,
+                  BattleCallbackSignedMaterial(headers[2].second, headers[3].second, body)),
+          "signature covers the emitted ts/nonce over the exact body");
 
     // 秘密为空：只发公开两头（大厅会 403，错配立即可见，不静默回退）。
     const auto unsigned_headers = BattleCallbackHeaders(body, "");
     Check(unsigned_headers.size() == 2, "empty secret yields only the public pair");
+}
 
-    // 换一个字节的 body，签名必须变（大厅侧篡改即拒的依据）。
-    const std::string tampered = body;
-    std::string mutated;
-    for (char ch : tampered) {
-        mutated.push_back(ch == 'a' ? 'b' : ch);
+// B4-7.1：nonce 每条回调唯一（连续两次不同 + 1000 次无重复），头集合恒含三头。
+void TestBattleCallbackNonceFreshness() {
+    using phk::battle::BattleCallbackHeaders;
+    using phk::battle::kBattleNonceMaxBytes;
+    using phk::battle::NewBattleCallbackNonce;
+
+    const std::string secret =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const std::string body = "{\"battle_server_id\":\"battle-local-1\"}";
+
+    // 连续两次调用必须产生不同 nonce（team-lead 要求）。
+    const std::string first = NewBattleCallbackNonce();
+    const std::string second = NewBattleCallbackNonce();
+    Check(!first.empty(), "nonce is non-empty");
+    Check(first.size() <= kBattleNonceMaxBytes, "nonce within the 64-byte lobby limit");
+    Check(first != second, "consecutive nonces differ");
+
+    // 1000 次无重复（进程内单调计数器保证）。
+    std::vector<std::string> seen;
+    seen.reserve(1000);
+    for (int i = 0; i < 1000; ++i) {
+        seen.push_back(NewBattleCallbackNonce());
     }
-    Check(HmacSha256Hex(secret, mutated) != headers[2].second,
-          "tampered body changes the signature");
+    std::sort(seen.begin(), seen.end());
+    Check(
+        std::adjacent_find(seen.begin(), seen.end()) == seen.end(),
+        "1000 nonces are pairwise distinct"
+    );
+
+    // 头集合恒含三头；两次生产调用的 nonce 不同。
+    const auto h1 = BattleCallbackHeaders(body, secret);
+    const auto h2 = BattleCallbackHeaders(body, secret);
+    for (const auto& headers : {h1, h2}) {
+        bool has_ts = false;
+        bool has_nonce = false;
+        bool has_sig = false;
+        for (const auto& header : headers) {
+            has_ts = has_ts || header.first == "X-PhK-Battle-Timestamp";
+            has_nonce = has_nonce || header.first == "X-PhK-Battle-Nonce";
+            has_sig = has_sig || header.first == "X-PhK-Battle-Signature";
+        }
+        Check(has_ts && has_nonce && has_sig, "header set always carries ts + nonce + signature");
+    }
+    Check(h1[3].second != h2[3].second, "two production calls emit different nonces");
 }
 
 // 端到端：票据播种 → 出牌 → TickMatch → SubmitCardEvents →
@@ -979,10 +1046,18 @@ void TestSubmitCardEventsWire() {
     Check(http.request_line() == "POST /v1/battle/events HTTP/1.1", "events route");
     Check(http.header("X-PhK-Service-Origin") == "battle_server", "service origin header on wire");
     Check(http.header("X-PhK-Battle-Callback") == "true", "battle callback header on wire");
+    // B4-7.1：线上必须带新鲜度两头，签名覆盖 ts+LF+nonce+LF+body（用线上实际值重建）。
+    const std::string wire_timestamp = http.header("X-PhK-Battle-Timestamp");
+    const std::string wire_nonce = http.header("X-PhK-Battle-Nonce");
+    Check(!wire_timestamp.empty(), "timestamp header on wire");
+    Check(!wire_nonce.empty(), "nonce header on wire");
     Check(
         http.header("X-PhK-Battle-Signature") ==
-            phk::battle::HmacSha256Hex(config.callback_secret, http.body()),
-        "signature covers the exact posted body on the wire"
+            phk::battle::HmacSha256Hex(
+                config.callback_secret,
+                phk::battle::BattleCallbackSignedMaterial(
+                    wire_timestamp, wire_nonce, http.body())),
+        "signature covers ts+LF+nonce+LF+body on the wire"
     );
     Check(http.header("Content-Type") == "application/json", "content type json");
     Check(
@@ -1276,6 +1351,7 @@ int main() {
     TestBossDamageAndDefeatRow();
     TestBattleEventsPayloadShape();
     TestBattleCallbackHeadersSigned();
+    TestBattleCallbackNonceFreshness();
     TestSubmitCardEventsWire();
     TestSubmitCardEventsFailureKeepsRows();
     TestDeckTicketRedrawsAfterCast();
