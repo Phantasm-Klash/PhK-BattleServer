@@ -15,7 +15,7 @@ inline constexpr std::string_view kBusinessApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kBattleApiVersion = "0.1.0-draft";
 inline constexpr std::string_view kRulesetVersion = "ruleset-local-s0";
 inline constexpr std::string_view kRulesetHash = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-inline constexpr std::string_view kSourceDigestSha256 = "e37db6360a6f3e45c4969ccf02850f1e01379b8844a3a939013c478cc3fe7294";
+inline constexpr std::string_view kSourceDigestSha256 = "e361eec02efc6d4bda3b8076df7655be305f4fb3f7ecd1f847b412c2a93c96a5";
 inline constexpr std::string_view kBattleModeActionMatchId = "match-001";
 inline constexpr std::string_view kBattleModeActionPlayerId = "p1";
 inline constexpr std::string_view kBattleModeActionActionId = "match-001_a000001";
@@ -71,7 +71,7 @@ struct MessageField {
     std::string_view field;
 };
 
-inline constexpr std::array<MessageField, 407> kMessageFields = {{
+inline constexpr std::array<MessageField, 408> kMessageFields = {{
     {"BattleAllocationPush", "allocation"},
     {"BattleAllocationPush", "business_signature"},
     {"BattleBulletDelta", "bullet_id"},
@@ -186,6 +186,7 @@ inline constexpr std::array<MessageField, 407> kMessageFields = {{
     {"BattleSnapshot", "version"},
     {"BattleTicket", "battle_server_id"},
     {"BattleTicket", "business_session_id"},
+    {"BattleTicket", "deck_card_ids"},
     {"BattleTicket", "deck_snapshot_hash"},
     {"BattleTicket", "endpoint"},
     {"BattleTicket", "expires_at_ms"},
