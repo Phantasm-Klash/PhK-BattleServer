@@ -472,6 +472,13 @@ std::string CanonicalSnapshotPayload(const BattleSnapshot& snapshot) {
     out << '|';
 
     for (const auto& item : snapshot.mode_state) {
+        // T10: input_timeout_ticks is a pure server-side tuning knob. It stays in
+        // the live snapshot for observability, but must not enter the canonical
+        // (hashed) view: a tuning knob that changes the replay fixture hash would
+        // invalidate result verification.
+        if (item.first == "input_timeout_ticks") {
+            continue;
+        }
         out << "mode=" << item.first << '=' << item.second << ';';
     }
     return out.str();
@@ -625,6 +632,14 @@ InputValidationResult BattleSimulation::SetPlayerConnected(const std::string& pl
     PlayerState& player = player_it->second;
     if (player.connected != connected) {
         player.connected = connected;
+        player.ticks_without_input = 0;
+        if (connected) {
+            // Rejoin from neutral input; never resume a stale held direction/card.
+            player.last_input = BattleInput{};
+            player.last_input.match_id = config_.match_id;
+            player.last_input.player_id = player.player_id;
+            player.last_input.card_slot = -1;
+        }
         if (connected) {
             pending_reconnect_player_ids_.erase(player.player_id);
         }
@@ -1127,6 +1142,21 @@ BattleSnapshot BattleSimulation::Tick() {
         if (!battle_input_enabled) {
             continue;
         }
+        if (real_input) {
+            player.ticks_without_input = 0;
+        } else if (config_.input_timeout_ticks > 0) {
+            if (player.ticks_without_input < config_.input_timeout_ticks) {
+                ++player.ticks_without_input;
+            }
+            if (player.ticks_without_input >= config_.input_timeout_ticks) {
+                // Silence is a passive drop: deactivate the player at the
+                // timeout boundary. Tick already skips disconnected players,
+                // so held fallback cannot move/shoot/cast after this point.
+                const auto disconnected = SetPlayerConnected(player.player_id, false);
+                (void)disconnected;
+                continue;
+            }
+        }
         ApplyInput(player, input, tick_to_apply);
         // T3 step4：出牌意图（Go 同构通道，service.go:3219 packet.CardSlot>=0）。
         // 只消费**真实**客户端输入——held fallback 不重放 card_slot，避免陈旧
@@ -1163,6 +1193,7 @@ BattleSnapshot BattleSimulation::Snapshot(std::string snapshot_kind) const {
     snapshot.mode_state["mode_id"] = config_.mode_id;
     snapshot.mode_state["ruleset_version"] = config_.ruleset_version;
     snapshot.mode_state["tick_rate_hz"] = std::to_string(config_.tick_rate_hz);
+    snapshot.mode_state["input_timeout_ticks"] = std::to_string(config_.input_timeout_ticks);
     snapshot.mode_state["match_seed"] = std::to_string(config_.match_seed);
     snapshot.mode_state["bullet_count"] = std::to_string(bullets_.size());
     snapshot.mode_state["accepted_input_count"] = std::to_string(accepted_input_count_);
@@ -1580,6 +1611,11 @@ std::string BattleSimulation::CanonicalStateHash() const {
         hash = HashAppendSigned(hash, player.y_milli);
         hash = HashAppend(hash, player.last_seq);
         hash = HashAppend(hash, player.connected ? 1u : 0u);
+        // T10: ticks_without_input is bookkeeping for the input_timeout_ticks
+        // tuning knob, not authoritative gameplay state. Its observable effect
+        // (the connected flag hashed just above) is already covered, so the raw
+        // counter is deliberately kept out of the canonical state: a tuning/test
+        // knob must not perturb the signed result hash.
         hash = HashAppend(hash, player.last_input.direction_bits);
         hash = HashAppend(hash, player.last_input.slow ? 1u : 0u);
         hash = HashAppend(hash, player.last_input.shoot ? 1u : 0u);

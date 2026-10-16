@@ -973,6 +973,54 @@ void TestTakeRestoreCardCastEvents() {
 
 }  // namespace
 
+void TestInputSilenceDisconnectsAndReconnectResumes() {
+    SimulationConfig config = DuelConfig();
+    config.input_timeout_ticks = 2;
+    BattleSimulation simulation(config);
+    Check(simulation.AddPlayer("p1", 0, 0), "add p1 for silence timeout");
+    Check(simulation.SeedPlayerHand("p1", {"mirror_lance", "purge_bell"}, 7.0, "17", {"mirror_lance", "purge_bell"}), "seed p1 state");
+
+    BattleInput first = MakeInput("p1", 1, 1, -1);
+    first.direction_bits = 2; // move right once; reconnect must not reset position.
+    Check(simulation.AcceptInput(first).ok, "accept first input");
+    simulation.Tick();
+    const auto before_drop = simulation.Snapshot("full");
+    Check(simulation.IsPlayerConnected("p1"), "active input keeps p1 connected");
+    Check(simulation.HandSize("p1") == 2u, "hand seeded before drop");
+    const double energy_before = simulation.PlayerEnergy("p1");
+
+    simulation.Tick(); // first silent tick: held input may be used while grace remains.
+    simulation.Tick(); // second silent tick: mark disconnected/dead before applying fallback.
+    Check(!simulation.IsPlayerConnected("p1"), "silence timeout marks p1 disconnected/dead");
+    const auto dead_snapshot = simulation.Snapshot("full");
+    Check(dead_snapshot.snapshot_tick == 3, "dead snapshot keeps the running server tick");
+    Check(dead_snapshot.players.size() == 1 && !dead_snapshot.players[0].connected, "snapshot exposes dead/inactive state");
+    const std::int32_t dead_x = dead_snapshot.players.empty() ? 0 : dead_snapshot.players[0].x_milli;
+    simulation.Tick();
+    const auto still_dead = simulation.Snapshot("full");
+    Check(!simulation.IsPlayerConnected("p1"), "no automatic respawn after the timeout");
+    Check(still_dead.players.size() == 1 && still_dead.players[0].x_milli == dead_x, "dead player does not move on held fallback");
+    Check(simulation.HandSize("p1") == 2u, "death freezes hand");
+    Check(simulation.PlayerEnergy("p1") == energy_before, "death freezes energy");
+
+    const auto reconnect_snapshot = simulation.ReconnectSnapshot("p1", 0);
+    Check(reconnect_snapshot.snapshot_tick == simulation.CurrentTick(), "reconnect snapshot synchronizes authoritative current tick");
+    BattleModeAction reconnect;
+    reconnect.match_id = config.match_id;
+    reconnect.player_id = "p1";
+    reconnect.tick = simulation.CurrentTick() + 1;
+    reconnect.seq = 2;
+    reconnect.action_id = "action-reconnect-p1-timeout";
+    reconnect.action_type = "reconnect";
+    reconnect.payload_json = "{\"last_seen_event_cursor\":0}";
+    Check(simulation.AcceptModeAction(reconnect).ok, "accept reconnect action at next authoritative tick");
+    simulation.Tick();
+    Check(simulation.IsPlayerConnected("p1"), "explicit reconnect revives p1");
+    Check(simulation.HandSize("p1") == 2u, "reconnect preserves hand");
+    Check(simulation.PlayerEnergy("p1") == energy_before, "reconnect preserves energy");
+    Check(simulation.CurrentTick() == reconnect.tick, "reconnect does not rewind/reset the tick");
+}
+
 int main() {
     TestSeedAndSentinel();
     TestMirrorLanceCastViaModeAction();
@@ -987,6 +1035,7 @@ int main() {
     TestSubmitCardEventsFailureKeepsRows();
     TestDeckTicketRedrawsAfterCast();
     TestTakeRestoreCardCastEvents();
+    TestInputSilenceDisconnectsAndReconnectResumes();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " card cast execution test(s) failed\n";

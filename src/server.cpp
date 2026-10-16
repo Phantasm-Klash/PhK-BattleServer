@@ -606,6 +606,9 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         simulation_config.ruleset_version = signed_ticket.ticket.ruleset_version;
         simulation_config.match_seed = DeriveMatchSeed(session.match_id);
         simulation_config.tick_rate_hz = kBattleTickRateHz;
+        // T10: treat a 3-second input silence as a passive disconnect/death.
+        // The reconnect snapshot then exposes the current simulation tick.
+        simulation_config.input_timeout_ticks = simulation_config.tick_rate_hz * 3;
         if (pending_boss_config_it != pending_boss_config_by_match_.end()) {
             const BossMatchConfig& boss_config = pending_boss_config_it->second;
             simulation_config.boss_instance_id = boss_config.boss_instance_id;

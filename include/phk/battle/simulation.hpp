@@ -161,6 +161,8 @@ struct SimulationConfig {
     std::uint32_t tick_rate_hz = kBattleTickRateHz;
     std::uint32_t max_input_ahead_ticks = 8;
     std::uint32_t max_seq_ahead = 32;
+    // 0 disables silence detection (tests/tools); production sets 3 seconds.
+    std::uint32_t input_timeout_ticks = 0;
     std::uint32_t spawn_period_ticks = 30;
     std::uint32_t max_bullets = 256;
     std::size_t max_mode_action_id_bytes = kDefaultMaxModeActionIdBytes;
@@ -271,6 +273,8 @@ private:
         std::int32_t y_milli = 0;
         std::uint64_t last_seq = 0;
         bool connected = true;
+        // Consecutive simulation ticks without a real client input.
+        std::uint32_t ticks_without_input = 0;
         BattleInput last_input;
         // T3 step4：局内手牌状态（由票据播种，跨 tick 保持）。
         HandState hand;
