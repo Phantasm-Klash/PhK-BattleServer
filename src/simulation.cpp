@@ -1179,6 +1179,8 @@ BattleSnapshot BattleSimulation::Tick() {
     if (!BossDefeated()) {
         SpawnBulletsForTick();
         AdvanceBullets();
+        // B3：先生成、再移动、**再判定接触**（与 Go simulation.go:37-42 同序）。
+        ResolveBulletContacts();
     }
     // T10 rule 2：本 tick 可能刚把最后一名玩家判为被动掉线；若整队已掉线，
     // 在对局级事件行里发一次 all_players_disconnected（去重，只发一次）。
@@ -2291,6 +2293,22 @@ std::int64_t BattleSimulation::PlayerInvulnerableUntil(const std::string& player
     return player_it->second.invulnerable_until;
 }
 
+std::uint64_t BattleSimulation::PlayerHitCount(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return 0;
+    }
+    return player_it->second.hit_count;
+}
+
+std::uint64_t BattleSimulation::PlayerGrazeCount(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return 0;
+    }
+    return player_it->second.graze_count;
+}
+
 const std::vector<CardCastEvent>& BattleSimulation::CardCastEvents() const {
     return card_cast_events_;
 }
@@ -2717,6 +2735,47 @@ void BattleSimulation::AdvanceBullets() {
         }),
         bullets_.end()
     );
+}
+
+// B3：子弹↔玩家接触判定 + 无敌窗口消费。镜像 Go resolveBulletContactsLocked
+// （Gensoulkyo/runtime/core/simulation.go:191-229），在 AdvanceBullets() 之后调用。
+// 语义：欧氏距离 <= 玩家半径+子弹半径 ⇒ 命中（无敌时才掉血并刷新无敌帧，
+// 无论是否无敌**子弹一律移除**；同 tick 一颗子弹只结算一个玩家，命中即 break）；
+// 否则 <= 擦弹半径+子弹半径 ⇒ 擦弹（按 grazed_bullet_ids 去重）。
+// 用整数平方距离（d2 <= R*R）等价于 Go 的 Hypot<=R，且无浮点不确定性。
+void BattleSimulation::ResolveBulletContacts() {
+    const std::int64_t tick = static_cast<std::int64_t>(current_tick_);
+    for (auto bullet_it = bullets_.begin(); bullet_it != bullets_.end();) {
+        const BulletState& bullet = *bullet_it;
+        const std::int64_t radius = static_cast<std::int64_t>(bullet.radius_milli);
+        const std::int64_t hit_radius = static_cast<std::int64_t>(kPlayerHitRadiusMilli) + radius;
+        const std::int64_t graze_radius = static_cast<std::int64_t>(kPlayerGrazeRadiusMilli) + radius;
+        bool removed = false;
+        for (auto& player_item : players_) {
+            PlayerState& player = player_item.second;
+            const std::int64_t dx = static_cast<std::int64_t>(player.x_milli) - bullet.x_milli;
+            const std::int64_t dy = static_cast<std::int64_t>(player.y_milli) - bullet.y_milli;
+            const std::int64_t distance_sq = dx * dx + dy * dy;
+            if (distance_sq <= hit_radius * hit_radius) {
+                if (tick > player.invulnerable_until) {
+                    ++player.hit_count;
+                    player.invulnerable_until = tick + kPlayerHitInvulnerableTicks;
+                }
+                removed = true;
+                break;
+            }
+            if (distance_sq <= graze_radius * graze_radius) {
+                if (player.grazed_bullet_ids.insert(bullet.bullet_id).second) {
+                    ++player.graze_count;
+                }
+            }
+        }
+        if (removed) {
+            bullet_it = bullets_.erase(bullet_it);
+        } else {
+            ++bullet_it;
+        }
+    }
 }
 
 void BattleSimulation::AccumulateAcceptedInput(const BattleInput& input) {

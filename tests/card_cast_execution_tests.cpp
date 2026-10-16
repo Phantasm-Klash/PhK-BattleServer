@@ -216,7 +216,10 @@ void TestMirrorLanceCastViaModeAction() {
 
 void TestPurgeBellCastViaInputChannel() {
     BattleSimulation simulation(DuelConfig());
-    Check(simulation.AddPlayer("p1", 0, 0), "add p1 at origin");
+    // B3：接触判定已接线，caster 若站在弹源 (0,0) 会先把子弹吸走，使本用例的
+    // "场上仍有子弹" 前提失效。移到 (0,30000)：仍在 purge_bell 半径（120px）内，
+    // 但离弹源 > 命中半径（8.5px）。
+    Check(simulation.AddPlayer("p1", 0, 30000), "add p1 off the bullet spawn origin");
     Check(simulation.AddPlayer("p2", 20000, 0), "add p2");
     Check(
         simulation.SeedPlayerHand("p1", {"purge_bell", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "7"),
@@ -236,7 +239,8 @@ void TestPurgeBellCastViaInputChannel() {
         "purge preconditions: bullets on field"
     );
 
-    // 输入通道：真实输入 card_slot=0 出 purge_bell（caster 在 (0,0)，全在半径内）。
+    // 输入通道：真实输入 card_slot=0 出 purge_bell（caster 在 (0,30000)，
+    // purge 半径 120px 仍覆盖全部子弹）。
     Check(simulation.AcceptInput(MakeInput("p1", 6, 1, 0)).ok, "accept cast input slot 0");
     simulation.Tick();  // tick 6 执行
 
@@ -276,7 +280,8 @@ void TestAegisWardCastViaModeAction() {
 
 void TestFinaleArcClearsField() {
     BattleSimulation simulation(DuelConfig());
-    Check(simulation.AddPlayer("p1", 0, 0), "add p1");
+    // B3：p1 移出弹源，避免接触判定先清场（本用例要验证的是 finisher 清场）。
+    Check(simulation.AddPlayer("p1", 0, 40000), "add p1 off the bullet spawn origin");
     Check(simulation.AddPlayer("p2", 20000, 0), "add p2");
     Check(
         simulation.SeedPlayerHand("p1", {"finale_arc", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "11"),
@@ -298,6 +303,72 @@ void TestFinaleArcClearsField() {
     Check(effect != nullptr && effect->event_value == field, "finisher cleared every bullet (event_value = field)");
     Check(simulation.BulletCount() == 0, "field cleared by finisher");
     Check(simulation.PlayerEnergy("p1") == 4.0, "energy 10 - cost 6");
+}
+
+// ---- B3：命中判定 + 无敌窗口消费（全部经真实入口 AcceptInput / Tick） ----
+
+void TestBulletContactInvulnerableWindow() {
+    // (1) 无无敌：站在弹源的玩家被命中，子弹被移除，并写入 90-tick 无敌帧。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 0), "contact: add p1 at spawn origin");
+        Check(simulation.AddPlayer("p2", 90000, 0), "contact: add p2 far away");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 5 生成 4 颗子弹并同 tick 接触
+        }
+        Check(simulation.PlayerHitCount("p1") == 1, "contact: p1 hit exactly once");
+        Check(
+            simulation.PlayerInvulnerableUntil("p1") == 5 + 90,
+            "contact: hit grants 90-tick i-frames (tick + 90)"
+        );
+        Check(simulation.BulletCount() == 0, "contact: every in-range bullet is removed");
+        Check(simulation.PlayerHitCount("p2") == 0, "contact: distant p2 is untouched");
+    }
+    // (2) 无敌窗口内：同位置不再掉血，但子弹仍被移除（Go 语义：移除在无敌分支之外）。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 0), "invuln: add p1 at spawn origin");
+        Check(simulation.AddPlayer("p2", 90000, 0), "invuln: add p2 far away");
+        Check(
+            simulation.SeedPlayerHand(
+                "p1", {"aegis_ward", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "9"),
+            "invuln: seed aegis_ward hand"
+        );
+        // tick 1：经真实输入通道出 aegis_ward ⇒ invulnerable_until = 1 + 180 = 181。
+        Check(simulation.AcceptInput(MakeInput("p1", 1, 1, 0)).ok, "invuln: cast input accepted");
+        simulation.Tick();
+        Check(
+            simulation.PlayerInvulnerableUntil("p1") == 1 + 180,
+            "invuln: window set to tick + duration"
+        );
+        for (int i = 0; i < 4; ++i) {
+            simulation.Tick();  // 到 tick 5：子弹生成并接触，但仍在窗口内
+        }
+        Check(simulation.PlayerHitCount("p1") == 0, "invuln: window absorbs the hit (no damage)");
+        Check(simulation.BulletCount() == 0, "invuln: bullets are still removed on contact");
+    }
+    // (3) 窗口到期：窗口内全部吸收，过期后下一颗到达的子弹重新造成命中。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 0), "expiry: add p1 at spawn origin");
+        Check(simulation.AddPlayer("p2", 90000, 0), "expiry: add p2 far away");
+        for (int i = 0; i < 5; ++i) {
+            simulation.Tick();  // tick 5：首次命中 ⇒ invulnerable_until = 95
+        }
+        Check(simulation.PlayerHitCount("p1") == 1, "expiry: first hit at tick 5");
+        for (int i = 6; i <= 95; ++i) {
+            simulation.Tick();  // tick 10..95 的生成全被窗口吸收（tick <= 95）
+        }
+        Check(simulation.PlayerHitCount("p1") == 1, "expiry: window still absorbing through tick 95");
+        for (int i = 96; i <= 100; ++i) {
+            simulation.Tick();  // tick 100 生成：tick > 95 ⇒ 再次命中
+        }
+        Check(simulation.PlayerHitCount("p1") == 2, "expiry: hit resumes after the window");
+        Check(
+            simulation.PlayerInvulnerableUntil("p1") == 100 + 90,
+            "expiry: second hit refreshes i-frames"
+        );
+    }
 }
 
 // ---- 拒绝路径（每条例断 card_rejected 行 + 状态零变更） ----
@@ -1099,6 +1170,7 @@ int main() {
     TestPurgeBellCastViaInputChannel();
     TestAegisWardCastViaModeAction();
     TestFinaleArcClearsField();
+    TestBulletContactInvulnerableWindow();
     TestRejectionPaths();
     TestBossDamageAndDefeatRow();
     TestBattleEventsPayloadShape();

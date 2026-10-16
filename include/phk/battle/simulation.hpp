@@ -25,6 +25,16 @@ inline constexpr std::size_t kDefaultMaxBossIdentityBytes = 128;
 inline constexpr std::size_t kBossModeMinPlayers = 4;
 inline constexpr std::size_t kBossModeMaxPlayers = 8;
 
+// B3 命中判定（子弹↔玩家接触）：镜像 Go resolveBulletContactsLocked
+// （Gensoulkyo/runtime/core/simulation.go:191-229）。竞技场单位为 milli
+// （1 px = 1000 milli），故半径与 BulletState.radius_milli 同单位、可直接相加。
+// 玩家判定半径 = Go playerRadius = 4.5（simulation.go:16）的数值，即 4500 milli。
+inline constexpr std::int32_t kPlayerHitRadiusMilli = 4500;
+// 擦弹半径 = Go grazeRadius = 28.0（simulation.go:17），即 28000 milli。
+inline constexpr std::int32_t kPlayerGrazeRadiusMilli = 28000;
+// 命中后的无敌帧时长 = Go simulation.go:209 的 `tick + 90`。
+inline constexpr std::int64_t kPlayerHitInvulnerableTicks = 90;
+
 enum class InputValidationCode {
     Ok,
     VersionIncompatible,
@@ -264,6 +274,9 @@ public:
     [[nodiscard]] std::size_t HandSize(const std::string& player_id) const;
     [[nodiscard]] double PlayerEnergy(const std::string& player_id) const;
     [[nodiscard]] std::int64_t PlayerInvulnerableUntil(const std::string& player_id) const;
+    // B3 命中判定观测点（簿记，不进哈希）：命中次数 / 擦弹次数。
+    [[nodiscard]] std::uint64_t PlayerHitCount(const std::string& player_id) const;
+    [[nodiscard]] std::uint64_t PlayerGrazeCount(const std::string& player_id) const;
     // 执行器收集的事件行（ oldest first；Step 2 消费/清空）。
     [[nodiscard]] const std::vector<CardCastEvent>& CardCastEvents() const;
     void ClearCardCastEvents();
@@ -284,9 +297,15 @@ private:
         BattleInput last_input;
         // T3 step4：局内手牌状态（由票据播种，跨 tick 保持）。
         HandState hand;
-        // invulnerable 效果到期 tick（Go InvulnerableUntil 语义）。当前无消费者
-        // （本模拟无子弹-玩家接触判定），记录待接触判定接线后生效。
+        // invulnerable 效果到期 tick（Go InvulnerableUntil 语义）。B3 起由
+        // ResolveBulletContacts 消费：tick > invulnerable_until 才受伤。
         std::int64_t invulnerable_until = 0;
+        // B3 命中/擦弹簿记（派生自接触判定）。**不进 CanonicalStateHash**：
+        // 簿记值不得扰动签名结果哈希（TODO §十 教训）。
+        std::uint64_t hit_count = 0;
+        std::uint64_t graze_count = 0;
+        // 擦弹去重集（Go GrazedBullets）：同一颗子弹对同一玩家只算一次。
+        std::set<std::string> grazed_bullet_ids;
     };
 
     struct BulletState {
@@ -338,6 +357,9 @@ private:
     [[nodiscard]] std::string TransferCardAuditMaterial() const;
     void SpawnBulletsForTick();
     void AdvanceBullets();
+    // B3：接触判定（命中/擦弹 + 无敌窗口消费）。在 AdvanceBullets() 之后调用，
+    // 与 Go 的 emit→move→resolve 同序（simulation.go:37-42）。
+    void ResolveBulletContacts();
     void AccumulateAcceptedInput(const BattleInput& input);
     void AccumulateFallbackInput(const PlayerState& player, const BattleInput& input);
     void AccumulateAcceptedModeAction(const BattleModeAction& action);
