@@ -11,6 +11,7 @@
 #include "phk/battle/dem.hpp"
 
 #include "phk/battle/lobby_rng.hpp"
+#include "phk/battle/card_events_report.hpp"  // kBattleCallbackSignatureHeader（T6 签名头）
 #include "phk/battle/match_lifecycle.hpp"  // HttpPostJson / ParseHostPort（复用既有 client）
 
 #include <sys/stat.h>
@@ -1188,11 +1189,21 @@ bool WriteDemFile(const std::string& path, const std::string& bytes) {
 // ---------------------------------------------------------------------------
 namespace {
 
-std::vector<std::pair<std::string, std::string>> DemCallbackHeaders() {
-    return {
+std::vector<std::pair<std::string, std::string>> DemCallbackHeaders(
+    const std::string& body,
+    const std::string& callback_secret
+) {
+    std::vector<std::pair<std::string, std::string>> headers = {
         {kDemServiceOriginHeader, kDemServiceOriginValue},
         {kDemBattleCallbackHeader, kDemBattleCallbackValue}
     };
+    // 同 BattleCallbackHeaders（card_events_report.cpp:71）：secret 为空时不加
+    // 签名头，大厅会以 403 battle_callback_signature_invalid 拒绝——部署错配
+    // 立即可见，不会静默回退到无签名上传。
+    if (!callback_secret.empty()) {
+        headers.emplace_back(kBattleCallbackSignatureHeader, HmacSha256Hex(callback_secret, body));
+    }
+    return headers;
 }
 
 std::string BuildDemUploadChunkJson(
@@ -1204,7 +1215,8 @@ std::string BuildDemUploadChunkJson(
     const std::string& chunk
 ) {
     std::string out;
-    out += "{\"replay_id\":" + DemJsonString(options.replay_id);
+    out += "{\"battle_server_id\":" + DemJsonString(options.battle_server_id);
+    out += ",\"replay_id\":" + DemJsonString(options.replay_id);
     out += ",\"match_id\":" + DemJsonString(options.match_id);
     out += ",\"dem_size\":" + std::to_string(dem_size);
     out += ",\"dem_sha256\":" + DemJsonString(dem_sha256);
@@ -1228,17 +1240,22 @@ DemUploadResult UploadDemBytes(const DemUploadOptions& options, const std::strin
         result.reason = "dem_upload_match_id_required";
         return result;
     }
+    if (options.battle_server_id.empty()) {
+        result.reason = "dem_upload_battle_server_id_required";
+        return result;
+    }
 
     const std::string dem_sha256 = DemSha256Hex(dem_bytes);
     const std::size_t total = std::max<std::size_t>(
         1, (dem_bytes.size() + kDemUploadChunkBytes - 1) / kDemUploadChunkBytes);
-    const auto headers = DemCallbackHeaders();
     for (std::size_t index = 0; index < total; ++index) {
         const std::size_t begin = index * kDemUploadChunkBytes;
         const std::size_t end = std::min(dem_bytes.size(), begin + kDemUploadChunkBytes);
         const std::string chunk = dem_bytes.substr(begin, end - begin);
         const std::string json = BuildDemUploadChunkJson(
             options, dem_bytes.size(), dem_sha256, index, total, chunk);
+        // 签名覆盖该请求的精确 raw body 字节（每个分块单独签名）。
+        const auto headers = DemCallbackHeaders(json, options.callback_secret);
         const HttpPostResult post = HttpPostJson(
             options.host, options.port, options.path, json, options.timeout_ms, headers);
         result.response_body = post.body;

@@ -222,6 +222,10 @@ struct DemUploadOptions {
     std::string path = kDemUploadPath;
     std::string replay_id;  // 信息字段（审计 / 日志）；存储以 match_id 为键
     std::string match_id;
+    // 服务回调鉴权（同 /v1/battle/events）：battle_server_id 供大厅派生每服
+    // HMAC 密钥并校验对局归属；callback_secret 用于对每个分块 raw body 签名。
+    std::string battle_server_id;
+    std::string callback_secret;
     int timeout_ms = 10000;
 };
 

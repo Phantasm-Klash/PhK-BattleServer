@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "phk/battle/boss_race.hpp"
+#include "phk/battle/dem.hpp"
 #include "phk/battle/kcp_server_endpoint.hpp"
 #include "phk/battle/ticket.hpp"
 
@@ -211,6 +212,12 @@ public:
     [[nodiscard]] const std::vector<MatchTicketAudit>& TicketAuditLog() const;
     [[nodiscard]] std::size_t TicketRejectionCount() const;
 
+    // --- .dem 录制（thread B / COORDINATION §0.1.1）--------------------------
+    // 已入链条目数（含 genesis match_seed），诊断/单测用。
+    [[nodiscard]] std::size_t DemEntryCount() const;
+    // 按当前 config + simulation 生成 .dem 容器字节（不落盘、不上传）；单测用。
+    [[nodiscard]] DemWriteResult FinalizeDem() const;
+
 private:
     void HandleSessionPayload(const KcpSessionInfo& session, const std::vector<std::uint8_t>& payload);
     // Verifies (per `require_ticket`) and binds `session.conv` -> input.player_id.
@@ -231,9 +238,14 @@ private:
     );
     void BroadcastSnapshot(const BossRaceSnapshot& snapshot);
     void SubmitResultIfNeeded();
+    // 结果提交后生成 .dem：Finalize → 本地落盘 → 上传（失败只记日志，保留本地文件）。
+    void WriteAndUploadDem();
+    [[nodiscard]] DemHeader BuildDemHeader() const;
 
     MatchLifecycleConfig config_;
     BossRaceSimulation simulation_;
+    DemRecorder dem_recorder_;
+    bool dem_written_ = false;
     KcpServerEndpoint endpoint_;
     TicketVerifier ticket_verifier_;
     std::map<std::uint32_t, std::string> player_by_conv_;

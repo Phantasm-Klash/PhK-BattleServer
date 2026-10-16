@@ -625,6 +625,59 @@ void TestHttpPostClient() {
     Check(!phk::battle::ParseHostPort("no-port", &host, &port), "reject endpoint without port");
 }
 
+// ---------------------------------------------------------------------------
+// dem 录制（thread B）：app 路径输入入链 + Finalize 产出可解析容器
+// ---------------------------------------------------------------------------
+void TestDemRecordingFromAppPath() {
+    phk::battle::MatchLifecycleConfig config;
+    config.match_id = "match_dem_app_1";
+    config.mode_id = "mvp_boss_race";
+    config.seed = 424242;
+    config.ruleset_version = "ruleset-local-s0";
+    config.player_ids = {"p1", "p2"};
+    config.require_ticket = phk::battle::MatchTicketRequirement::Off;
+    config.boss_id = "tian";
+    config.battle_server_id = "bs-dem-1";
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "dem(app): server starts (" + error + ")");
+
+    // 提交 2 条被接受的输入（tick 落在 +/-8 窗口内）。
+    for (int index = 0; index < 2; ++index) {
+        phk::battle::BattleInput input;
+        input.match_id = config.match_id;
+        input.player_id = index == 0 ? "p1" : "p2";
+        input.tick = static_cast<std::uint64_t>(index + 1);
+        input.seq = 1;
+        input.direction_bits = static_cast<std::uint32_t>(index);
+        input.shoot = true;
+        input.card_slot = -1;
+        const auto payload = phk::battle::EncodeBattleInputPayload(input);
+        Check(server.InjectPayload(0x0000D001u + static_cast<std::uint32_t>(index), payload), "dem(app): inject input");
+    }
+    Check(server.AcceptedInputCount() == 2, "dem(app): two accepted inputs");
+    Check(server.DemEntryCount() == 3, "dem(app): genesis match_seed + 2 inputs on chain");
+
+    const auto written = server.FinalizeDem();
+    Check(written.ok, "dem(app): finalize ok (" + written.reason + ")");
+    if (!written.ok) {
+        return;
+    }
+    const auto parsed = phk::battle::ParseDemDocument(written.bytes);
+    Check(parsed.ok, "dem(app): produced container parses (" + parsed.reason + ")");
+    if (!parsed.ok) {
+        return;
+    }
+    Check(parsed.document.header.match_id == config.match_id, "dem(app): header match_id");
+    Check(parsed.document.header.boss_id == "tian", "dem(app): header boss_id from config");
+    Check(parsed.document.header.server_seed == "424242", "dem(app): header server_seed decimal");
+    Check(parsed.document.header.entry_count == 3, "dem(app): header entry_count");
+    Check(parsed.document.entries.size() == 3, "dem(app): body entry count");
+    Check(parsed.document.entries[0].action_type == "match_seed", "dem(app): genesis entry first");
+    Check(parsed.document.entries[1].player_id == "p1", "dem(app): first input player");
+    Check(parsed.document.entries[2].player_id == "p2", "dem(app): second input player");
+}
+
 }  // namespace
 
 int main() {
@@ -636,6 +689,7 @@ int main() {
     TestResultPayloadAndJson();
     TestSocketSmokeRace();
     TestHttpPostClient();
+    TestDemRecordingFromAppPath();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " lifecycle test(s) failed\n";

@@ -617,7 +617,10 @@ const char* MatchTicketRequirementName(MatchTicketRequirement value) {
 MatchServer::MatchServer(MatchLifecycleConfig config)
     : config_(std::move(config)),
       simulation_(MakeBossRaceConfig(config_)),
-      endpoint_(MakeEndpointConfig(config_)) {}
+      endpoint_(MakeEndpointConfig(config_)) {
+    // .dem genesis 条目：链的第一条恒为 match_seed（tick 0，battle_derived）。
+    dem_recorder_.RecordMatchSeed(config_.seed);
+}
 
 bool MatchServer::Start(std::string* error) {
     if (started_) return true;
@@ -726,6 +729,10 @@ void MatchServer::HandleSessionPayload(
         if (!BindSession(session, input, ticket, has_ticket)) {
             return;
         }
+        if (has_ticket) {
+            // header players[].user_id 来源：已验证 ticket 的 user_id。
+            dem_recorder_.NoteUserId(input.player_id, ticket.ticket.user_id);
+        }
     } else if (bound->second != input.player_id) {
         RecordTicketAudit(session.conv, input.player_id, "", "player_conv_mismatch", true);
         return;
@@ -733,6 +740,8 @@ void MatchServer::HandleSessionPayload(
 
     if (simulation_.SubmitInput(input)) {
         accepted_inputs_ += 1;
+        // 链序 = 接受序：只在 SubmitInput 验证通过后入链。
+        dem_recorder_.RecordInput(input);
     }
 }
 
@@ -884,6 +893,74 @@ void MatchServer::SubmitResultIfNeeded() {
         last_submission_.body = json;
     }
     result_submitted_ = true;
+    // 结果提交后录制 .dem（本地落盘 + 上传；失败不阻塞对局，见 WriteAndUploadDem）。
+    WriteAndUploadDem();
+}
+
+std::size_t MatchServer::DemEntryCount() const {
+    return dem_recorder_.Size();
+}
+
+DemHeader MatchServer::BuildDemHeader() const {
+    const BossRaceConfig& cfg = simulation_.Config();
+    DemHeader header;
+    header.match_id = cfg.match_id;
+    header.mode_id = cfg.mode_id;
+    header.boss_id = DemBossIdFromConfig(cfg);
+    header.ruleset_version = cfg.ruleset_version;
+    // 十进制字符串（对齐大厅 loadout server_seed 口径 / C++ match_seed）。
+    header.server_seed = std::to_string(cfg.match_seed);
+    header.tick_rate_hz = cfg.tick_rate_hz;
+    header.final_tick = static_cast<std::int64_t>(simulation_.CurrentTick());
+    header.final_state_hash = simulation_.CanonicalStateHash();
+    header.players = BuildDemPlayers(cfg, config_.player_ids, dem_recorder_.UserIds());
+    header.created_at = static_cast<std::int64_t>(WallClockNowMs() / 1000);
+    header.entry_count = dem_recorder_.Size();
+    header.chain_head_digest = dem_recorder_.Chain().HeadDigest();
+    return header;
+}
+
+DemWriteResult MatchServer::FinalizeDem() const {
+    return dem_recorder_.Finalize(BuildDemHeader());
+}
+
+void MatchServer::WriteAndUploadDem() {
+    if (dem_written_) return;
+    dem_written_ = true;
+    const DemWriteResult written = FinalizeDem();
+    if (!written.ok) {
+        std::fprintf(stderr, "dem finalize failed: %s\n", written.reason.c_str());
+        return;
+    }
+    const std::string path = DemLocalPath(config_.match_id);
+    if (!WriteDemFile(path, written.bytes)) {
+        // 上传失败时本地文件是回退校验来源，写失败必须可见。
+        std::fprintf(stderr, "dem write failed: %s\n", path.c_str());
+    }
+    if (!DemUploadEnabled()) {
+        return;
+    }
+    std::string host;
+    std::uint16_t port = 0;
+    if (config_.lobby_endpoint.empty() || !ParseHostPort(config_.lobby_endpoint, &host, &port)) {
+        std::fprintf(stderr, "dem upload skipped: no usable lobby endpoint\n");
+        return;
+    }
+    // replay_id 优先取结果提交响应里大厅分配的 id；取不到回落到 match_id
+    // （大厅 dem 存储以 match_id 为键，下载路由两者都接受）。
+    const std::string replay_id =
+        DemExtractJsonStringField(last_submission_.body, "replay_id");
+    DemUploadOptions options;
+    options.host = host;
+    options.port = port;
+    options.match_id = config_.match_id;
+    options.replay_id = replay_id.empty() ? config_.match_id : replay_id;
+    options.battle_server_id = config_.battle_server_id;
+    options.callback_secret = config_.callback_secret;
+    const DemUploadResult upload = UploadDemBytes(options, written.bytes);
+    if (!upload.ok) {
+        std::fprintf(stderr, "dem upload failed: %s\n", upload.reason.c_str());
+    }
 }
 
 bool MatchServer::finished() const {
