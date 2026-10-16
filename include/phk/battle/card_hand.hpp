@@ -40,6 +40,11 @@ namespace phk::battle {
 
 // 常量（service.go:48/50）。
 constexpr int kCardHandLimit = 4;
+
+// W-1 phase 2: deck size limit on the signed ticket (Go deckSize = 20,
+// Gensoulkyo/runtime/core/service.go:56). Ticket decks carry catalog card
+// ids only and the opening hand is their prefix.
+constexpr int kCardDeckLimit = 20;
 constexpr double kCardMaxEnergy = 10.0;
 
 // 卡池目录单条（service.go:405-420 字段全集；缺省值同 Go 零值）。

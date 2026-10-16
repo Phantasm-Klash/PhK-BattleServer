@@ -134,6 +134,37 @@ VerificationResult TicketVerifier::Verify(
             return result;
         }
     }
+    // W-1 phase 2 deck: when present, at most kCardDeckLimit catalog ids and
+    // the opening hand must be exactly its prefix (hand-is-prefix invariant,
+    // a security control: the hand the battle server shows and the deck it
+    // redraws from can never be two different facts). An absent deck stays
+    // legal (legacy "deck not supplied" tickets keep the no-op redraw).
+    if (!ticket.deck_card_ids.empty()) {
+        if (ticket.deck_card_ids.size() > static_cast<std::size_t>(kCardDeckLimit)) {
+            Fail(result, "deck_too_many_cards");
+            return result;
+        }
+        for (const auto& card_id : ticket.deck_card_ids) {
+            if (card_id.empty()) {
+                Fail(result, "deck_card_id_empty");
+                return result;
+            }
+            if (FindCardDefinition(card_id) == nullptr) {
+                Fail(result, "deck_card_not_in_catalog");
+                return result;
+            }
+        }
+        if (ticket.hand_card_ids.size() > ticket.deck_card_ids.size()) {
+            Fail(result, "deck_hand_not_prefix");
+            return result;
+        }
+        for (std::size_t index = 0; index < ticket.hand_card_ids.size(); ++index) {
+            if (ticket.hand_card_ids[index] != ticket.deck_card_ids[index]) {
+                Fail(result, "deck_hand_not_prefix");
+                return result;
+            }
+        }
+    }
     if (!std::isfinite(ticket.initial_energy) ||
         ticket.initial_energy < 0.0 ||
         ticket.initial_energy > kCardMaxEnergy) {
@@ -249,6 +280,10 @@ std::string CanonicalTicketPayload(const BattleTicket& ticket) {
         << ticket.business_session_id << '|'
         << "hand=";
     for (const auto& card_id : ticket.hand_card_ids) {
+        out << card_id << '/';
+    }
+    out << '|' << "deck=";
+    for (const auto& card_id : ticket.deck_card_ids) {
         out << card_id << '/';
     }
     out << '|' << "energy=" << ticket.initial_energy

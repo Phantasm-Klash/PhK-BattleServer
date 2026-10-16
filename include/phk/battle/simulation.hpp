@@ -242,12 +242,16 @@ public:
     // 使用（T7 H-2），DeriveMatchSeed（config_.match_seed）不参与。
     [[nodiscard]] std::int64_t LobbySeed() const;
     // 由已验票据播种一名玩家的开局手牌/能量，并（首张票据）设定对局级大厅种子。
+    // deck_card_ids（W-1 phase 2，票据 field 18）：大厅权威有序牌堆；非空时播种
+    // HandState.deck 且 draw_cursor = hand_card_ids.size()（补抽从大厅发牌游标续跑）。
+    // 空 = 未下发牌堆（旧票据：DrawServerCard 保持 no-op）。
     // 返回 false：玩家未知、种子文本非法、或与已设定的对局种子冲突（保持首个值）。
     bool SeedPlayerHand(
         const std::string& player_id,
         const std::vector<std::string>& hand_card_ids,
         double initial_energy,
-        const std::string& server_seed_decimal
+        const std::string& server_seed_decimal,
+        const std::vector<std::string>& deck_card_ids = {}
     );
     [[nodiscard]] std::size_t HandSize(const std::string& player_id) const;
     [[nodiscard]] double PlayerEnergy(const std::string& player_id) const;

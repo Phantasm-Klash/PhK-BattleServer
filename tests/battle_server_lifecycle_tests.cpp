@@ -125,6 +125,7 @@ phk::battle::SignedBattleTicket MakeTicket(
     ticket.expires_at_ms = now_ms + 600000;
     ticket.business_session_id = "session_0001";
     ticket.hand_card_ids = {"focus_lens", "graze_engine"};
+    ticket.deck_card_ids = {"focus_lens", "graze_engine", "aegis_ward", "guard_seal", "tempo_break"};
     ticket.initial_energy = 3.5;
     ticket.server_seed_decimal = "987654321";
     signed_ticket.signature_alg = "ED25519";
@@ -298,6 +299,7 @@ void TestTicketFrameCodec() {
     Check(decoded_ticket.ticket.match_id == ticket.ticket.match_id, "ticket codec: match_id");
     Check(decoded_ticket.ticket.player_id == ticket.ticket.player_id, "ticket codec: player_id");
     Check(decoded_ticket.ticket.hand_card_ids == ticket.ticket.hand_card_ids, "ticket codec: hand cards");
+    Check(decoded_ticket.ticket.deck_card_ids == ticket.ticket.deck_card_ids, "ticket codec: deck cards");
     Check(decoded_ticket.ticket.initial_energy == ticket.ticket.initial_energy, "ticket codec: initial_energy");
     Check(decoded_ticket.ticket.server_seed_decimal == ticket.ticket.server_seed_decimal, "ticket codec: seed");
     Check(decoded_ticket.signature_hex == ticket.signature_hex, "ticket codec: signature");

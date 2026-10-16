@@ -590,6 +590,7 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
     // W-1: the opening loadout rides the signed ticket and was validated by
     // TicketVerifier::Verify before RegisterTicket is reached.
     session.hand_card_ids = signed_ticket.ticket.hand_card_ids;
+    session.deck_card_ids = signed_ticket.ticket.deck_card_ids;
     session.initial_energy = signed_ticket.ticket.initial_energy;
     session.server_seed_decimal = signed_ticket.ticket.server_seed_decimal;
     session.kcp_conv = DeriveDevKcpConv(session.match_id, session.player_id);
@@ -648,7 +649,8 @@ RegisterTicketResult BattleServer::RegisterTicket(const SignedBattleTicket& sign
         session.player_id,
         session.hand_card_ids,
         session.initial_energy,
-        session.server_seed_decimal
+        session.server_seed_decimal,
+        session.deck_card_ids
     );
 
     result.ok = true;

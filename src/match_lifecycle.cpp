@@ -256,6 +256,10 @@ void WriteTicketBlock(std::vector<std::uint8_t>& out, const SignedBattleTicket& 
     for (const std::string& card_id : ticket.hand_card_ids) {
         PushString(out, card_id);
     }
+    PushU32(out, static_cast<std::uint32_t>(ticket.deck_card_ids.size()));
+    for (const std::string& card_id : ticket.deck_card_ids) {
+        PushString(out, card_id);
+    }
     PushDouble(out, ticket.initial_energy);
     PushString(out, ticket.server_seed_decimal);
     PushString(out, signed_ticket.signature_alg);
@@ -298,6 +302,15 @@ bool ReadTicketBlock(
         std::string card_id;
         if (!ReadString(payload, cursor, &card_id)) return false;
         ticket.hand_card_ids.push_back(std::move(card_id));
+    }
+    std::uint32_t deck_count = 0;
+    if (!ReadU32(payload, cursor, &deck_count)) return false;
+    if (deck_count > 64u) return false;
+    ticket.deck_card_ids.clear();
+    for (std::uint32_t i = 0; i < deck_count; ++i) {
+        std::string card_id;
+        if (!ReadString(payload, cursor, &card_id)) return false;
+        ticket.deck_card_ids.push_back(std::move(card_id));
     }
     if (!ReadDouble(payload, cursor, &ticket.initial_energy)) return false;
     if (!ReadString(payload, cursor, &ticket.server_seed_decimal)) return false;

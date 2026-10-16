@@ -29,6 +29,13 @@ struct BattleTicket {
     // TEXT (a JS number would narrow seeds above 2^53). The lobby ED25519
     // signature covers these fields on the wire.
     std::vector<std::string> hand_card_ids;
+    // W-1 phase 2 (proto BattleTicket field 18): the lobby's authoritative
+    // ordered deck. The opening hand above must be exactly this deck's first
+    // hand_card_ids.size() entries (hand-is-prefix invariant). On the battle
+    // server this seeds HandState.deck and draw_cursor = hand_card_ids.size()
+    // so a cast can redraw from where the lobby left off. An empty vector
+    // means "deck not supplied" (legacy tickets keep the no-op redraw).
+    std::vector<std::string> deck_card_ids;
     double initial_energy = 0.0;
     std::string server_seed_decimal;
 };

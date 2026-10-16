@@ -632,6 +632,18 @@ phk::battle::SignedBattleTicket MakeSignedTicket(
     return signed_ticket;
 }
 
+// W-1 phase 2: same shape, plus the authoritative ordered deck (its prefix
+// is the opening hand, matching the lobby issuance contract).
+phk::battle::SignedBattleTicket MakeSignedTicketWithDeck(
+    const std::vector<std::string>& hand_card_ids,
+    double initial_energy,
+    const std::vector<std::string>& deck_card_ids
+) {
+    auto signed_ticket = MakeSignedTicket(hand_card_ids, initial_energy);
+    signed_ticket.ticket.deck_card_ids = deck_card_ids;
+    return signed_ticket;
+}
+
 // payload 形状逐项对大厅 BattleEventRow / BattleEventsSubmitRequest
 // （battle_events.go:41-71）的字段名、omitempty 语义断言。
 void TestBattleEventsPayloadShape() {
@@ -871,6 +883,57 @@ void TestSubmitCardEventsFailureKeepsRows() {
 }
 
 // Take/Restore 语义（64 行上限由 SubmitCardEvents 强制）。
+// W-1 phase 2: a ticket deck seeds HandState.deck; a cast redraws from where
+// the lobby left off (draw_cursor = hand size), exactly like the Go
+// drawServerCard cursor semantics. Without a deck the legacy no-op redraw
+// stays unchanged.
+void TestDeckTicketRedrawsAfterCast() {
+    const std::vector<std::string> hand = {
+        "mirror_lance", "focus_lens", "graze_engine", "guard_seal"};
+    const std::vector<std::string> deck = {
+        "mirror_lance", "focus_lens", "graze_engine", "guard_seal",
+        "aegis_ward", "finale_arc"};
+
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", 0, 0), "deck redraw: add p1");
+    Check(
+        simulation.SeedPlayerHand("p1", hand, 10.0, "5", deck),
+        "deck redraw: seed hand with the ticket deck"
+    );
+    Check(simulation.HandSize("p1") == 4, "deck redraw: hand seeded at the limit");
+    // Cast slot 0: hand drops to 3, the deck redraws back to the limit.
+    Check(
+        simulation.AcceptModeAction(MakeCastAction("p1", 1, 1, 0)).ok,
+        "deck redraw: accept cast slot 0"
+    );
+    simulation.Tick();
+    Check(simulation.HandSize("p1") == 4, "deck redraw: cast redraws from the ticket deck");
+    Check(simulation.CardCastEvents().size() == 2, "deck redraw: accepted + effect rows");
+
+    // The whole server path: the validated ticket deck reaches the session.
+    phk::battle::BattleServerConfig deck_config;
+    deck_config.now_ms = 1782489605000;
+    BattleServer server(deck_config);
+    const auto registered = server.RegisterTicket(
+        MakeSignedTicketWithDeck(hand, 10.0, deck));
+    Check(registered.ok, "deck redraw: deck ticket registers");
+    Check(registered.session.deck_card_ids == deck, "deck redraw: session carries the deck");
+
+    // Legacy: no deck on the ticket => no redraw (unchanged behavior).
+    BattleSimulation legacy(DuelConfig());
+    Check(legacy.AddPlayer("p1", 0, 0), "deck redraw: add legacy p1");
+    Check(
+        legacy.SeedPlayerHand("p1", hand, 10.0, "5"),
+        "deck redraw: seed hand without a deck"
+    );
+    Check(
+        legacy.AcceptModeAction(MakeCastAction("p1", 1, 1, 0)).ok,
+        "deck redraw: accept legacy cast"
+    );
+    legacy.Tick();
+    Check(legacy.HandSize("p1") == 3, "deck redraw: no deck, no redraw");
+}
+
 void TestTakeRestoreCardCastEvents() {
     BattleSimulation simulation(DuelConfig());
     Check(simulation.AddPlayer("p1", 0, 0), "add p1");
@@ -916,6 +979,7 @@ int main() {
     TestBattleCallbackHeadersSigned();
     TestSubmitCardEventsWire();
     TestSubmitCardEventsFailureKeepsRows();
+    TestDeckTicketRedrawsAfterCast();
     TestTakeRestoreCardCastEvents();
 
     if (g_failures != 0) {

@@ -479,6 +479,70 @@ bool TestTicketVerifierOpeningLoadout() {
     return true;
 }
 
+// W-1 phase 2: the ticket deck contract (absent stays legal; present must be
+// <= 20 catalog ids with the opening hand as its prefix), the canonical
+// payload binding the deck, and RegisterTicket carrying the validated deck
+// into the session record that seeds HandState.
+bool TestTicketVerifierDeckContract() {
+    phk::battle::TicketVerifier verifier;
+    phk::battle::TicketVerificationOptions options;
+    options.now_ms = 1782489605000;
+    options.required_battle_server_id = "battle-local-1";
+    options.required_endpoint = "127.0.0.1:7901";
+    options.required_key_id = "dev-ed25519-local";
+
+    const std::vector<std::string> deck = {
+        "focus_lens", "focus_lens", "hitbox_charm", "hitbox_charm",
+        "aegis_ward", "guard_seal"};
+    auto decked = MakeTicket();
+    decked.ticket.deck_card_ids = deck;
+    CHECK_TRUE(verifier.Verify(decked, options).ok);  // hand is the deck prefix
+
+    auto bad_prefix = MakeTicket();
+    bad_prefix.ticket.deck_card_ids = {"focus_lens", "aegis_ward"};
+    const auto bad_prefix_result = verifier.Verify(bad_prefix, options);
+    CHECK_TRUE(!bad_prefix_result.ok);
+    CHECK_EQ(bad_prefix_result.reason, std::string("deck_hand_not_prefix"));
+
+    auto unknown_card = MakeTicket();
+    unknown_card.ticket.deck_card_ids = {"focus_lens", "no_such_card"};
+    const auto unknown_card_result = verifier.Verify(unknown_card, options);
+    CHECK_TRUE(!unknown_card_result.ok);
+    CHECK_EQ(unknown_card_result.reason, std::string("deck_card_not_in_catalog"));
+
+    auto empty_card = MakeTicket();
+    empty_card.ticket.deck_card_ids = {"focus_lens", ""};
+    const auto empty_card_result = verifier.Verify(empty_card, options);
+    CHECK_TRUE(!empty_card_result.ok);
+    CHECK_EQ(empty_card_result.reason, std::string("deck_card_id_empty"));
+
+    auto oversized = MakeTicket();
+    oversized.ticket.deck_card_ids = std::vector<std::string>(21, "focus_lens");
+    const auto oversized_result = verifier.Verify(oversized, options);
+    CHECK_TRUE(!oversized_result.ok);
+    CHECK_EQ(oversized_result.reason, std::string("deck_too_many_cards"));
+
+    // The canonical payload must bind the deck (handshake transcript cover).
+    CHECK_TRUE(
+        phk::battle::CanonicalTicketPayload(decked.ticket) !=
+        phk::battle::CanonicalTicketPayload(MakeTicket().ticket)
+    );
+    CHECK_TRUE(
+        phk::battle::CanonicalTicketPayload(decked.ticket).find(
+            "deck=focus_lens/focus_lens/hitbox_charm/hitbox_charm/aegis_ward/guard_seal") !=
+        std::string::npos
+    );
+
+    // RegisterTicket carries the validated deck into the session record.
+    phk::battle::BattleServerConfig config;
+    config.now_ms = 1782489605000;
+    phk::battle::BattleServer server(config);
+    const auto registered = server.RegisterTicket(decked);
+    CHECK_TRUE(registered.ok);
+    CHECK_TRUE(registered.session.deck_card_ids == deck);
+    return true;
+}
+
 bool TestProtocolManifest() {
     phk::battle::VersionStamp version;
     CHECK_EQ(version.protocol_version, phk::v1::kProtocolVersion);
@@ -7244,6 +7308,7 @@ int main() {
 		{"GoldenReplaySummaryFixture", TestGoldenReplaySummaryFixture},
 		{"TicketVerifier", TestTicketVerifier},
 		{"TicketVerifierOpeningLoadout", TestTicketVerifierOpeningLoadout},
+		{"TicketVerifierDeckContract", TestTicketVerifierDeckContract},
 		{"ServerAndHandshake", TestServerAndHandshake},
         {"HandshakeTranscriptBindsFullClientMaterial", TestHandshakeTranscriptBindsFullClientMaterial},
         {"RoomCapacityGuard", TestRoomCapacityGuard},

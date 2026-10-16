@@ -2195,7 +2195,8 @@ bool BattleSimulation::SeedPlayerHand(
     const std::string& player_id,
     const std::vector<std::string>& hand_card_ids,
     double initial_energy,
-    const std::string& server_seed_decimal
+    const std::string& server_seed_decimal,
+    const std::vector<std::string>& deck_card_ids
 ) {
     auto player_it = players_.find(player_id);
     if (player_it == players_.end()) {
@@ -2217,11 +2218,12 @@ bool BattleSimulation::SeedPlayerHand(
     PlayerState& player = player_it->second;
     player.hand.card_ids = hand_card_ids;
     player.hand.energy = initial_energy;
-    // 缺口（记录在 task-queue/out/T3_step4_integration.md §3）：票面无
-    // deck_card_ids，牌堆置空 ⇒ DrawServerCard 为 no-op（出牌后不补抽），
-    // draw_cursor 无法回填（大厅发牌后应为 4）。待 W-1 第二阶段扩展票据。
-    player.hand.deck.clear();
-    player.hand.draw_cursor = 0;
+    // W-1 phase 2（票 field 18 deck_card_ids）：牌堆随票据下发，出牌后可补抽。
+    // draw_cursor 从大厅发牌游标续跑：hand = deck prefix（TicketVerifier 的
+    // deck_hand_not_prefix 已保不变量），故开局消耗恰为 hand_card_ids.size() 张。
+    // 未下发牌堆（空）时保持旧行为：牌堆空、游标 0，DrawServerCard 为 no-op。
+    player.hand.deck = deck_card_ids;
+    player.hand.draw_cursor = deck_card_ids.empty() ? 0 : hand_card_ids.size();
     player.invulnerable_until = 0;
     return true;
 }

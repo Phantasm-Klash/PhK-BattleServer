@@ -66,6 +66,10 @@ struct BattleSessionRecord {
     // W-1 opening loadout (validated at ticket verification): opening hand,
     // opening energy and the authoritative lobby seed in decimal text.
     std::vector<std::string> hand_card_ids;
+    // W-1 phase 2: the authoritative ordered deck behind the opening hand
+    // (validated at ticket verification); seeds HandState.deck so a cast can
+    // redraw from where the lobby left off.
+    std::vector<std::string> deck_card_ids;
     double initial_energy = 0.0;
     std::string server_seed_decimal;
     std::uint32_t kcp_conv = 0;

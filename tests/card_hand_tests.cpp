@@ -255,6 +255,26 @@ void TestBuildCardActivation() {
 
 }  // namespace
 
+// W-1 phase 2: the lobby seeds HandState like SeedPlayerHand does for a deck
+// ticket (deck = full ordered deck, draw_cursor = hand size); a cast must
+// redraw deck[draw_cursor] and advance the cursor exactly once, matching the
+// Go drawServerCard semantics.
+void TestDeckSeededHandRedrawResumesAtLobbyCursor() {
+    HandState hand;
+    hand.deck = {
+        "mirror_lance", "focus_lens", "graze_engine", "guard_seal",
+        "aegis_ward", "finale_arc"};
+    hand.card_ids = {
+        hand.deck[0], hand.deck[1], hand.deck[2], hand.deck[3]};
+    hand.energy = 10.0;
+    hand.draw_cursor = hand.card_ids.size();
+    const auto result = ApplyCast(hand, 0, 100);
+    Check(result.accepted, "deck-seeded cast accepted");
+    Check(hand.card_ids.size() == 4, "deck-seeded hand redraws to the limit");
+    Check(hand.card_ids.back() == "aegis_ward", "redraw resumes at the lobby cursor (deck[4])");
+    Check(hand.draw_cursor == 5, "cursor advanced exactly once");
+}
+
 int main() {
     TestCatalogWhitelist();
     TestRejectionSlotOutOfRange();
@@ -271,6 +291,7 @@ int main() {
     TestDrawServerCardHandCap();
     TestDrawServerCardSkipsEmptyCardId();
     TestDrawServerCardCyclesDeck();
+    TestDeckSeededHandRedrawResumesAtLobbyCursor();
     TestBuildCardActivation();
 
     if (g_failures != 0) {
