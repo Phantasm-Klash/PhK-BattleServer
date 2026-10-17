@@ -91,6 +91,16 @@ double RoundTo(double value, int precision) {
     return std::round(value * scale) / scale;
 }
 
+CardPatternGeometry CardPatternGeometryFor(const std::string& pattern_id) {
+    if (pattern_id == "ember_lance") {
+        // 设计固定值：count 5 / speed 6.5 / radius 4.0 / amber；spread 沿用
+        // 原展开角 π/3（设计未改 spread）。
+        return CardPatternGeometry{5, kCardOpponentPatternSpread, 6.5, 4.0, "amber"};
+    }
+    // mirror_lance 及其余一切：原常量（与 Go cardPatternGeometryFor 的回落一致）。
+    return CardPatternGeometry{};
+}
+
 CardEffectResult ApplyOpponentPattern(
     const std::vector<CardPlayerSnapshot>& players,
     const std::string& caster_id,
@@ -130,16 +140,17 @@ CardEffectResult ApplyOpponentPattern(
     }
 
     // 从 boss 原点瞄准对手（Go math.Atan2(dy, dx)）。
+    const CardPatternGeometry geometry = CardPatternGeometryFor(pattern_id);
     const double base = std::atan2(target->y - kBossOriginY, target->x - kBossOriginX);
-    const double start = base - kCardOpponentPatternSpread * 0.5;
+    const double start = base - geometry.spread * 0.5;
     double step = 0.0;
-    if (kCardOpponentPatternCount > 1) {
-        step = kCardOpponentPatternSpread / static_cast<double>(kCardOpponentPatternCount - 1);
+    if (geometry.count > 1) {
+        step = geometry.spread / static_cast<double>(geometry.count - 1);
     }
 
     std::uint64_t seq = next_bullet_seq;
     std::size_t field_count = existing_bullet_count;
-    for (int i = 0; i < kCardOpponentPatternCount; ++i) {
+    for (int i = 0; i < geometry.count; ++i) {
         if (field_count >= kMaxBullets) {
             break;  // addBulletLocked 封顶：不再生成
         }
@@ -153,11 +164,11 @@ CardEffectResult ApplyOpponentPattern(
             tick,
             kBossOriginX,
             kBossOriginY,
-            std::cos(angle) * kCardOpponentPatternSpeed,
-            std::sin(angle) * kCardOpponentPatternSpeed,
-            kCardOpponentPatternRadius,
+            std::cos(angle) * geometry.speed,
+            std::sin(angle) * geometry.speed,
+            geometry.radius,
             1,
-            kCardOpponentPatternColor
+            geometry.color
         ));
         ++seq;
         ++field_count;

@@ -1339,6 +1339,125 @@ void TestAllPlayersDisconnectedSignal() {
     }
 }
 
+// ---- 16 -> 20 扩充的四张新卡：真实入口 + 事件行 value 语义 ----
+
+// frost_arc（bullet_purge，费 2 / radius 100 / count 12）：输入通道出牌，
+// card_effect_applied.value = 实际清除子弹数（TODO §三 3），不超过 count。
+void TestFrostArcPurgesWithinItsOwnTuning() {
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", 0, 30000), "frost: add p1 off the bullet spawn origin");
+    Check(simulation.AddPlayer("p2", 20000, 0), "frost: add p2");
+    Check(
+        simulation.SeedPlayerHand("p1", {"frost_arc", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "21"),
+        "frost: seed p1 hand"
+    );
+
+    for (int i = 0; i < 5; ++i) {
+        simulation.Tick();  // tick 5 生成 4 颗 duel 子弹
+    }
+    const std::size_t spawned = simulation.BulletCount();
+    Check(spawned == 4, "frost: 4 bullets spawned at tick 5");
+
+    Check(simulation.AcceptInput(MakeInput("p1", 6, 1, 0)).ok, "frost: accept cast input slot 0");
+    simulation.Tick();  // tick 6 执行
+
+    const auto accepted = FindEvent(simulation, "card_accepted");
+    Check(accepted != nullptr && accepted->card_id == "frost_arc", "frost: card_accepted frost_arc");
+    Check(accepted != nullptr && accepted->event_value == 0, "frost: card_accepted value = damage (0)");
+    const auto effect = FindEvent(simulation, "card_effect_applied");
+    Check(effect != nullptr && effect->card_id == "frost_arc", "frost: card_effect_applied frost_arc");
+    if (effect != nullptr) {
+        Check(effect->event_value == static_cast<std::int64_t>(spawned), "frost: value = bullets removed");
+        Check(effect->event_value <= 12, "frost: value capped at purge_count 12");
+    }
+    Check(simulation.BulletCount() == 0, "frost: field cleared");
+    Check(simulation.PlayerEnergy("p1") == 8.0, "frost: energy 10 - cost 2");
+    Check(simulation.HandSize("p1") == 3, "frost: played slot removed");
+}
+
+// ember_lance（opponent_pattern，费 3）：动作通道出牌，value = 生成数（自己的
+// 5 发几何，不是 mirror_lance 的 7 发）；场上净增 5 颗。
+void TestEmberLanceSpawnsItsOwnPattern() {
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", -20000, 0), "ember: add p1");
+    Check(simulation.AddPlayer("p2", 20000, 0), "ember: add p2");
+    Check(
+        simulation.SeedPlayerHand("p1", {"ember_lance", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "22"),
+        "ember: seed p1 hand"
+    );
+
+    Check(simulation.AcceptModeAction(MakeCastAction("p1", 1, 1, 0)).ok, "ember: accept cast slot 0");
+    simulation.Tick();
+
+    const auto accepted = FindEvent(simulation, "card_accepted");
+    Check(accepted != nullptr && accepted->card_id == "ember_lance", "ember: card_accepted ember_lance");
+    Check(accepted != nullptr && accepted->event_value == 20, "ember: card_accepted value = damage (20)");
+    const auto effect = FindEvent(simulation, "card_effect_applied");
+    Check(effect != nullptr && effect->card_id == "ember_lance", "ember: card_effect_applied ember_lance");
+    if (effect != nullptr) {
+        Check(effect->event_value == 5, "ember: value = 5 spawned");
+        Check(effect->target_user_id == "p2", "ember: targets lowest other id");
+    }
+    Check(simulation.BulletCount() == 5, "ember: 5 bullets survive the tick");
+    Check(simulation.PlayerEnergy("p1") == 7.0, "ember: energy 10 - cost 3");
+}
+
+// iron_veil（invulnerable，费 4 / 120 ticks）：动作通道出牌，value = 0，
+// invulnerable_until = tick + duration（比 aegis_ward 的 180 短）。
+void TestIronVeilGrantsShortWindow() {
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", -20000, 0), "iron: add p1");
+    Check(simulation.AddPlayer("p2", 20000, 0), "iron: add p2");
+    Check(
+        simulation.SeedPlayerHand("p1", {"iron_veil", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "23"),
+        "iron: seed p1 hand"
+    );
+
+    Check(simulation.AcceptModeAction(MakeCastAction("p1", 1, 1, 0)).ok, "iron: accept cast slot 0");
+    simulation.Tick();
+
+    const auto effect = FindEvent(simulation, "card_effect_applied");
+    Check(effect != nullptr && effect->card_id == "iron_veil", "iron: card_effect_applied iron_veil");
+    Check(effect != nullptr && effect->event_value == 0, "iron: invulnerable event_value = 0");
+    Check(
+        simulation.PlayerInvulnerableUntil("p1") == 1 + 120,
+        "iron: invulnerable_until = tick + duration (121)"
+    );
+    Check(simulation.PlayerEnergy("p1") == 6.0, "iron: energy 10 - cost 4");
+}
+
+// thunder_fall（finisher，费 4 / dmg 30）：动作通道出牌，value = 实际清场数；
+// card_accepted.value = 卡片伤害 30（通用激活路径施加 boss 伤害）。
+void TestThunderFallCheapFinisher() {
+    BattleSimulation simulation(DuelConfig());
+    Check(simulation.AddPlayer("p1", 0, 40000), "thunder: add p1 off the bullet spawn origin");
+    Check(simulation.AddPlayer("p2", 20000, 0), "thunder: add p2");
+    Check(
+        simulation.SeedPlayerHand("p1", {"thunder_fall", "focus_lens", "focus_lens", "focus_lens"}, 10.0, "24"),
+        "thunder: seed p1 hand"
+    );
+
+    for (int i = 0; i < 5; ++i) {
+        simulation.Tick();  // tick 5 生成 4 颗子弹
+    }
+    const std::int64_t field = static_cast<std::int64_t>(simulation.BulletCount());
+    Check(field == 4, "thunder: 4 bullets on field before finisher");
+
+    Check(simulation.AcceptModeAction(MakeCastAction("p1", 1, 6, 0)).ok, "thunder: accept cast at tick 6");
+    simulation.Tick();
+
+    const auto accepted = FindEvent(simulation, "card_accepted");
+    Check(accepted != nullptr && accepted->card_id == "thunder_fall", "thunder: card_accepted thunder_fall");
+    Check(accepted != nullptr && accepted->event_value == 30, "thunder: card_accepted value = damage (30)");
+    const auto effect = FindEvent(simulation, "card_effect_applied");
+    Check(effect != nullptr && effect->card_id == "thunder_fall", "thunder: card_effect_applied thunder_fall");
+    if (effect != nullptr) {
+        Check(effect->event_value == field, "thunder: value = bullets cleared");
+    }
+    Check(simulation.BulletCount() == 0, "thunder: field cleared");
+    Check(simulation.PlayerEnergy("p1") == 6.0, "thunder: energy 10 - cost 4");
+}
+
 int main() {
     TestSeedAndSentinel();
     TestMirrorLanceCastViaModeAction();
@@ -1358,6 +1477,10 @@ int main() {
     TestTakeRestoreCardCastEvents();
     TestInputSilenceDisconnectsAndReconnectResumes();
     TestAllPlayersDisconnectedSignal();
+    TestFrostArcPurgesWithinItsOwnTuning();
+    TestEmberLanceSpawnsItsOwnPattern();
+    TestIronVeilGrantsShortWindow();
+    TestThunderFallCheapFinisher();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " card cast execution test(s) failed\n";

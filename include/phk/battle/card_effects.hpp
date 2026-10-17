@@ -1,7 +1,7 @@
 // 卡牌效果执行层（4 个 EffectKind 的纯函数移植）。
 //
 // 唯一真值来源：Gensoulkyo/runtime/core/card_effects.go（2026-10-14 逐行对照）：
-//   - applyOpponentPatternLocked  → ApplyOpponentPattern   （mirror_lance）
+//   - applyOpponentPatternLocked  → ApplyOpponentPattern   （mirror_lance / ember_lance）
 //   - applyBulletPurgeLocked      → ApplyBulletPurge       （purge_bell）
 //   - applyInvulnerableLocked     → ApplyInvulnerable      （aegis_ward）
 //   - applyFinisherLocked         → ApplyFinisher          （finale_arc / last_arc）
@@ -48,6 +48,24 @@ constexpr double kBossOriginY = 0.0;
 
 // 全场子弹上限（simulation.go:18 maxBullets）——addBulletLocked 的封顶。
 constexpr std::size_t kMaxBullets = 384;
+
+// ---- opponent_pattern 扇形几何（按 pattern id 查表） ----
+//
+// 16 -> 20 卡池扩充（2026-10-17）：不同 opponent_pattern 卡可以有自己的扇形
+// 几何。表中 mirror_lance 与原常量逐项一致（16 张时代的唯一 opponent_pattern
+// 卡），ember_lance 声明自己的参数集。**纯编译期数据，不进入任何进哈希的
+// 序列化路径**——只有卡实际生成的子弹才进状态。
+struct CardPatternGeometry {
+    int count = kCardOpponentPatternCount;
+    double spread = kCardOpponentPatternSpread;
+    double speed = kCardOpponentPatternSpeed;
+    double radius = kCardOpponentPatternRadius;
+    const char* color = kCardOpponentPatternColor;
+};
+
+// 按 pattern id 取扇形几何；未登记的 id（含 mirror_lance 之外的旧行为）回落
+// 到原常量，保证逐位不变。
+[[nodiscard]] CardPatternGeometry CardPatternGeometryFor(const std::string& pattern_id);
 
 // ---- 输入快照 ----
 
@@ -116,8 +134,8 @@ struct CardEffectResult {
 // ---- 4 个 EffectKind ----
 
 // opponent_pattern（card_effects.go:43-72）：从 boss 原点朝对手当前位射
-// kCardOpponentPatternCount 发扇形；±spread/2 等分；写入 target_user_id。
-// bullet id 形如 "<match_id>_b%06d"（Go addBulletLocked），从
+// CardPatternGeometryFor(pattern_id).count 发扇形；±spread/2 等分；写入
+// target_user_id。bullet id 形如 "<match_id>_b%06d"（Go addBulletLocked），从
 // next_bullet_seq 起递增；existing_bullet_count 参与 maxBullets 封顶判定。
 CardEffectResult ApplyOpponentPattern(
     const std::vector<CardPlayerSnapshot>& players,

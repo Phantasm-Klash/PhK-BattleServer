@@ -1,7 +1,7 @@
 // 局内手牌状态与出牌校验（Step 3）。
 //
 // 真值来源（2026-10-14 逐行对照 Gensoulkyo/runtime/core/service.go）：
-//   - 卡池目录 serverCardCatalog（service.go:405-420，16 张）
+//   - 卡池目录 serverCardCatalog（service.go:405-420，20 张）
 //   - validateAndActivateCardLocked（service.go:3301-3337）——校验顺序与
 //     账本变更逐项照抄
 //   - drawServerCard（service.go:4229-4240）——补抽规则
@@ -63,7 +63,7 @@ struct CardDefinition {
     std::int64_t purge_count = 0;
 };
 
-// 16 卡白名单目录（按 card_id 查找；不存在返回 nullptr）。
+// 20 卡白名单目录（按 card_id 查找；不存在返回 nullptr）。
 [[nodiscard]] const CardDefinition* FindCardDefinition(const std::string& card_id);
 
 // 局内手牌状态（对应 Go playerState 的卡牌子集）。

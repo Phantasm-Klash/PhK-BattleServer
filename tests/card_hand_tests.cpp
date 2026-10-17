@@ -51,14 +51,15 @@ HandState ArmedHand() {
     return hand;
 }
 
-// ---- 16 卡白名单目录 ----
+// ---- 20 卡白名单目录（16 -> 20 扩充后） ----
 
 void TestCatalogWhitelist() {
-    const char* ids[16] = {
+    const char* ids[20] = {
         "focus_lens", "hitbox_charm", "density_surge", "tempo_break",
         "bomb_amplifier", "guard_seal", "graze_engine", "draw_sigil",
         "aim_baffle", "purge_charm", "curve_prism", "last_arc",
         "mirror_lance", "purge_bell", "aegis_ward", "finale_arc",
+        "frost_arc", "ember_lance", "iron_veil", "thunder_fall",
     };
     for (const char* id : ids) {
         Check(FindCardDefinition(id) != nullptr, std::string("catalog must contain ") + id);
@@ -81,6 +82,25 @@ void TestCatalogWhitelist() {
     const auto* draw = FindCardDefinition("draw_sigil");
     Check(draw->effect_kind == "economy" && draw->energy_gain == 0.75 && draw->draw_cards == 1,
           "draw_sigil definition");
+
+    // 16 -> 20 扩充的四张（数值逐字段照抄 Go serverCardCatalog）。
+    const auto* frost = FindCardDefinition("frost_arc");
+    Check(frost->effect_kind == "bullet_purge" && frost->cost == 2 && frost->cooldown_ticks == 360 &&
+              frost->duration_ticks == 1 && frost->damage == 0 && frost->purge_radius == 100 &&
+              frost->purge_count == 12,
+          "frost_arc definition");
+    const auto* ember = FindCardDefinition("ember_lance");
+    Check(ember->effect_kind == "opponent_pattern" && ember->cost == 3 && ember->cooldown_ticks == 300 &&
+              ember->duration_ticks == 240 && ember->damage == 20 && ember->pattern_id == "ember_lance",
+          "ember_lance definition");
+    const auto* iron = FindCardDefinition("iron_veil");
+    Check(iron->effect_kind == "invulnerable" && iron->cost == 4 && iron->cooldown_ticks == 480 &&
+              iron->duration_ticks == 120,
+          "iron_veil definition");
+    const auto* thunder = FindCardDefinition("thunder_fall");
+    Check(thunder->effect_kind == "finisher" && thunder->cost == 4 && thunder->cooldown_ticks == 420 &&
+              thunder->duration_ticks == 1 && thunder->damage == 30,
+          "thunder_fall definition");
 }
 
 // ---- 每条拒绝路径 ----

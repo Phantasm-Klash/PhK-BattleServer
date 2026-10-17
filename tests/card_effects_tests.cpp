@@ -298,11 +298,50 @@ void TestOpponentTargetIdHelper() {
     Check(OpponentTargetId({"solo"}, "solo").empty(), "target: no opponents");
 }
 
+
+// 16 -> 20 扩充：ember_lance 有自己的扇形几何（5 发 / speed 6.5 / radius 4.0 /
+// amber），spread 沿用 π/3。mirror_lance 的常量 behavior 由上面的
+// TestOpponentPatternTargetsLowestOpponent 钉住（7 发 / violet / 4.5 / 5.0）。
+void TestOpponentPatternEmberLanceGeometry() {
+    const std::vector<CardPlayerSnapshot> players = {
+        {"u-caster", 480.0, 600.0},
+        {"u-target", 600.0, 500.0},
+    };
+    CardActivation activation;
+    activation.card_id = "ember_lance";
+    activation.effect_kind = "opponent_pattern";
+    activation.pattern_id = "ember_lance";
+
+    const auto result = ApplyOpponentPattern(players, "u-caster", activation, 3, "m2", 1, 0);
+
+    Check(result.event_value == 5, "ember fan: event_value must be 5, got " + std::to_string(result.event_value));
+    Check(result.bullet_deltas.size() == 5u, "ember fan: expected 5 spawn deltas");
+    Check(result.target_user_id == "u-target", "ember fan: target");
+    const double base = std::atan2(500.0 - 0.0, 600.0 - 0.0);
+    const double step = (3.14159265358979323846 / 3.0) / (5 - 1);
+    for (int i = 0; i < 5; ++i) {
+        const CardBulletDelta& delta = result.bullet_deltas[static_cast<std::size_t>(i)];
+        const std::string label = "ember[" + std::to_string(i) + "]";
+        Check(delta.op == "spawn", label + ": op spawn");
+        Check(delta.bullet_id == "m2_b00000" + std::to_string(i + 1), label + ": bullet id, got " + delta.bullet_id);
+        Check(delta.pattern_id == "ember_lance", label + ": pattern");
+        Check(delta.kind == "nway", label + ": kind");
+        Check(Near(std::hypot(delta.vx, delta.vy), 6.5, 1e-3), label + ": speed 6.5");
+        const double angle = std::atan2(delta.vy, delta.vx);
+        Check(Near(angle, base - 3.14159265358979323846 / 6.0 + step * i, 1e-3), label + ": fan angle");
+        Check(Near(delta.radius, 4.0), label + ": radius 4.0");
+        Check(delta.damage == 1, label + ": damage");
+        Check(delta.color == "amber", label + ": color amber");
+        Check(delta.tick == 3, label + ": tick");
+    }
+}
+
 }  // namespace
 
 int main() {
     TestOpponentPatternTargetsLowestOpponent();
     TestOpponentPatternNoOpponent();
+    TestOpponentPatternEmberLanceGeometry();
     TestOpponentPatternBulletCap();
     TestBulletPurgeRemovesDeterministicSelection();
     TestBulletPurgeNoOp();

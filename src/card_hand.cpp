@@ -15,7 +15,8 @@
 namespace phk::battle {
 namespace {
 
-// serverCardCatalog（service.go:405-420）——16 张，字段顺序：
+// serverCardCatalog（service.go:405-420）——20 张（16 -> 20 扩充，2026-10-17：
+// frost_arc / ember_lance / iron_veil / thunder_fall 追加在末尾），字段顺序：
 // card_id / effect_kind / cost / cooldown / duration / damage / score_bonus /
 // energy_gain / draw_cards / pattern_id / purge_radius / purge_count。
 const CardDefinition kCatalog[] = {
@@ -35,6 +36,10 @@ const CardDefinition kCatalog[] = {
     {"purge_bell", "bullet_purge", 3, 480, 1, 0, 22, 0, 0, "", 120, 24},
     {"aegis_ward", "invulnerable", 5, 720, 180, 0, 20, 0, 0, "", 0, 0},
     {"finale_arc", "finisher", 6, 900, 1, 60, 80, 0, 0, "", 0, 0},
+    {"frost_arc", "bullet_purge", 2, 360, 1, 0, 18, 0, 0, "", 100, 12},
+    {"ember_lance", "opponent_pattern", 3, 300, 240, 20, 24, 0, 0, "ember_lance", 0, 0},
+    {"iron_veil", "invulnerable", 4, 480, 120, 0, 16, 0, 0, "", 0, 0},
+    {"thunder_fall", "finisher", 4, 420, 1, 30, 40, 0, 0, "", 0, 0},
 };
 
 }  // namespace
