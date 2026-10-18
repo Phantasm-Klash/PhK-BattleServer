@@ -146,6 +146,10 @@ struct MatchLifecycleConfig {
     std::vector<std::string> player_ids;
     std::string lobby_endpoint;  // "host:port"; empty disables submission
     std::string result_path = "/internal/battle/result";
+    // 结算权归谁：true = 本进程 POST result_path（历史行为）；false = 只把
+    // 结果写到 stdout/内存，由 battle-agent 的签名 RPC battle.result.submit
+    // 结算（`--no-result-submit`）。默认 true，老调用方行为不变。
+    bool submit_result = true;
     // T6：结果回传签名密钥（同 BattleServerConfig::callback_secret）。结果
     // body 以它为密钥签 X-PhK-Battle-Signature（大厅 HandleBattleResult 对
     // 精确原始 body 校验）；为空时大厅 403 battle_callback_signature_invalid。

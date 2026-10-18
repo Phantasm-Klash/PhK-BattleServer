@@ -760,6 +760,85 @@ void TestDemProducedWhenMatchFinishes() {
     std::filesystem::remove(path, ec);
 }
 
+// 结算权在 agent 的签名 RPC：--no-result-submit 下对局服一个 result POST 都
+// 不能发（否则两条路径竞争，先到者写 replay_ 前缀 hash，后到者 409），但
+// .dem 仍必须上传，结果内容仍必须可从 LastSubmission()/stdout 读到。
+void TestNoResultSubmitSkipsPostButUploadsDem() {
+    const std::string dir = "/tmp/phk-dem-noresult";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    setenv("PHK_DEM_DIR", dir.c_str(), 1);
+    setenv("PHK_DEM_UPLOAD", "1", 1);
+
+    TinyHttpServer http;
+    Check(http.port() != 0, "no-result: dem upload listener is up");
+
+    phk::battle::MatchLifecycleConfig config;
+    config.match_id = "match_no_result_submit_1";
+    config.mode_id = "mvp_boss_race";
+    config.seed = 777002;
+    config.ruleset_version = "ruleset-local-s0";
+    config.player_ids = {"p1", "p2"};
+    config.require_ticket = phk::battle::MatchTicketRequirement::Off;
+    config.boss_max_hp = 20;
+    config.battle_server_id = "bs-noresult-1";
+    config.callback_secret = "noresult-secret";
+    config.lobby_endpoint = "127.0.0.1:" + std::to_string(http.port());
+    config.submit_result = false;
+    config.max_ticks = 600;
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "no-result: server starts (" + error + ")");
+
+    int submitter_calls = 0;
+    server.SetResultSubmitter([&](const std::string&) {
+        ++submitter_calls;
+        phk::battle::HttpPostResult result;
+        result.ok = true;
+        result.status_code = 200;
+        result.body = "{}";
+        return result;
+    });
+
+    std::uint64_t seq = 0;
+    for (std::uint64_t tick = 1; tick <= 40 && !server.finished(); ++tick) {
+        std::uint32_t conv = 0x0000D300u;
+        for (const std::string& player : config.player_ids) {
+            phk::battle::BattleInput input;
+            input.match_id = config.match_id;
+            input.player_id = player;
+            input.tick = tick;
+            input.seq = ++seq;
+            input.direction_bits = 0;
+            input.shoot = true;
+            input.card_slot = -1;
+            Check(
+                server.InjectPayload(conv++, phk::battle::EncodeBattleInputPayload(input)),
+                "no-result: inject input");
+        }
+        server.AdvanceTick();
+    }
+
+    Check(server.finished(), "no-result: race finished");
+    Check(server.ResultSubmitted(), "no-result: result is marked available");
+    Check(submitter_calls == 0, "no-result: result submitter was never called");
+    Check(server.LastSubmission().status_code == 0, "no-result: no HTTP status recorded");
+    Check(
+        server.LastSubmission().body.find("\"winner_player_id\":\"p1\"") != std::string::npos ||
+            server.LastSubmission().body.find("\"winner_player_id\":\"p2\"") != std::string::npos,
+        "no-result: result content still carries the winner");
+
+    const std::string path = dir + "/" + config.match_id + ".dem";
+    Check(std::filesystem::exists(path), "no-result: .dem still written to " + path);
+    Check(
+        http.request_line() == "POST /v1/battle/replays/dem HTTP/1.1",
+        "no-result: the only request is the .dem upload, got: " + http.request_line());
+
+    std::filesystem::remove(path, ec);
+    setenv("PHK_DEM_UPLOAD", "0", 1);  // 不把上传开关泄漏给后续用例
+}
+
 }  // namespace
 
 int main() {
@@ -773,6 +852,7 @@ int main() {
     TestHttpPostClient();
     TestDemRecordingFromAppPath();
     TestDemProducedWhenMatchFinishes();
+    TestNoResultSubmitSkipsPostButUploadsDem();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " lifecycle test(s) failed\n";

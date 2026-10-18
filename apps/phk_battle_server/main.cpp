@@ -111,6 +111,8 @@ void PrintUsage() {
         << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
         << "  --battle-server-id <id>  pin tickets to this battle server id\n"
         << "  --ticket-key-id <id>  pin tickets to this lobby signing key id\n"
+        << "  --no-result-submit    do not POST the result; the battle-agent's\n"
+        << "                        signed RPC settles the match (default: submit)\n"
         << "  --help                show this help\n";
 }
 
@@ -191,6 +193,9 @@ bool ParseArgs(
             if (!ParseRequireTicket(arg.substr(std::strlen("--require-ticket=")), &config->require_ticket)) {
                 return false;
             }
+        } else if (arg == "--no-result-submit") {
+            // 结算权交给 battle-agent 的签名 RPC；本进程只录 .dem。
+            config->submit_result = false;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             std::exit(0);

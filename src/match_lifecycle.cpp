@@ -868,7 +868,19 @@ void MatchServer::SubmitResultIfNeeded() {
         return;
     }
     const std::string json = ResultJson();
-    if (submitter_) {
+    if (!config_.submit_result) {
+        // 结算权在 battle-agent 的签名 RPC（battle.result.submit）：这里只
+        // 保留结果内容供 stdout/本地读取，绝不 POST /internal/battle/result。
+        // 两条路径同时结算会让结果取决于谁先到（先到者写 replay_ 前缀的
+        // 原始 hash，后到者 409），因此这里必须一个字节都不发。
+        last_submission_.ok = true;
+        last_submission_.status_code = 0;
+        last_submission_.body = json;
+        std::fprintf(
+            stderr,
+            "[result] submit disabled (--no-result-submit): signed RPC is the settlement authority match=%s\n",
+            config_.match_id.c_str());
+    } else if (submitter_) {
         last_submission_ = submitter_(json);
     } else if (!config_.lobby_endpoint.empty()) {
         std::string host;
@@ -893,7 +905,9 @@ void MatchServer::SubmitResultIfNeeded() {
         last_submission_.body = json;
     }
     result_submitted_ = true;
-    // 结果提交后录制 .dem（本地落盘 + 上传；失败不阻塞对局，见 WriteAndUploadDem）。
+    // 结算完成后录制 .dem（本地落盘 + 上传；失败不阻塞对局，见
+    // WriteAndUploadDem）。关闭 result POST 时这条路径仍然执行：agent 只
+    // 负责结算，回放容器依旧由对局服上传。
     WriteAndUploadDem();
 }
 
