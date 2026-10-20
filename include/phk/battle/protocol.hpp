@@ -23,7 +23,8 @@ enum class BattlePayloadType : std::uint8_t {
     Result = 8,
     ModeAction = 9,
     // 合作模式（coop_boss）快照：JSON 体，字段见 COOP_MODE_CONTRACT.md §2.4。
-    CoopSnapshot = 10,
+    // 字节 12（10/11 已被 BOSS_RACE_STATE / DANMAKU_SPAWN 占用）。
+    CoopSnapshot = 12,
 };
 
 struct BattlePacketHeader {
