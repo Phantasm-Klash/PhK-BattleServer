@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "phk/battle/boss_race.hpp"
+#include "phk/battle/card_events_report.hpp"
 #include "phk/battle/dem.hpp"
 #include "phk/battle/kcp_server_endpoint.hpp"
 #include "phk/battle/ticket.hpp"
@@ -146,6 +147,8 @@ struct MatchLifecycleConfig {
     std::vector<std::string> player_ids;
     std::string lobby_endpoint;  // "host:port"; empty disables submission
     std::string result_path = "/internal/battle/result";
+    // F3：事件回传路径（POST /v1/battle/events）。lobby_endpoint 为空时同样不发送。
+    std::string events_path = kBattleEventsPath;
     // 结算权归谁：true = 本进程 POST result_path（历史行为）；false = 只把
     // 结果写到 stdout/内存，由 battle-agent 的签名 RPC battle.result.submit
     // 结算（`--no-result-submit`）。默认 true，老调用方行为不变。
@@ -170,6 +173,15 @@ struct MatchLifecycleConfig {
     std::int64_t now_ms = 0;
 };
 
+// F3 事件 flush 冷却（tick）：60Hz 下 10 tick ≈ 6 次/秒，低于大厅 30 次/秒限额。
+inline constexpr std::uint64_t kEventsFlushCooldownTicks = 10;
+// flush 失败退避倍数：冷却 ×4（10 → 40 tick ≈ 1.5 次/秒）。
+inline constexpr std::uint64_t kEventsFlushFailureBackoff = 4;
+// 输入静默判定阈值（秒）：连续 N 秒无被接受输入视为掉线（对齐 server.cpp
+// 的 3 秒静默口径）。该判定只驱动 all_players_disconnected 事件，不改动
+// BossRaceSimulation 的 connected 状态（零玩法影响）。
+inline constexpr std::uint64_t kPlayerDisconnectSilenceSeconds = 3;
+
 class MatchServer {
 public:
     using ResultSubmitter = std::function<HttpPostResult(const std::string& json_body)>;
@@ -187,6 +199,11 @@ public:
 
     // Overrides the HTTP submission (used by tests).
     void SetResultSubmitter(ResultSubmitter submitter);
+
+    // F3：事件回传注入（与 SetResultSubmitter 同形；tests / battle-agent 用）。
+    // 未设置且 lobby_endpoint 为空时事件 flush 为 no-op（收集器原样保留）。
+    using EventsSubmitter = std::function<HttpPostResult(const std::string& json_body)>;
+    void SetEventsSubmitter(EventsSubmitter submitter);
 
     // Processes pending datagrams and dispatches decoded inputs.
     void ProcessNetwork(int poll_timeout_ms);
@@ -242,6 +259,10 @@ private:
     );
     void BroadcastSnapshot(const BossRaceSnapshot& snapshot);
     void SubmitResultIfNeeded();
+    // F3：全断线判定 → 推一次 all_players_disconnected 进收集器（去重）。
+    void DetectAllPlayersDisconnected();
+    // F3：带冷却的事件 flush；force=true 跳过冷却（终局强制 flush）。
+    void FlushEventsIfNeeded(bool force);
     // 结果提交后生成 .dem：Finalize → 本地落盘 → 上传（失败只记日志，保留本地文件）。
     void WriteAndUploadDem();
     [[nodiscard]] DemHeader BuildDemHeader() const;
@@ -262,6 +283,11 @@ private:
     std::size_t ticket_rejections_ = 0;
     std::size_t ticket_audit_logged_ = 0;
     ResultSubmitter submitter_;
+    EventsSubmitter events_submitter_;
+    // F3：每玩家最近一次被接受输入的 tick（全断线判定用）。
+    std::map<std::string, std::uint64_t> last_input_tick_;
+    bool all_players_disconnected_emitted_ = false;
+    std::uint64_t next_events_flush_tick_ = 0;
     HttpPostResult last_submission_;
     bool result_submitted_ = false;
     std::uint64_t snapshot_broadcasts_ = 0;

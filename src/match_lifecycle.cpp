@@ -682,6 +682,10 @@ void MatchServer::SetResultSubmitter(ResultSubmitter submitter) {
     submitter_ = std::move(submitter);
 }
 
+void MatchServer::SetEventsSubmitter(EventsSubmitter submitter) {
+    events_submitter_ = std::move(submitter);
+}
+
 void MatchServer::ProcessNetwork(int poll_timeout_ms) {
     if (!started_) return;
     endpoint_.Poll(poll_timeout_ms);
@@ -690,11 +694,15 @@ void MatchServer::ProcessNetwork(int poll_timeout_ms) {
 void MatchServer::AdvanceTick() {
     if (!started_) return;
     if (simulation_.State() == BossRaceState::Finished) {
+        // 终局强制 flush 一次：跳过冷却，把收集器里剩下的行全部送出。
+        FlushEventsIfNeeded(true);
         SubmitResultIfNeeded();
         return;
     }
     const BossRaceSnapshot snapshot = simulation_.Tick();
     BroadcastSnapshot(snapshot);
+    DetectAllPlayersDisconnected();
+    FlushEventsIfNeeded(false);
     SubmitResultIfNeeded();
 }
 
@@ -740,6 +748,8 @@ void MatchServer::HandleSessionPayload(
 
     if (simulation_.SubmitInput(input)) {
         accepted_inputs_ += 1;
+        // F3：记录最近活动 tick，全断线判定（DetectAllPlayersDisconnected）用。
+        last_input_tick_[input.player_id] = simulation_.CurrentTick();
         // 链序 = 接受序：只在 SubmitInput 验证通过后入链。
         dem_recorder_.RecordInput(input);
     }
@@ -861,6 +871,99 @@ void MatchServer::BroadcastSnapshot(const BossRaceSnapshot& snapshot) {
         endpoint_.Send(entry.first, payload);
     }
     snapshot_broadcasts_ += 1;
+}
+
+void MatchServer::DetectAllPlayersDisconnected() {
+    if (all_players_disconnected_emitted_) return;
+    // 从未有玩家活动（空场/ Waiting）：不判定，避免空闲进程误发事件。
+    if (last_input_tick_.empty()) return;
+
+    const std::uint64_t now = simulation_.CurrentTick();
+    const std::uint64_t tick_rate = config_.tick_rate_hz == 0
+        ? static_cast<std::uint64_t>(kBossRaceTickRateHz)
+        : static_cast<std::uint64_t>(config_.tick_rate_hz);
+    const std::uint64_t silence_ticks = kPlayerDisconnectSilenceSeconds * tick_rate;
+
+    // 座位 = 名册（config.player_ids）；名册为空时退化为「活动过的玩家集合」。
+    std::vector<std::string> seats;
+    if (!config_.player_ids.empty()) {
+        seats = config_.player_ids;
+    } else {
+        seats.reserve(last_input_tick_.size());
+        for (const auto& entry : last_input_tick_) {
+            seats.push_back(entry.first);
+        }
+    }
+    if (seats.empty()) return;
+
+    bool all_disconnected = true;
+    for (const std::string& seat : seats) {
+        const auto it = last_input_tick_.find(seat);
+        if (it == last_input_tick_.end()) {
+            continue;  // 从未活动 = 掉线
+        }
+        if (now - it->second < silence_ticks) {
+            all_disconnected = false;
+            break;
+        }
+    }
+    if (!all_disconnected) return;
+
+    all_players_disconnected_emitted_ = true;  // 只推一次，避免刷屏。
+    CardCastEvent row;
+    row.event_type = kAllPlayersDisconnectedEventType;
+    row.tick = static_cast<std::int64_t>(now);
+    // 对局级事件：不带 user_id / card_id（大厅 isMatchLevelBattleEvent 约束）。
+    simulation_.PushEvent(std::move(row));
+}
+
+void MatchServer::FlushEventsIfNeeded(bool force) {
+    const std::uint64_t now = simulation_.CurrentTick();
+    if (!force && now < next_events_flush_tick_) return;
+    // 无回传目标（无 test submitter 且未配置大厅）→ no-op，收集器原样保留。
+    if (!events_submitter_ && config_.lobby_endpoint.empty()) return;
+
+    const std::vector<CardCastEvent> rows = simulation_.TakeEvents(kMaxBattleEventsPerSubmit);
+    if (rows.empty()) {
+        if (force) return;
+        next_events_flush_tick_ = now + kEventsFlushCooldownTicks;
+        return;
+    }
+
+    // battle_server_id 为空时用 "battle-local" 兜底（大厅校验非空）。
+    const std::string server_id = config_.battle_server_id.empty()
+        ? std::string("battle-local")
+        : config_.battle_server_id;
+    const std::string json = BuildBattleEventsJson(server_id, config_.match_id, rows);
+
+    HttpPostResult result;
+    if (events_submitter_) {
+        result = events_submitter_(json);
+    } else {
+        std::string host;
+        std::uint16_t port = 0;
+        if (ParseHostPort(config_.lobby_endpoint, &host, &port)) {
+            // T6 三头（公开两头 + ts/nonce/签名）与 submit-result 同一守卫。
+            result = HttpPostJson(
+                host,
+                port,
+                config_.events_path,
+                json,
+                3000,
+                BattleCallbackHeaders(json, config_.callback_secret));
+        } else {
+            result.ok = false;
+            result.error = "bad_lobby_endpoint";
+        }
+    }
+
+    if (!result.ok) {
+        // 失败放回队首不丢，并延长冷却（退避）。
+        simulation_.RestoreEvents(rows);
+        next_events_flush_tick_ = now + kEventsFlushCooldownTicks * kEventsFlushFailureBackoff;
+        return;
+    }
+    next_events_flush_tick_ = now + kEventsFlushCooldownTicks;
 }
 
 void MatchServer::SubmitResultIfNeeded() {

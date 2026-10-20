@@ -10,6 +10,7 @@
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
 #include "phk/battle/protocol.hpp"
+#include "phk/battle/simulation.hpp"  // CardCastEvent（F3 事件收集器）
 
 // MVP "mvp_boss_race" simulation.
 //
@@ -137,6 +138,14 @@ public:
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     bool SetPlayerConnected(const std::string& player_id, bool connected);
 
+    // F3 事件收集器（与 BattleSimulation 的 card_cast_events_ 同形）：
+    // Push 入队（超过 kCardCastEventRowLimit 时丢弃，防宿主不上报时无界增长），
+    // Take 排空（limit=0 = 全部），Restore 失败重发时放回队首。
+    // MVP 只承载对局级 all_players_disconnected（不带 user_id / card_id）。
+    void PushEvent(CardCastEvent row);
+    [[nodiscard]] std::vector<CardCastEvent> TakeEvents(std::size_t limit = 0);
+    void RestoreEvents(const std::vector<CardCastEvent>& rows);
+
     // Validates seq/tick monotonicity, buffers the input for its target tick.
     bool SubmitInput(const BattleInput& input);
 
@@ -194,6 +203,8 @@ private:
     std::map<std::string, PlayerLoadoutSpec> loadout_by_player_;
     std::map<std::string, const danmaku::PlayerShotSpec*> shot_by_player_;
     std::map<std::string, const danmaku::PlayerBombSpec*> bomb_by_player_;
+    // F3 事件收集器（见 PushEvent 注释）。
+    std::vector<CardCastEvent> events_;
 };
 
 }  // namespace phk::battle

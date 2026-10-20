@@ -839,6 +839,114 @@ void TestNoResultSubmitSkipsPostButUploadsDem() {
     setenv("PHK_DEM_UPLOAD", "0", 1);  // 不把上传开关泄漏给后续用例
 }
 
+// ---------------------------------------------------------------------------
+// F3：事件回传（all_players_disconnected → POST /v1/battle/events）
+// ---------------------------------------------------------------------------
+void TestEventsFlushAllPlayersDisconnected() {
+    phk::battle::MatchLifecycleConfig config;
+    config.port = 0;
+    config.match_id = "match_events_000001";
+    config.seed = 424242u;
+    config.player_ids = {"player_a", "player_b"};
+    config.boss_max_hp = 1000000000u;  // 别让对局打完
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "events: server starts (" + error + ")");
+
+    int submit_calls = 0;
+    std::string captured_json;
+    server.SetEventsSubmitter([&](const std::string& json) {
+        ++submit_calls;
+        captured_json = json;
+        phk::battle::HttpPostResult result;
+        result.ok = true;
+        result.status_code = 200;
+        result.body = "{}";
+        return result;
+    });
+
+    // 两名玩家各打几拍输入建立活动记录，然后全部静默。
+    std::uint64_t seq_a = 0;
+    std::uint64_t seq_b = 0;
+    for (std::uint64_t tick = 1; tick <= 8; ++tick) {
+        Check(server.InjectPayload(0x0000E001u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", tick, ++seq_a, false))),
+            "events: inject player_a input");
+        Check(server.InjectPayload(0x0000E002u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_b", tick, ++seq_b, false))),
+            "events: inject player_b input");
+        server.AdvanceTick();
+    }
+    Check(submit_calls == 0, "events: nothing flushed while players are active");
+
+    // 全员静默超过 3 秒窗口（60Hz × 3 = 180 tick）后应推一次事件并 flush。
+    for (int i = 0; i < 200; ++i) {
+        server.AdvanceTick();
+    }
+    Check(submit_calls >= 1, "events: flushed after full silence");
+    Check(submit_calls == 1, "events: flushed exactly once (no spam)");
+    Check(
+        captured_json.find("\"all_players_disconnected\"") != std::string::npos,
+        "events: json carries all_players_disconnected");
+    Check(captured_json.find("match_events_000001") != std::string::npos, "events: match id present");
+    // 对局级行不得携带 user_id / card_id（大厅 isMatchLevelBattleEvent 约束）。
+    Check(captured_json.find("user_id") == std::string::npos, "events: no user_id field");
+    Check(captured_json.find("card_id") == std::string::npos, "events: no card_id field");
+    Check(captured_json.find("\"battle_server_id\":\"battle-local\"") != std::string::npos,
+        "events: empty battle_server_id falls back to battle-local");
+
+    // 事件去重：继续推进不再产生新的提交。
+    for (int i = 0; i < 60; ++i) {
+        server.AdvanceTick();
+    }
+    Check(submit_calls == 1, "events: event emitted only once");
+}
+
+// 失败路径：submitter 拒绝时行要放回、不丢，恢复后重发成功。
+void TestEventsFlushRetriesAfterFailure() {
+    phk::battle::MatchLifecycleConfig config;
+    config.port = 0;
+    config.match_id = "match_events_000002";
+    config.seed = 777u;
+    config.player_ids = {"player_a", "player_b"};
+    config.boss_max_hp = 1000000000u;
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "events-retry: server starts (" + error + ")");
+
+    int calls = 0;
+    int ok_from = 3;  // 前两次失败，之后成功
+    std::string last_json;
+    server.SetEventsSubmitter([&](const std::string& json) {
+        ++calls;
+        last_json = json;
+        phk::battle::HttpPostResult result;
+        result.ok = calls >= ok_from;
+        result.status_code = result.ok ? 200 : 503;
+        result.body = "{}";
+        return result;
+    });
+
+    std::uint64_t seq_a = 0;
+    std::uint64_t seq_b = 0;
+    for (std::uint64_t tick = 1; tick <= 8; ++tick) {
+        (void)server.InjectPayload(0x0000E101u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", tick, ++seq_a, false)));
+        (void)server.InjectPayload(0x0000E102u, phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_b", tick, ++seq_b, false)));
+        server.AdvanceTick();
+    }
+    for (int i = 0; i < 300; ++i) {  // 300 tick：覆盖事件触发(~188)+两次失败退避(40×2)
+        server.AdvanceTick();
+    }
+    Check(calls >= ok_from, "events-retry: submitter eventually succeeded");
+    Check(
+        last_json.find("\"all_players_disconnected\"") != std::string::npos,
+        "events-retry: retried body still carries the event");
+}
+
 }  // namespace
 
 int main() {
@@ -853,6 +961,8 @@ int main() {
     TestDemRecordingFromAppPath();
     TestDemProducedWhenMatchFinishes();
     TestNoResultSubmitSkipsPostButUploadsDem();
+    TestEventsFlushAllPlayersDisconnected();
+    TestEventsFlushRetriesAfterFailure();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " lifecycle test(s) failed\n";

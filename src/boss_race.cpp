@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,8 +13,8 @@ namespace phk::battle {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr std::int32_t kArenaHalfWidthMilli = 120000;
-constexpr std::int32_t kArenaHalfHeightMilli = 90000;
+// 场地常量 kArenaHalfWidthMilli / kArenaHalfHeightMilli 复用 simulation.hpp
+// 的 phk::battle 定义（值相同）；此处不得重复定义，否则产生二义性。
 constexpr std::int32_t kBossOriginXMilli = 0;
 constexpr std::int32_t kBossOriginYMilli = -60000;
 
@@ -224,6 +225,30 @@ bool BossRaceSimulation::SetPlayerConnected(const std::string& player_id, bool c
     }
     player_it->second.connected = connected;
     return true;
+}
+
+void BossRaceSimulation::PushEvent(CardCastEvent row) {
+    if (events_.size() >= kCardCastEventRowLimit) {
+        return;  // 宿主长期不上报时丢弃新行，防无界增长。
+    }
+    events_.push_back(std::move(row));
+}
+
+std::vector<CardCastEvent> BossRaceSimulation::TakeEvents(std::size_t limit) {
+    if (limit == 0 || limit >= events_.size()) {
+        std::vector<CardCastEvent> taken = std::move(events_);
+        events_.clear();
+        return taken;
+    }
+    std::vector<CardCastEvent> taken(
+        std::make_move_iterator(events_.begin()),
+        std::make_move_iterator(events_.begin() + static_cast<std::ptrdiff_t>(limit)));
+    events_.erase(events_.begin(), events_.begin() + static_cast<std::ptrdiff_t>(limit));
+    return taken;
+}
+
+void BossRaceSimulation::RestoreEvents(const std::vector<CardCastEvent>& rows) {
+    events_.insert(events_.begin(), rows.begin(), rows.end());
 }
 
 bool BossRaceSimulation::SubmitInput(const BattleInput& input) {

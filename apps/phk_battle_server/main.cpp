@@ -108,6 +108,7 @@ void PrintUsage() {
         << "  --tick-scale <f>      test pacing: scales the wall-clock tick interval\n"
         << "                        (1 = real time, 0 = run ticks as fast as the CPU allows)\n"
         << "  --callback-secret <hex>  battle callback HMAC secret (registration response)\n"
+        << "  --events-path <path>  battle events POST path (default /v1/battle/events)\n"
         << "  --require-ticket=<M>  signed ticket enforcement: off|warn|on (default warn)\n"
         << "  --battle-server-id <id>  pin tickets to this battle server id\n"
         << "  --ticket-key-id <id>  pin tickets to this lobby signing key id\n"
@@ -186,6 +187,10 @@ bool ParseArgs(
             if (!next(&value)) return false;
             // T6：结果回传 HMAC 密钥（注册响应的 callback_secret）。
             config->callback_secret = value;
+        } else if (arg == "--events-path") {
+            if (!next(&value)) return false;
+            // F3：事件回传路径（默认 /v1/battle/events）。
+            config->events_path = value;
         } else if (arg == "--require-ticket") {
             if (!next(&value)) return false;
             if (!ParseRequireTicket(value, &config->require_ticket)) return false;
