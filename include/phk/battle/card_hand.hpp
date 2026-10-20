@@ -47,6 +47,10 @@ constexpr int kCardHandLimit = 4;
 constexpr int kCardDeckLimit = 20;
 constexpr double kCardMaxEnergy = 10.0;
 
+// 每 tick 手牌能量回复（Go cardEnergyPerTick，service.go:57；大厅在
+// applyInputLocked 处按 tick 差回复，对局服逐 tick 累加等价）。
+constexpr double kCardEnergyPerTick = 0.0025;
+
 // 卡池目录单条（service.go:405-420 字段全集；缺省值同 Go 零值）。
 struct CardDefinition {
     std::string card_id;

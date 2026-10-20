@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -166,6 +167,16 @@ void TestSeedAndSentinel() {
     Check(!sentinel_action.ok, "cast_card action with slot -1 rejected at transport");
     Check(sentinel_action.reason == "cast_card_slot_invalid", "reject reason cast_card_slot_invalid");
     Check(simulation.CardCastEvents().empty(), "transport-rejected action produces no rows");
+
+    // 传输层粗筛收紧（大厅权威：-1 或 slot < hand.size() <= kCardHandLimit=4）：
+    // slot=5 在传输层即被拒，到不了权威 ValidateCast。
+    const auto over_wire_action = simulation.AcceptModeAction(MakeCastAction("p1", 3, 3, 5));
+    Check(!over_wire_action.ok, "cast_card action with slot 5 rejected at transport");
+    Check(
+        over_wire_action.reason == "cast_card_slot_invalid",
+        "slot 5 action reject reason cast_card_slot_invalid"
+    );
+    Check(!simulation.AcceptInput(MakeInput("p1", 3, 3, 5)).ok, "input channel slot 5 rejected at transport");
 }
 
 // ---- 四张效果卡：动作通道合法 cast ----
@@ -1220,7 +1231,9 @@ void TestInputSilenceDisconnectsAndReconnectResumes() {
     config.input_timeout_ticks = 2;
     BattleSimulation simulation(config);
     Check(simulation.AddPlayer("p1", 0, 0), "add p1 for silence timeout");
-    Check(simulation.SeedPlayerHand("p1", {"mirror_lance", "purge_bell"}, 7.0, "17", {"mirror_lance", "purge_bell"}), "seed p1 state");
+    // 能量 seed 满值 10.0：能量逐 tick 回复上线后，满值使回复在本测试
+    // （冻结/重连保持语义）中成为 no-op，精确相等断言不受影响。
+    Check(simulation.SeedPlayerHand("p1", {"mirror_lance", "purge_bell"}, 10.0, "17", {"mirror_lance", "purge_bell"}), "seed p1 state");
 
     BattleInput first = MakeInput("p1", 1, 1, -1);
     first.direction_bits = 2; // move right once; reconnect must not reset position.
@@ -1458,6 +1471,56 @@ void TestThunderFallCheapFinisher() {
     Check(simulation.PlayerEnergy("p1") == 6.0, "thunder: energy 10 - cost 4");
 }
 
+// ---- 手牌能量逐 tick 回复（大厅权威语义，Go service.go:4816-4821） ----
+
+void TestEnergyRegenPerTick() {
+    // 初始能量 2.0（Go cardStartingEnergy / 票据 initial_energy），逐 tick
+    // 累加 0.0025，1000 tick 后 ≈ min(10, 2.0 + 0.0025*1000) = 4.5。
+    // 浮点逐 tick 累加有表示误差，用 1e-6 容差。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 30000), "regen: add p1");
+        Check(simulation.AddPlayer("p2", 20000, 0), "regen: add p2");
+        Check(
+            simulation.SeedPlayerHand("p1", {"frost_arc", "focus_lens", "focus_lens", "focus_lens"}, 2.0, "31"),
+            "regen: seed initial energy 2.0"
+        );
+        for (int i = 0; i < 1000; ++i) {
+            simulation.Tick();
+        }
+        const double expected = std::min(10.0, 2.0 + 0.0025 * 1000.0);
+        Check(
+            std::abs(simulation.PlayerEnergy("p1") - expected) < 1e-6,
+            "regen: 2.0 + 0.0025 * 1000 ticks ~= 4.5"
+        );
+    }
+    // 施放 cost=2 的 frost_arc：同 tick 先回复后扣费（Go applyInputLocked
+    // 先 accrue 再处理输入），本 tick 结束 = 2.0 + 0.0025 - 2 = 0.0025，
+    // 随后继续逐 tick 回复。
+    {
+        BattleSimulation simulation(DuelConfig());
+        Check(simulation.AddPlayer("p1", 0, 30000), "cast: add p1");
+        Check(simulation.AddPlayer("p2", 20000, 0), "cast: add p2");
+        Check(
+            simulation.SeedPlayerHand("p1", {"frost_arc", "focus_lens", "focus_lens", "focus_lens"}, 2.0, "31"),
+            "cast: seed energy 2.0"
+        );
+        Check(simulation.AcceptInput(MakeInput("p1", 1, 1, 0)).ok, "cast: accept frost_arc slot 0");
+        simulation.Tick();
+        Check(
+            std::abs(simulation.PlayerEnergy("p1") - 0.0025) < 1e-9,
+            "cast: cost 2 deducted after same-tick regen"
+        );
+        for (int i = 0; i < 400; ++i) {
+            simulation.Tick();
+        }
+        Check(
+            std::abs(simulation.PlayerEnergy("p1") - (0.0025 + 0.0025 * 400.0)) < 1e-6,
+            "cast: energy keeps regenerating after cast"
+        );
+    }
+}
+
 int main() {
     TestSeedAndSentinel();
     TestMirrorLanceCastViaModeAction();
@@ -1481,6 +1544,7 @@ int main() {
     TestEmberLanceSpawnsItsOwnPattern();
     TestIronVeilGrantsShortWindow();
     TestThunderFallCheapFinisher();
+    TestEnergyRegenPerTick();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " card cast execution test(s) failed\n";

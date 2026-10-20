@@ -730,12 +730,13 @@ InputValidationResult BattleSimulation::ValidateInput(const BattleInput& input) 
     }
     // 传输层 sanity check（M-1，T7 §3）：-1 = "本 tick 不出牌"哨兵
     // （BattleInput.card_slot 的结构默认值，与 lobby validateInputPacket 的
-    // card_slot -1..3 检查同级），0..7 为 wire 宽度粗筛。**权威上界是手牌
-    // 长度 hand.size()-1（恒 <= kCardHandLimit-1）**：由 card_hand.hpp 的
-    // ValidateCast 执行，slot >= hand.size() 一律走 card_rejected 拒绝路径
-    // （cast_card_slot_empty / cast_card_slot_out_of_range）。本层不判定手牌
-    // （BattleSimulation 无手牌状态，cast 执行器尚未接线），保持粗筛定位。
-    if (input.card_slot < -1 || input.card_slot > 7) {
+    // card_slot -1..3 检查同级），0..kCardHandLimit 为 wire 粗筛（大厅权威
+    // 校验：-1 或 slot < hand.size() <= kCardHandLimit=4）。**权威上界是
+    // 手牌长度 hand.size()-1（恒 <= kCardHandLimit-1）**：由 card_hand.hpp
+    // 的 ValidateCast 执行，slot >= hand.size() 一律走 card_rejected 拒绝
+    // 路径（cast_card_slot_empty / cast_card_slot_out_of_range）。本层不
+    // 判定手牌，保持粗筛定位。
+    if (input.card_slot < -1 || input.card_slot > kCardHandLimit) {
         result.code = InputValidationCode::InvalidCardSlot;
         result.reason = "invalid_card_slot";
         return result;
@@ -921,12 +922,13 @@ InputValidationResult BattleSimulation::ValidateModeAction(const BattleModeActio
             result.reason = "cast_card_slot_missing";
             return result;
         }
-        // 传输层 sanity check（M-1，T7 §3）：显式 cast_card 动作要求槽位 >= 0
-        // 且落在 wire 宽度 0..7。权威上界同为 hand.size()-1，由
-        // card_hand.hpp 的 ValidateCast 执行并走 card_rejected 拒绝路径
-        // （cast_card_slot_empty / cast_card_slot_out_of_range）；cast 执行器
-        // 接线后，本动作将在 tick 应用处经 ValidateCast 复核。
-        if (card_slot.value() < 0 || card_slot.value() > 7) {
+        // 传输层 sanity check（M-1，T7 §3）：显式 cast_card 动作要求槽位
+        // >= 0 且 <= kCardHandLimit（大厅权威：slot < hand.size() <= 4）。
+        // 权威上界同为 hand.size()-1，由 card_hand.hpp 的 ValidateCast
+        // 执行并走 card_rejected 拒绝路径（cast_card_slot_empty /
+        // cast_card_slot_out_of_range）；本动作将在 tick 应用处经
+        // ValidateCast 复核。
+        if (card_slot.value() < 0 || card_slot.value() > kCardHandLimit) {
             result.code = InputValidationCode::InvalidModeAction;
             result.reason = "cast_card_slot_invalid";
             return result;
@@ -1157,6 +1159,14 @@ BattleSnapshot BattleSimulation::Tick() {
                 continue;
             }
         }
+        // 手牌能量逐 tick 回复（大厅权威语义，service.go:4816-4821）：
+        // 仅存活（connected）玩家、每 tick 一次
+        // min(kCardMaxEnergy, energy + kCardEnergyPerTick)，逐 tick 累加
+        // （不按 elapsed 批量），与大厅哈希一致；timeout 断开当 tick 起冻结。
+        // 回复先于本 tick 出牌扣费（同 Go applyInputLocked 先 accrue 再
+        // 处理输入的顺序）。
+        player.hand.energy =
+            std::min(kCardMaxEnergy, player.hand.energy + kCardEnergyPerTick);
         ApplyInput(player, input, tick_to_apply);
         // T3 step4：出牌意图（Go 同构通道，service.go:3219 packet.CardSlot>=0）。
         // 只消费**真实**客户端输入——held fallback 不重放 card_slot，避免陈旧
