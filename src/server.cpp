@@ -1,6 +1,7 @@
 #include "phk/battle/server.hpp"
 
-#include "phk/battle/card_events_report.hpp"  // BuildBattleEventsJson / callback 头
+#include "phk/battle/card_events_report.hpp"
+#include "phk/battle/coop_boss.hpp"  // BuildBattleEventsJson / callback 头
 
 #include <algorithm>
 #include <charconv>
@@ -98,6 +99,12 @@ bool IsBossMode(const std::string& mode_id) {
 }
 
 std::uint32_t MatchMaxPlayersForMode(const BattleServerConfig& config, const std::string& mode_id) {
+    if (IsCoopBossMode(mode_id)) {
+        return std::min(
+            static_cast<std::uint32_t>(kCoopMaxPlayers),
+            std::max(static_cast<std::uint32_t>(kCoopMinPlayers), config.max_players)
+        );
+    }
     if (IsBossMode(mode_id)) {
         return std::min(
             static_cast<std::uint32_t>(kBossModeMaxPlayers),

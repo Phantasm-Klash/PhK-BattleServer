@@ -156,6 +156,159 @@ BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
     return boss;
 }
 
+// 合作模式配置（coop_boss）：HP 由 5000 × 玩家数在开局定，不吃 --boss-hp 覆盖。
+CoopBossConfig MakeCoopBossConfig(const MatchLifecycleConfig& config) {
+    CoopBossConfig coop;
+    coop.match_id = config.match_id;
+    coop.mode_id = config.mode_id;
+    coop.ruleset_version = config.ruleset_version;
+    coop.match_seed = static_cast<std::int64_t>(config.seed);
+    coop.boss_max_hp = 0;
+    coop.tick_rate_hz = config.tick_rate_hz == 0 ? kCoopBossTickRateHz : config.tick_rate_hz;
+    coop.loadouts = config.loadouts;
+    return coop;
+}
+
+const char* CoopStateName(CoopBossState state) {
+    switch (state) {
+        case CoopBossState::Waiting: return "waiting";
+        case CoopBossState::Running: return "running";
+        case CoopBossState::Finished: return "finished";
+    }
+    return "unknown";
+}
+
+// coop 快照负载：字节 10 + JSON（与 race 的 EncodeBossRaceSnapshotPayload 同风格）。
+std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& snapshot) {
+    std::string json;
+    json.reserve(256 + snapshot.players.size() * 96 + snapshot.bullets.size() * 72);
+    json += "{\"tick\":";
+    json += std::to_string(snapshot.tick);
+    json += ",\"state\":\"";
+    json += CoopStateName(snapshot.state);
+    json += "\",\"boss_hp\":";
+    json += std::to_string(snapshot.boss_hp);
+    json += ",\"boss_max_hp\":";
+    json += std::to_string(snapshot.boss_max_hp);
+    json += ",\"seat_count\":";
+    json += std::to_string(snapshot.seat_count);
+    json += ",\"shield_dir_mask\":";
+    json += std::to_string(snapshot.shield_dir_mask);
+    json += ",\"lock_dir\":";
+    json += std::to_string(snapshot.lock_dir);
+    json += ",\"lock_until_tick\":";
+    json += std::to_string(snapshot.lock_until_tick);
+    json += ",\"spiral_active\":";
+    json += snapshot.spiral_active ? "true" : "false";
+    json += ",\"players\":[";
+    for (std::size_t i = 0; i < snapshot.players.size(); ++i) {
+        const CoopBossPlayerSnapshot& player = snapshot.players[i];
+        if (i != 0) json += ',';
+        json += "{\"player_id\":\"";
+        json += JsonEscape(player.player_id);
+        json += "\",\"seat\":";
+        json += std::to_string(player.seat);
+        json += ",\"x_milli\":";
+        json += std::to_string(player.x_milli);
+        json += ",\"y_milli\":";
+        json += std::to_string(player.y_milli);
+        json += ",\"facing_millideg\":";
+        json += std::to_string(player.facing_millideg);
+        json += ",\"damage_dealt\":";
+        json += std::to_string(player.damage_dealt);
+        json += ",\"connected\":";
+        json += player.connected ? "true" : "false";
+        json += ",\"locked\":";
+        json += player.locked ? "true" : "false";
+        json += ",\"shielded\":";
+        json += player.shielded ? "true" : "false";
+        json += '}';
+    }
+    json += "],\"bullets\":[";
+    for (std::size_t i = 0; i < snapshot.bullets.size(); ++i) {
+        const CoopBossBullet& bullet = snapshot.bullets[i];
+        if (i != 0) json += ',';
+        json += "{\"bullet_id\":\"";
+        json += JsonEscape(bullet.bullet_id);
+        json += "\",\"owner_player_id\":\"";
+        json += JsonEscape(bullet.owner_player_id);
+        json += "\",\"x_milli\":";
+        json += std::to_string(bullet.x_milli);
+        json += ",\"y_milli\":";
+        json += std::to_string(bullet.y_milli);
+        json += ",\"vx_milli\":";
+        json += std::to_string(bullet.vx_milli);
+        json += ",\"vy_milli\":";
+        json += std::to_string(bullet.vy_milli);
+        json += ",\"radius_milli\":";
+        json += std::to_string(bullet.radius_milli);
+        json += ",\"kind\":";
+        json += std::to_string(bullet.kind);
+        json += ",\"pattern_id\":\"";
+        json += JsonEscape(bullet.pattern_id);
+        json += "\"}";
+    }
+    json += "],\"state_hash\":\"";
+    json += JsonEscape(snapshot.state_hash);
+    json += "\"}";
+
+    std::vector<std::uint8_t> out;
+    out.push_back(static_cast<std::uint8_t>(BattlePayloadType::CoopSnapshot));
+    out.insert(out.end(), json.begin(), json.end());
+    return out;
+}
+
+// coop 结果：与 race 同信封（MatchResultPayload → BuildMatchResultJson），
+// 差别是 winner_player_id 留空（合作共赢），boss_current_hp 记共享 Boss 余量。
+MatchResultPayload BuildCoopMatchResultPayload(const CoopBossSimulation& simulation) {
+    MatchResultPayload payload;
+    payload.match_id = simulation.Config().match_id;
+    payload.mode_id = simulation.Config().mode_id;
+    payload.ruleset_version = simulation.Config().ruleset_version;
+    payload.match_seed = static_cast<std::uint64_t>(simulation.Config().match_seed);
+    payload.winner_player_id = "";
+    payload.state_hash = simulation.CanonicalStateHash();
+    const CoopBossSnapshot snapshot = simulation.Snapshot();
+    payload.winner_tick = snapshot.tick;
+    payload.players.reserve(snapshot.players.size());
+    for (const CoopBossPlayerSnapshot& player : snapshot.players) {
+        MatchPlayerResult entry;
+        entry.player_id = player.player_id;
+        entry.damage_dealt = player.damage_dealt;
+        entry.boss_current_hp = snapshot.boss_hp;
+        payload.players.push_back(std::move(entry));
+    }
+    return payload;
+}
+
+// coop 的 .dem 玩家段（loadout 取自房间下发的每玩家自机）。
+std::vector<DemPlayer> BuildCoopDemPlayers(
+    const CoopBossConfig& config,
+    const std::vector<std::string>& player_ids,
+    const std::map<std::string, std::string>& user_ids
+) {
+    std::vector<DemPlayer> players;
+    players.reserve(player_ids.size());
+    for (const std::string& player_id : player_ids) {
+        DemPlayer player;
+        player.player_id = player_id;
+        const auto it = user_ids.find(player_id);
+        if (it != user_ids.end()) {
+            player.user_id = it->second;
+        }
+        for (const PlayerLoadoutSpec& spec : config.loadouts) {
+            if (spec.player_id == player_id) {
+                player.loadout.character_id = spec.character_id;
+                player.loadout.shot_type = spec.shot_type;
+                player.loadout.bomb_type = spec.bomb_type;
+                break;
+            }
+        }
+        players.push_back(std::move(player));
+    }
+    return players;
+}
+
 KcpServerEndpointConfig MakeEndpointConfig(const MatchLifecycleConfig& config) {
     KcpServerEndpointConfig endpoint;
     endpoint.port = config.port;
@@ -618,6 +771,11 @@ MatchServer::MatchServer(MatchLifecycleConfig config)
     : config_(std::move(config)),
       simulation_(MakeBossRaceConfig(config_)),
       endpoint_(MakeEndpointConfig(config_)) {
+    // coop_boss 分支（加法式）：race 路径不受影响。
+    coop_mode_ = config_.coop_mode || IsCoopBossMode(config_.mode_id);
+    if (coop_mode_) {
+        coop_ = std::make_unique<CoopBossSimulation>(MakeCoopBossConfig(config_));
+    }
     // .dem genesis 条目：链的第一条恒为 match_seed（tick 0，battle_derived）。
     dem_recorder_.RecordMatchSeed(config_.seed);
 }
@@ -633,11 +791,26 @@ bool MatchServer::Start(std::string* error) {
         return false;
     }
 
-    for (std::size_t i = 0; i < config_.player_ids.size(); ++i) {
-        const std::int32_t x = (i % 2 == 0) ? -20000 : 20000;
-        if (!simulation_.AddPlayer(config_.player_ids[i], x, 60000)) {
-            if (error != nullptr) *error = "add_player_failed";
-            return false;
+    if (coop_mode_) {
+        // 座位 = sorted(player_ids)（契约 §2.2）：2 人上下相对，4 人四向。
+        std::vector<std::string> seats = config_.player_ids;
+        std::sort(seats.begin(), seats.end());
+        for (std::size_t i = 0; i < seats.size(); ++i) {
+            std::int32_t x = 0;
+            std::int32_t y = 0;
+            CoopSeatSpawnMilli(seats.size(), i, &x, &y);
+            if (!coop_->AddPlayer(seats[i], x, y)) {
+                if (error != nullptr) *error = "add_player_failed";
+                return false;
+            }
+        }
+    } else {
+        for (std::size_t i = 0; i < config_.player_ids.size(); ++i) {
+            const std::int32_t x = (i % 2 == 0) ? -20000 : 20000;
+            if (!simulation_.AddPlayer(config_.player_ids[i], x, 60000)) {
+                if (error != nullptr) *error = "add_player_failed";
+                return false;
+            }
         }
     }
 
@@ -693,14 +866,22 @@ void MatchServer::ProcessNetwork(int poll_timeout_ms) {
 
 void MatchServer::AdvanceTick() {
     if (!started_) return;
-    if (simulation_.State() == BossRaceState::Finished) {
+    const bool finished = coop_mode_
+        ? coop_->State() == CoopBossState::Finished
+        : simulation_.State() == BossRaceState::Finished;
+    if (finished) {
         // 终局强制 flush 一次：跳过冷却，把收集器里剩下的行全部送出。
         FlushEventsIfNeeded(true);
         SubmitResultIfNeeded();
         return;
     }
-    const BossRaceSnapshot snapshot = simulation_.Tick();
-    BroadcastSnapshot(snapshot);
+    if (coop_mode_) {
+        const CoopBossSnapshot snapshot = coop_->Tick();
+        BroadcastSnapshotPayload(EncodeCoopBossSnapshotPayload(snapshot));
+    } else {
+        const BossRaceSnapshot snapshot = simulation_.Tick();
+        BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+    }
     DetectAllPlayersDisconnected();
     FlushEventsIfNeeded(false);
     SubmitResultIfNeeded();
@@ -746,10 +927,12 @@ void MatchServer::HandleSessionPayload(
         return;
     }
 
-    if (simulation_.SubmitInput(input)) {
+    const bool input_accepted = coop_mode_ ? coop_->SubmitInput(input) : simulation_.SubmitInput(input);
+    if (input_accepted) {
         accepted_inputs_ += 1;
         // F3：记录最近活动 tick，全断线判定（DetectAllPlayersDisconnected）用。
-        last_input_tick_[input.player_id] = simulation_.CurrentTick();
+        last_input_tick_[input.player_id] =
+            coop_mode_ ? coop_->CurrentTick() : simulation_.CurrentTick();
         // 链序 = 接受序：只在 SubmitInput 验证通过后入链。
         dem_recorder_.RecordInput(input);
     }
@@ -864,9 +1047,8 @@ void MatchServer::RecordTicketAudit(
     }
 }
 
-void MatchServer::BroadcastSnapshot(const BossRaceSnapshot& snapshot) {
+void MatchServer::BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payload) {
     if (player_by_conv_.empty()) return;
-    const std::vector<std::uint8_t> payload = EncodeBossRaceSnapshotPayload(snapshot);
     for (const auto& entry : player_by_conv_) {
         endpoint_.Send(entry.first, payload);
     }
@@ -878,7 +1060,7 @@ void MatchServer::DetectAllPlayersDisconnected() {
     // 从未有玩家活动（空场/ Waiting）：不判定，避免空闲进程误发事件。
     if (last_input_tick_.empty()) return;
 
-    const std::uint64_t now = simulation_.CurrentTick();
+    const std::uint64_t now = coop_mode_ ? coop_->CurrentTick() : simulation_.CurrentTick();
     const std::uint64_t tick_rate = config_.tick_rate_hz == 0
         ? static_cast<std::uint64_t>(kBossRaceTickRateHz)
         : static_cast<std::uint64_t>(config_.tick_rate_hz);
@@ -914,16 +1096,22 @@ void MatchServer::DetectAllPlayersDisconnected() {
     row.event_type = kAllPlayersDisconnectedEventType;
     row.tick = static_cast<std::int64_t>(now);
     // 对局级事件：不带 user_id / card_id（大厅 isMatchLevelBattleEvent 约束）。
-    simulation_.PushEvent(std::move(row));
+    if (coop_mode_) {
+        coop_->PushEvent(std::move(row));
+    } else {
+        simulation_.PushEvent(std::move(row));
+    }
 }
 
 void MatchServer::FlushEventsIfNeeded(bool force) {
-    const std::uint64_t now = simulation_.CurrentTick();
+    const std::uint64_t now = coop_mode_ ? coop_->CurrentTick() : simulation_.CurrentTick();
     if (!force && now < next_events_flush_tick_) return;
     // 无回传目标（无 test submitter 且未配置大厅）→ no-op，收集器原样保留。
     if (!events_submitter_ && config_.lobby_endpoint.empty()) return;
 
-    const std::vector<CardCastEvent> rows = simulation_.TakeEvents(kMaxBattleEventsPerSubmit);
+    const std::vector<CardCastEvent> rows = coop_mode_
+        ? coop_->TakeEvents(kMaxBattleEventsPerSubmit)
+        : simulation_.TakeEvents(kMaxBattleEventsPerSubmit);
     if (rows.empty()) {
         if (force) return;
         next_events_flush_tick_ = now + kEventsFlushCooldownTicks;
@@ -959,7 +1147,11 @@ void MatchServer::FlushEventsIfNeeded(bool force) {
 
     if (!result.ok) {
         // 失败放回队首不丢，并延长冷却（退避）。
-        simulation_.RestoreEvents(rows);
+        if (coop_mode_) {
+            coop_->RestoreEvents(rows);
+        } else {
+            simulation_.RestoreEvents(rows);
+        }
         next_events_flush_tick_ = now + kEventsFlushCooldownTicks * kEventsFlushFailureBackoff;
         return;
     }
@@ -967,7 +1159,10 @@ void MatchServer::FlushEventsIfNeeded(bool force) {
 }
 
 void MatchServer::SubmitResultIfNeeded() {
-    if (result_submitted_ || simulation_.State() != BossRaceState::Finished) {
+    const bool finished = coop_mode_
+        ? coop_->State() == CoopBossState::Finished
+        : simulation_.State() == BossRaceState::Finished;
+    if (result_submitted_ || !finished) {
         return;
     }
     const std::string json = ResultJson();
@@ -1019,6 +1214,24 @@ std::size_t MatchServer::DemEntryCount() const {
 }
 
 DemHeader MatchServer::BuildDemHeader() const {
+    if (coop_mode_) {
+        const CoopBossConfig& cfg = coop_->Config();
+        DemHeader header;
+        header.match_id = cfg.match_id;
+        header.mode_id = cfg.mode_id;
+        header.boss_id = "";
+        header.ruleset_version = cfg.ruleset_version;
+        header.server_seed = std::to_string(cfg.match_seed);
+        header.tick_rate_hz = cfg.tick_rate_hz;
+        header.final_tick = static_cast<std::int64_t>(coop_->CurrentTick());
+        header.final_state_hash = coop_->CanonicalStateHash();
+        header.boss_max_hp = cfg.boss_max_hp;
+        header.players = BuildCoopDemPlayers(cfg, config_.player_ids, dem_recorder_.UserIds());
+        header.created_at = static_cast<std::int64_t>(WallClockNowMs() / 1000);
+        header.entry_count = dem_recorder_.Size();
+        header.chain_head_digest = dem_recorder_.Chain().HeadDigest();
+        return header;
+    }
     const BossRaceConfig& cfg = simulation_.Config();
     DemHeader header;
     header.match_id = cfg.match_id;
@@ -1083,6 +1296,9 @@ void MatchServer::WriteAndUploadDem() {
 }
 
 bool MatchServer::finished() const {
+    if (coop_mode_) {
+        return coop_->State() == CoopBossState::Finished;
+    }
     return simulation_.State() == BossRaceState::Finished;
 }
 
@@ -1095,6 +1311,9 @@ const HttpPostResult& MatchServer::LastSubmission() const {
 }
 
 MatchResultPayload MatchServer::ResultPayload() const {
+    if (coop_mode_) {
+        return BuildCoopMatchResultPayload(*coop_);
+    }
     return BuildMatchResultPayload(simulation_);
 }
 

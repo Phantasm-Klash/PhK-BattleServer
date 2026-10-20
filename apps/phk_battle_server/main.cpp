@@ -100,6 +100,7 @@ void PrintUsage() {
         << "  --players <a,b>       comma separated player ids\n"
         << "  --lobby <host:port>   lobby endpoint for result POST\n"
         << "  --ruleset <id>        ruleset version (default mvp-boss-race-s0)\n"
+        << "  --mode <id>           match mode (default mvp_boss_race; coop_boss = 合作模式)\n"
         << "  --boss-hp <N>         boss max hp override\n"
         << "  --boss-id <id>        room boss selection (tian|hui; empty = default timeline)\n"
         << "  --loadout <specs>     per-player loadout: p:char:shot:bomb[,...]\n"
@@ -149,6 +150,10 @@ bool ParseArgs(
         } else if (arg == "--ruleset") {
             if (!next(&value)) return false;
             config->ruleset_version = value;
+        } else if (arg == "--mode") {
+            if (!next(&value)) return false;
+            config->mode_id = value;
+            config->coop_mode = phk::battle::IsCoopBossMode(value);
         } else if (arg == "--boss-hp") {
             if (!next(&value)) return false;
             config->boss_max_hp = std::strtoull(value.c_str(), nullptr, 10);

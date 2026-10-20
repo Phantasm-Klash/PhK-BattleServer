@@ -52,6 +52,7 @@ add_library(phk_battle_core
     src/card_effects.cpp
     src/card_events_report.cpp
     src/card_hand.cpp
+    src/coop_boss.cpp
     src/chain_log.cpp
     src/dem.cpp
     src/boss_race.cpp
@@ -136,6 +137,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_card_effects_tests PRIVATE phk_battle_core)
     add_test(NAME phk_card_effects_tests COMMAND phk_card_effects_tests)
+
+    add_executable(phk_coop_boss_tests
+        tests/coop_boss_tests.cpp
+    )
+    target_link_libraries(phk_coop_boss_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_coop_boss_tests COMMAND phk_coop_boss_tests)
 
     add_executable(phk_card_hand_tests
         tests/card_hand_tests.cpp

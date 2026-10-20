@@ -3,11 +3,14 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "phk/battle/boss_race.hpp"
+#include "phk/battle/coop_boss.hpp"
+#include "phk/battle/coop_boss.hpp"
 #include "phk/battle/card_events_report.hpp"
 #include "phk/battle/dem.hpp"
 #include "phk/battle/kcp_server_endpoint.hpp"
@@ -142,6 +145,9 @@ struct MatchLifecycleConfig {
     std::uint16_t port = 0;  // 0 = ephemeral
     std::string match_id;
     std::string mode_id = kMvpBossRaceModeId;
+    // 合作模式：mode_id == "coop_boss" 时 MatchServer 运行 CoopBossSimulation
+    // （加法式分支；mvp_boss_race 路径逐字节不变）。
+    bool coop_mode = false;
     std::uint64_t seed = 0;
     std::string ruleset_version = "mvp-boss-race-s0";
     std::vector<std::string> player_ids;
@@ -195,6 +201,10 @@ public:
     [[nodiscard]] const MatchLifecycleConfig& Config() const;
     [[nodiscard]] const BossRaceSimulation& Simulation() const;
     [[nodiscard]] BossRaceSimulation& MutableSimulation();
+    // coop_boss 分支访问器（coop_mode_ 为 false 时未定义，调用方须先判 IsCoop）。
+    [[nodiscard]] bool IsCoop() const { return coop_mode_; }
+    [[nodiscard]] const CoopBossSimulation& CoopSimulation() const { return *coop_; }
+    [[nodiscard]] CoopBossSimulation& MutableCoopSimulation() { return *coop_; }
     [[nodiscard]] std::size_t BoundPlayerCount() const;
 
     // Overrides the HTTP submission (used by tests).
@@ -257,7 +267,8 @@ private:
         const std::string& reason,
         bool rejected
     );
-    void BroadcastSnapshot(const BossRaceSnapshot& snapshot);
+    // 广播已编码的快照负载（race = 字节 4 + JSON，coop = 字节 10 + JSON）。
+    void BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payload);
     void SubmitResultIfNeeded();
     // F3：全断线判定 → 推一次 all_players_disconnected 进收集器（去重）。
     void DetectAllPlayersDisconnected();
@@ -269,6 +280,9 @@ private:
 
     MatchLifecycleConfig config_;
     BossRaceSimulation simulation_;
+    // coop_boss 分支：仅在 coop_mode_ 为 true 时持有（race 路径完全不受影响）。
+    bool coop_mode_ = false;
+    std::unique_ptr<CoopBossSimulation> coop_;
     DemRecorder dem_recorder_;
     bool dem_written_ = false;
     KcpServerEndpoint endpoint_;
