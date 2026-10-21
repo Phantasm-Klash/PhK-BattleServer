@@ -428,6 +428,7 @@ public:
     }
 
     std::size_t ReceivedCount() const { return received_.size(); }
+    const std::vector<std::uint8_t>& Received(std::size_t index) const { return received_[index]; }
 
 private:
     static int OutputCallback(const char* buf, int len, ikcpcb* kcp, void* user) {
@@ -503,6 +504,78 @@ void TestSocketSmokeRace() {
           "captured result body has winner");
     Check(captured_body.find("\"match_id\":\"match_socket_smoke\"") != std::string::npos,
           "captured result body has match id");
+
+    server.Stop();
+}
+
+// 合作模式 socket 级 e2e（契约 §6.3 + §4）：两个 KcpClient 真实会话喂射击输入
+// → 共享 Boss（5000×2=10000 HP）归零 → Finished → 结果提交（coop 无单人
+// winner）→ 且广播快照负载首字节 = 12（10/11 被 battle.proto 占用）。
+void TestSocketSmokeCoop() {
+    phk::battle::MatchLifecycleConfig config;
+    config.port = 0;
+    config.match_id = "match_socket_coop";
+    config.seed = 424242u;
+    config.mode_id = "coop_boss";
+    config.player_ids = {"player_a", "player_b"};
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "coop match server starts (" + error + ")");
+    Check(server.IsCoop(), "match server runs the coop simulation");
+
+    std::string captured_body;
+    server.SetResultSubmitter([&](const std::string& json) {
+        captured_body = json;
+        phk::battle::HttpPostResult result;
+        result.ok = true;
+        result.status_code = 200;
+        result.body = "{}";
+        return result;
+    });
+
+    KcpClient client_a;
+    KcpClient client_b;
+    Check(client_a.Open("127.0.0.1", server.Port(), 0x0000C001u), "client_a opens kcp session");
+    Check(client_b.Open("127.0.0.1", server.Port(), 0x0000C002u), "client_b opens kcp session");
+
+    std::uint64_t seq_a = 0;
+    std::uint64_t seq_b = 0;
+    // 2p Boss HP=10000，双射击 10/tick；shield/cannon 窗口会拖慢，1200 tick 预算足够。
+    for (std::uint64_t tick = 1; tick <= 1200 && !server.finished(); ++tick) {
+        client_a.Send(phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", tick, ++seq_a, true)));
+        client_b.Send(phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_b", tick, ++seq_b, true)));
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        server.ProcessNetwork(0);
+        server.AdvanceTick();
+
+        client_a.Pump();
+        client_b.Pump();
+    }
+
+    Check(server.finished(), "coop finished over real sockets (boss defeated)");
+    Check(server.CoopSimulation().BossDefeated(), "coop boss hp reached zero");
+    Check(server.CoopSimulation().Snapshot().boss_max_hp == 10000u,
+          "coop boss hp must be 5000 x players");
+    Check(server.AcceptedInputCount() > 0, "server accepted kcp inputs");
+    Check(server.BoundPlayerCount() == 2, "both players bound to sessions");
+    Check(server.SnapshotBroadcastCount() > 0, "snapshots were broadcast");
+    Check(server.ResultSubmitted(), "result submitted on finish");
+    Check(captured_body.find("\"match_id\":\"match_socket_coop\"") != std::string::npos,
+          "captured result body has match id");
+    // 契约 §4：CoopSnapshot 负载字节 = 12。广播帧里必须出现该类型的快照。
+    bool saw_coop_snapshot = false;
+    for (std::size_t i = 0; i < client_a.ReceivedCount(); ++i) {
+        const std::vector<std::uint8_t>& frame = client_a.Received(i);
+        if (!frame.empty() &&
+            frame[0] == static_cast<std::uint8_t>(phk::battle::BattlePayloadType::CoopSnapshot)) {
+            saw_coop_snapshot = true;
+        }
+    }
+    Check(saw_coop_snapshot, "broadcast coop snapshot payload byte is 12");
 
     server.Stop();
 }
@@ -957,6 +1030,7 @@ int main() {
     ticket_test::TestTicketWarnAndOffModes();
     TestResultPayloadAndJson();
     TestSocketSmokeRace();
+    TestSocketSmokeCoop();
     TestHttpPostClient();
     TestDemRecordingFromAppPath();
     TestDemProducedWhenMatchFinishes();
