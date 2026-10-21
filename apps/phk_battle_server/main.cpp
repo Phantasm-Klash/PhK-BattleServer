@@ -277,6 +277,15 @@ int main(int argc, char** argv) {
 
         if (config.max_ticks != 0 && ticks >= config.max_ticks) {
             std::cout << "TIMEOUT ticks=" << ticks << std::endl;
+            // A match that runs out of ticks still produced a result, and the
+            // agent only submits what it can read from a RESULT line. Without
+            // this the process exits with nothing to submit, the lobby never
+            // settles the match, no replay is written and no rewards are
+            // applied -- the only trace is "exited without a result line" in the
+            // agent log. ResultJson() is built from the live simulation, so it is
+            // meaningful mid-match; the winner is whoever leads, and nobody
+            // leading (an empty winner) settles as a draw on the lobby side.
+            std::cout << "RESULT " << server.ResultJson() << std::endl;
             server.Stop();
             return 0;
         }
