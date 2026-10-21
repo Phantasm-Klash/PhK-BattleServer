@@ -39,7 +39,9 @@ inline constexpr std::uint32_t kCoopFanIntervalTicks = 90;
 inline constexpr std::uint32_t kCoopFanBulletsPerDir = 7;
 inline constexpr std::uint32_t kCoopCannonIntervalTicks = 600;
 inline constexpr std::uint32_t kCoopCannonStartOffset = 450;
-inline constexpr std::uint32_t kCoopCannonDurationTicks = 120;
+// 巨炮段 [450,600) = 150 tick：以契约 §2.3.5 冻结时间表为准（§2.2 的 120 为笔误，
+// main 2026-10-22 裁决；窗口在 600 tick 大循环边界收口）。
+inline constexpr std::uint32_t kCoopCannonDurationTicks = 150;
 inline constexpr std::uint32_t kCoopCannonBulletRadiusMilli = 12000;
 inline constexpr std::uint32_t kCoopSpiralWindowTicks = 300;
 inline constexpr std::uint32_t kCoopSpiralEveryTicks = 6;

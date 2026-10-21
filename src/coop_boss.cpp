@@ -223,7 +223,8 @@ void CoopBossSimulation::RecomputeMechanics(std::uint64_t tick) {
             shield_dir_mask_ |= (1u << ranked[i].second);
         }
     }
-    if (phase >= kCoopCannonStartOffset) {
+    // 巨炮段 [450,600)：起点 450 + 时长 150 = 间隔 600，在循环边界收口（契约 §2.3.5）。
+    if (phase >= kCoopCannonStartOffset && phase < kCoopCannonStartOffset + kCoopCannonDurationTicks) {
         const double roll = Unit(seed, w, "coop_cannon_dir", 0);
         std::int32_t dir = static_cast<std::int32_t>(roll * static_cast<double>(seats));
         if (dir < 0) dir = 0;
