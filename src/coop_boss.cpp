@@ -189,10 +189,11 @@ void CoopBossSimulation::StartIfReady() {
 }
 
 // 机制时间表（契约 §2.3.5，600 tick 大循环）：
-//   t % 600 ∈ [0,300)   spiral 全屏旋转
+//   t % 600 ∈ [0,300)   只有 fan_attack（首个窗口无 spiral）
 //   t % 600 ∈ [300,480) shield 格挡窗口（1 或 3 向，窗口起点定）
 //   t % 600 ∈ [450,600) cannon 巨炮封锁（150 tick）
 //   t % 90 == 0         fan 多向齐射（恒开）
+//   spiral 窗口：[600,900)、[1200,1500)…（即 w>=1 且 phase<300）
 void CoopBossSimulation::RecomputeMechanics(std::uint64_t tick) {
     shield_dir_mask_ = 0;
     lock_dir_ = -1;
@@ -230,7 +231,8 @@ void CoopBossSimulation::RecomputeMechanics(std::uint64_t tick) {
         lock_dir_ = dir;
         lock_until_tick_ = (static_cast<std::uint64_t>(w) + 1) * kCoopCannonIntervalTicks;
     }
-    if (phase < kCoopSpiralWindowTicks) {
+    // spiral 窗口：[600,900)、[1200,1500)…（契约 §2.3.5；[0,300) 只有 fan）。
+    if (w >= 1 && phase < kCoopSpiralWindowTicks) {
         spiral_active_ = true;
     }
 }

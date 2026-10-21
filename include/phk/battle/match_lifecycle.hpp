@@ -10,7 +10,6 @@
 
 #include "phk/battle/boss_race.hpp"
 #include "phk/battle/coop_boss.hpp"
-#include "phk/battle/coop_boss.hpp"
 #include "phk/battle/card_events_report.hpp"
 #include "phk/battle/dem.hpp"
 #include "phk/battle/kcp_server_endpoint.hpp"
@@ -267,7 +266,7 @@ private:
         const std::string& reason,
         bool rejected
     );
-    // 广播已编码的快照负载（race = 字节 4 + JSON，coop = 字节 10 + JSON）。
+    // 广播已编码的快照负载（race = 字节 4 + JSON，coop = 字节 12 + JSON）。
     void BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payload);
     void SubmitResultIfNeeded();
     // F3：全断线判定 → 推一次 all_players_disconnected 进收集器（去重）。

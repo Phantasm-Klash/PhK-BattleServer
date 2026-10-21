@@ -178,7 +178,7 @@ const char* CoopStateName(CoopBossState state) {
     return "unknown";
 }
 
-// coop 快照负载：字节 10 + JSON（与 race 的 EncodeBossRaceSnapshotPayload 同风格）。
+// coop 快照负载：字节 12 + JSON（与 race 的 EncodeBossRaceSnapshotPayload 同风格）。
 std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& snapshot) {
     std::string json;
     json.reserve(256 + snapshot.players.size() * 96 + snapshot.bullets.size() * 72);

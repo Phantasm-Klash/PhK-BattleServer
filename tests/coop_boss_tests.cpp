@@ -202,27 +202,49 @@ void TestCannonLocksOneDirection() {
     Check(locked_case_seen, "at least one seed must produce a cannon lock");
 }
 
-// 全屏旋转：窗口内旋转弹持续发射，角度随 tick 推进。
+// 全屏旋转：契约 §2.3.5 时间表——[0,300) 只有 fan；spiral 窗口 [600,900)、[1200,1500)…
 void TestSpiralRotatesAcrossScreen() {
     CoopBossSimulation sim(MakeConfig(7));
     sim.AddPlayer("p-a", 0, 70200);
     sim.AddPlayer("p-b", 0, -70200);
-    for (std::uint64_t tick = 1; tick <= 12; ++tick) {
+    // 首个窗口 [0,300)：契约规定只有 fan_attack，spiral 不得活跃。
+    for (std::uint64_t tick = 1; tick <= 299; ++tick) {
         sim.Tick();
     }
-    const CoopBossSnapshot early = sim.Snapshot();
-    Check(sim.SpiralActive(), "spiral must be active inside its window");
-    Check(CountKind(early, 2) > 0, "spiral must emit bullets");
+    Check(!sim.SpiralActive(), "spiral must stay inactive in the first window [0,300)");
+    Check(CountKind(sim.Snapshot(), 2) == 0, "no spiral bullets may exist before its window");
+    // shield 窗口 [300,480) 同样不得有 spiral。
+    for (std::uint64_t tick = 300; tick <= 480; ++tick) {
+        sim.Tick();
+    }
+    Check(!sim.SpiralActive(), "spiral must stay inactive in the shield window [300,480)");
+    // cannon 段 [450,600) 之后，推进到 spiral 窗口 [600,900)。
+    for (std::uint64_t tick = 481; tick <= 600; ++tick) {
+        sim.Tick();
+    }
+    Check(sim.SpiralActive(), "spiral must be active inside its window [600,900)");
+    Check(CountKind(sim.Snapshot(), 2) > 0, "spiral must emit bullets");
+    // 同一发射时刻四向对称（覆盖 360°）。
+    {
+        const CoopBossSnapshot snapshot = sim.Snapshot();
+        std::size_t spiral_bullets = 0;
+        for (const auto& bullet : snapshot.bullets) {
+            if (bullet.kind == 2) spiral_bullets += 1;
+        }
+        Check(spiral_bullets % 4 == 0, "spiral must emit in four-way symmetric groups");
+        Check(spiral_bullets >= 4, "spiral must cover all four directions");
+    }
+    // 角度随 tick 推进旋转。
     double first_angle = 0.0;
     bool have_first = false;
-    for (const auto& bullet : early.bullets) {
+    for (const auto& bullet : sim.Snapshot().bullets) {
         if (bullet.kind != 2) continue;
         if (!have_first) {
             first_angle = std::atan2(static_cast<double>(bullet.vy_milli), static_cast<double>(bullet.vx_milli));
             have_first = true;
         }
     }
-    for (std::uint64_t tick = 13; tick <= 24; ++tick) {
+    for (std::uint64_t tick = 601; tick <= 612; ++tick) {
         sim.Tick();
     }
     const CoopBossSnapshot late = sim.Snapshot();
@@ -233,6 +255,11 @@ void TestSpiralRotatesAcrossScreen() {
         if (have_first && std::abs(angle - first_angle) > 1e-6) rotated = true;
     }
     Check(rotated, "spiral direction must rotate over time");
+    // 窗口结束（[900,1200) 起）后回到沉寂。
+    for (std::uint64_t tick = 613; tick <= 905; ++tick) {
+        sim.Tick();
+    }
+    Check(!sim.SpiralActive(), "spiral must go inactive after its window closes");
 }
 
 // 确定性：同种子 + 同输入 → 逐字节相同的 state hash。
