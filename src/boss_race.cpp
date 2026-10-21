@@ -540,8 +540,28 @@ void BossRaceSimulation::SpawnSyntheticBulletsForTick(std::uint64_t tick) {
     }
 }
 
+// 本 tick 内一颗宿主的分裂请求（下标而非指针/引用：第二趟 push_back 会
+// 使 live_bullets_ 重新分配，下标语义在只追加不删除的前提下保持稳定）。
+struct AdvanceSplitRequest {
+    std::size_t index = 0;
+    std::string owner_player_id;
+    std::uint32_t pattern_index = 0;
+    std::uint32_t spawn_index = 0;
+    std::uint32_t generation = 0;
+};
+
 void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
-    for (LiveBullet& live : live_bullets_) {
+    // 第一趟：运动学更新 + 收集 H 族（bulletFunc31）分裂请求。
+    // 不能边遍历边 push 子子弹：vector 增长会失效遍历迭代器，且子子弹必须
+    // 晚于全部宿主更新后入场（与主发射一致：子子弹从下一帧才开始运动）。
+    // 分裂由服务端在本函数内权威完成；参数全部由
+    // DeterministicRng(match_seed, tick, pattern_index, host_spawn_index)
+    // 推导（见 danmaku/chain_split.hpp），客户端镜像同算法即可重放。
+    std::vector<AdvanceSplitRequest> requests;
+    std::map<std::string, std::uint32_t> host_budget;  // 每玩家本 tick 分裂宿主预算
+
+    for (std::size_t i = 0; i < live_bullets_.size(); ++i) {
+        LiveBullet& live = live_bullets_[i];
         danmaku::MotionTargets targets;
         const auto owner_it = players_.find(live.owner_player_id);
         if (owner_it != players_.end()) {
@@ -565,7 +585,68 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
         live.motion.x += live.motion.vx;
         live.motion.y += live.motion.vy;
         live.motion.t += 1.0;
+
+        // H 族链式分裂请求：func31 本帧置了 p2 标记、代数未达上限、该玩家
+        // 本 tick 宿主预算未用尽 → 记录并消费标记。ChainSplitRequested 只认
+        // func_no==31（Func42/Func55 同样写 p2，但不是分裂族，不会误触发）。
+        // 叶子代（generation 达上限）不消费标记：Func31 仅在 t==p1 单帧置位，
+        // p2 残留无行为影响，故无需清零。
+        // p2 是「单帧事件标志」（Func31 仅在 t==p1 置位一次）：本帧一律
+        // 消费——被服务（进 requests）或丢弃（代数到顶/预算用尽）都在本帧
+        // 决定，绝不推迟到后续帧，否则残留标记会撞上「每 tick 预算重置」把
+        // 一次事件摊成多次。
+        if (danmaku::ChainSplitRequested(live.motion)) {
+            live.motion.p2 = 0;
+            if (live.generation < danmaku::kChainSplitMaxGeneration) {
+                std::uint32_t& budget = host_budget[live.owner_player_id];
+                if (budget < danmaku::kChainSplitHostsPerPlayerPerTick) {
+                    ++budget;
+                    AdvanceSplitRequest request;
+                    request.index = i;
+                    request.owner_player_id = live.owner_player_id;
+                    request.pattern_index = live.pattern_index;
+                    request.spawn_index = live.spawn_index;
+                    request.generation = live.generation;
+                    requests.push_back(std::move(request));
+                }
+            }
+        }
     }
+
+    // 第二趟：按请求顺序生成子子弹。请求顺序 = 第一趟遍历顺序（live_bullets_
+    // 稳定顺序），因此 bullet_id 分配顺序、快照子弹顺序两端一致。
+    // 钳制链：每玩家总量 kBossRaceMaxBulletsPerPlayer 决定 max_children
+    // （超限时后请求的宿主少生或不生，截断顺序确定）。
+    for (const AdvanceSplitRequest& request : requests) {
+        const LiveBullet& host = live_bullets_[request.index];
+        const std::size_t room = kBossRaceMaxBulletsPerPlayer - EmittedBulletsFor(request.owner_player_id);
+        const int max_children = static_cast<int>(
+            std::min<std::size_t>(room, static_cast<std::size_t>(danmaku::kChainSplitChildrenPerHost)));
+        const std::vector<danmaku::ChainSplitChild> children = danmaku::ComputeChainSplitChildren(
+            host.motion,
+            config_.match_seed,
+            tick,
+            request.pattern_index,
+            request.spawn_index,
+            max_children
+        );
+        for (const danmaku::ChainSplitChild& child : children) {
+            if (EmittedBulletsFor(request.owner_player_id) >= kBossRaceMaxBulletsPerPlayer) {
+                break;
+            }
+            LiveBullet live;
+            live.bullet_id = "b" + std::to_string(next_bullet_id_++);
+            live.owner_player_id = request.owner_player_id;
+            live.pattern_id = host.pattern_id;
+            live.pattern_index = request.pattern_index;
+            live.spawn_index = child.spawn_index;
+            live.generation = request.generation + 1;
+            live.motion = danmaku::MakeChainSplitChildMotion(host.motion, child);
+            live_bullets_.push_back(std::move(live));
+        }
+    }
+
+    // 第三趟：出界移除（与链式分裂落地前完全相同的谓词）。
     live_bullets_.erase(
         std::remove_if(
             live_bullets_.begin(),
@@ -577,6 +658,32 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
         ),
         live_bullets_.end()
     );
+}
+
+bool BossRaceSimulation::InjectLiveBulletForTest(
+    const std::string& owner_player_id,
+    const danmaku::BulletMotion& motion,
+    std::uint32_t generation
+) {
+    // 测试/调试专用注入（产品路径与 .dem 重放均不调用）：默认 pattern 库
+    // 没有 func31 波次，链式分裂只能经此入口在测试中触发。
+    const auto it = players_.find(owner_player_id);
+    if (it == players_.end()) {
+        return false;
+    }
+    if (EmittedBulletsFor(owner_player_id) >= kBossRaceMaxBulletsPerPlayer) {
+        return false;
+    }
+    LiveBullet live;
+    live.bullet_id = "b" + std::to_string(next_bullet_id_++);
+    live.owner_player_id = owner_player_id;
+    live.pattern_id = "injected";
+    live.pattern_index = 0;
+    live.spawn_index = 0;
+    live.generation = generation;
+    live.motion = motion;
+    live_bullets_.push_back(std::move(live));
+    return true;
 }
 
 void BossRaceSimulation::CheckRaceWinner(std::uint64_t tick) {

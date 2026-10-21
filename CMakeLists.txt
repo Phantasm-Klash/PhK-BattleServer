@@ -59,6 +59,7 @@ add_library(phk_battle_core
     src/danmaku/boss_catalog.cpp
     src/danmaku/bullet_mode_map.cpp
     src/danmaku/bullet_motion.cpp
+    src/danmaku/chain_split.cpp
     src/danmaku/emitter.cpp
     src/danmaku/pattern_timeline.cpp
     src/danmaku/player_loadout.cpp
@@ -119,6 +120,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_danmaku_tests PRIVATE phk_battle_core)
     add_test(NAME phk_danmaku_tests COMMAND phk_danmaku_tests)
+
+    add_executable(phk_danmaku_chain_tests
+        tests/danmaku_chain_tests.cpp
+    )
+    target_link_libraries(phk_danmaku_chain_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_danmaku_chain_tests COMMAND phk_danmaku_chain_tests)
 
     add_executable(phk_battle_lifecycle_tests
         tests/battle_server_lifecycle_tests.cpp

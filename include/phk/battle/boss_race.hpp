@@ -7,6 +7,7 @@
 
 #include "phk/battle/danmaku/boss_catalog.hpp"
 #include "phk/battle/danmaku/bullet_motion.hpp"
+#include "phk/battle/danmaku/chain_split.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
 #include "phk/battle/protocol.hpp"
@@ -138,6 +139,16 @@ public:
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     bool SetPlayerConnected(const std::string& player_id, bool connected);
 
+    // 测试/调试注入：绕过 pattern 库直接放入一颗带完整运动学的子弹。
+    // 默认 10 个 pattern 均不使用 bulletFunc31，链式分裂路径无法经产品
+    // 发射自然触发，故开此口仅供测试（生产路径与 .dem 重放都不调用）。
+    // 受 kBossRaceMaxBulletsPerPlayer 与玩家存在性约束；返回是否注入成功。
+    bool InjectLiveBulletForTest(
+        const std::string& owner_player_id,
+        const danmaku::BulletMotion& motion,
+        std::uint32_t generation = 0
+    );
+
     // F3 事件收集器（与 BattleSimulation 的 card_cast_events_ 同形）：
     // Push 入队（超过 kCardCastEventRowLimit 时丢弃，防宿主不上报时无界增长），
     // Take 排空（limit=0 = 全部），Restore 失败重发时放回队首。
@@ -175,6 +186,10 @@ private:
         std::string pattern_id;
         std::uint32_t pattern_index = 0;
         std::uint32_t spawn_index = 0;
+        // 链式分裂代数：0 = pattern 库直生（宿主），子子弹 = 宿主 +1，
+        // 上限 danmaku::kChainSplitMaxGeneration（叶子代不再分裂）。
+        // 仅服务端内部使用，不进快照/hash（客户端本地重推自行推导）。
+        std::uint32_t generation = 0;
         danmaku::BulletMotion motion;
     };
 
