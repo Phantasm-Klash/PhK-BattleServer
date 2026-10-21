@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <iostream>
 #include <string>
 
@@ -427,6 +428,55 @@ void TestPatternLibraryEmission() {
     }
 }
 
+// 节奏回归。BossRace 每 45 tick 调度一次，传进 EmitPatternTick 的 tick 恒为 45
+// 的倍数；如果模式内部 period_ticks 也取 45，相位 tick % period 恒为 0，每个调度
+// 点只会命中 tick_offset == 0 的波，十种模式就退化成"同一节奏、不同形状"。
+//
+// 这里守两件事：
+//   1. 每个调度点仍然有弹（内部周期变长不能变成漏发）
+//   2. 多波模式在一个完整节奏窗口内发射签名会变化（内容轮转，而不是同一波反复）
+void TestPatternRhythm() {
+    using namespace phk::battle::danmaku;
+    constexpr std::uint32_t kSchedulePeriod = 45;  // kBossRacePatternPeriodTicks
+    EmitContext ctx;
+    ctx.emitter_x = 240.0;
+    ctx.emitter_y = 96.0;
+    MotionTargets tg;
+
+    for (const PatternDef& def : BossRacePatternLibrary()) {
+        // 180 ticks = four scheduling turns. That is at least one full rhythm
+        // cycle for every period the library uses (45 repeats every turn, 60 every
+        // four, 90 every two), so the window covers the whole rotation without
+        // needing lcm arithmetic here.
+        constexpr std::uint64_t kWindow = kSchedulePeriod * 4ULL;
+
+        std::size_t empty_ticks = 0;
+        std::size_t rotations = 0;
+        std::string first_signature;
+        for (std::uint64_t tick = 0; tick <= kWindow; tick += kSchedulePeriod) {
+            const auto bullets = EmitPatternTick(def, tick, ctx, tg);
+            if (bullets.empty()) {
+                ++empty_ticks;
+                continue;
+            }
+            char signature[64];
+            std::snprintf(signature, sizeof(signature), "%zu/%.3f", bullets.size(),
+                          static_cast<double>(bullets.front().angle));
+            if (first_signature.empty()) {
+                first_signature = signature;
+            } else if (first_signature != signature) {
+                ++rotations;
+            }
+        }
+
+        const std::string name(def.id);
+        Check(empty_ticks == 0, "pattern " + name + " emits on every scheduling tick");
+        if (def.waves.size() > 1) {
+            Check(rotations > 0, "pattern " + name + " rotates its volley within one cycle");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -443,6 +493,7 @@ int main() {
     TestEmitterCommand();
     TestDeterminism();
     TestCoverage();
+    TestPatternRhythm();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " danmaku test(s) failed\n";

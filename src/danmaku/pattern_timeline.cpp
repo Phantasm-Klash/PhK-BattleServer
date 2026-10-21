@@ -34,6 +34,20 @@ BulletTemplate MakeTemplate(int kind, int func_no, double speed) {
 }
 
 // 10 个真实模式。每个都引用真实弹种（kome/kusabi/ring/...）与真实运动学族。
+//
+// 节奏模型：BossRace 每 config_.pattern_period_ticks（45）tick 调度一次，传入
+// EmitPatternTick 的 tick 因此恒为 45 的倍数。模式内部的 period_ticks 若也取
+// 45，相位 tick % period 恒为 0，每个调度点只会命中 tick_offset == 0 的波——
+// 也就是"每隔 45 tick 齐射一次"，十种模式只是齐射形状不同，节奏完全一致。
+//
+// 因此需要变节奏的模式内部周期取 90：45k % 90 ∈ {0, 45}，恰好两个相位，配两波
+// 就能做到"每个调度点都有弹，但相邻两点是不同的一波"。周期 45 的模式保持单波，
+// 作为快节奏基准。（取 60 需要四波覆盖 {0,45,30,15} 才不漏发，不值当。）
+// 所以密度不变，但相邻调度点发射的内容不同（发射角、方向或运动学相位），节奏
+// 不再单调。
+//
+// 改这里必须同步 laya/src/core/sim/danmaku/pattern_timeline.ts：两端产出的
+// 子弹序列要逐字节一致，否则 state hash 不等。
 std::vector<PatternDef> BuildLibrary() {
     std::vector<PatternDef> lib;
 
@@ -42,8 +56,11 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "kome_ring";
         d.family = "A 初始化/直线";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
+        // 45k % 90 ∈ {0, 45}: the two rings alternate, half a sector apart.
         d.waves.push_back({0, MakeCommand(45 /*kome_01*/, 0.0, 0.0, 16, 3.0f),
+                           MakeTemplate(45, 0, 3.0), AimMode::None, 0.0});
+        d.waves.push_back({45, MakeCommand(45, 11.25, 0.0, 16, 3.0f),
                            MakeTemplate(45, 0, 3.0), AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
@@ -53,10 +70,12 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "kusabi_gap_ring";
         d.family = "A 初始化/直线";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
+        // 45k % 90 ∈ {0, 45}: the two rings land on different scheduling ticks,
+        // so the gap rotates instead of both rings overlapping at once.
         d.waves.push_back({0, MakeCommand(9 /*kusabi_01*/, 0.0, 0.0, 12, 2.8f),
                            MakeTemplate(9, 0, 2.8), AimMode::None, 0.0});
-        d.waves.push_back({0, MakeCommand(9, 15.0, 0.0, 12, 2.8f),
+        d.waves.push_back({45, MakeCommand(9, 15.0, 0.0, 12, 2.8f),
                            MakeTemplate(9, 0, 2.8), AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
@@ -77,8 +96,10 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "ring_spiral";
         d.family = "A 初始化/直线";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         d.waves.push_back({0, MakeCommand(27 /*ring_01*/, 0.0, 0.0, 4, 3.4f),
+                           MakeTemplate(27, 0, 3.4), AimMode::None, 13.0});
+        d.waves.push_back({45, MakeCommand(27, 180.0, 0.0, 4, 3.4f),
                            MakeTemplate(27, 0, 3.4), AimMode::None, 13.0});
         lib.push_back(std::move(d));
     }
@@ -88,12 +109,14 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "kome_homing";
         d.family = "D 追踪/限速转向";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         BulletTemplate t = MakeTemplate(45, 2, 2.6);
         t.life = 1;          // func2 需 life>=1 才转向
         t.angle_init = 90.0; // A0：初始参考角
         t.angle_acc = 3.0;   // 单帧最大转角（度）
+        // Two fans alternate: a tight pair, then a wide one offset by 45°.
         d.waves.push_back({0, MakeCommand(45, 90.0, 12.0, 2, 2.6f), t, AimMode::None, 0.0});
+        d.waves.push_back({45, MakeCommand(45, 45.0, 30.0, 2, 2.6f), t, AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
 
@@ -102,12 +125,17 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "heart_sine_speed";
         d.family = "C 正弦调速";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         BulletTemplate t = MakeTemplate(174 /*heart_01*/, 25, 3.0);
         t.angle_init = 0.0;
         t.xacc = 6.0;       // X：正弦频率
         t.xacc_cap = 1.5;   // XC：正弦幅度
+        // 45k % 60 ∈ {0, 45, 30, 15}: the second volley starts the sine half a
+        // period later, so the wave breathes instead of pulsing identically.
         d.waves.push_back({0, MakeCommand(174, 90.0, 0.0, 8, 3.0f), t, AimMode::None, 0.0});
+        BulletTemplate flipped = t;
+        flipped.angle_init = 180.0;
+        d.waves.push_back({45, MakeCommand(174, 135.0, 0.0, 8, 3.0f), flipped, AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
 
@@ -116,8 +144,10 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "kunai_bounce";
         d.family = "F 边界反弹";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         d.waves.push_back({0, MakeCommand(126 /*kunai_01*/, 60.0, 20.0, 6, 3.2f),
+                           MakeTemplate(126, 1, 3.2), AimMode::None, 0.0});
+        d.waves.push_back({45, MakeCommand(126, 120.0, 20.0, 6, 3.2f),
                            MakeTemplate(126, 1, 3.2), AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
@@ -127,7 +157,7 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "sizuku_sine_radius";
         d.family = "C 正弦半径";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         BulletTemplate t = MakeTemplate(99 /*sizuku_01*/, 81, 2.4);
         t.angle_init = 0.5;   // A0
         t.f598 = 0.6;         // F98
@@ -135,6 +165,10 @@ std::vector<PatternDef> BuildLibrary() {
         t.xacc_cap = 1.2;     // XC
         t.p2 = 1;
         d.waves.push_back({0, MakeCommand(99, 90.0, 8.0, 5, 2.4f), t, AimMode::None, 0.0});
+        // A0 + pi: the radius sine runs the other way on the second volley.
+        BulletTemplate mirrored = t;
+        mirrored.angle_init = 0.5 + 3.14159265358979;
+        d.waves.push_back({45, MakeCommand(99, 135.0, 8.0, 5, 2.4f), mirrored, AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
 
@@ -143,12 +177,17 @@ std::vector<PatternDef> BuildLibrary() {
         PatternDef d;
         d.id = "stama_mirror";
         d.family = "F 镜像";
-        d.period_ticks = 45;
+        d.period_ticks = 90;
         BulletTemplate t = MakeTemplate(36 /*stama_01*/, 32, 3.0);
         t.angle_init = 45.0;  // A0
         t.p1 = 1;             // 奇 → 镜像
         t.p2 = 30;            // 偏移
         d.waves.push_back({0, MakeCommand(36, 0.0, 0.0, 10, 3.0f), t, AimMode::None, 0.0});
+        // The mirror axis turns a quarter turn, so the pattern does not repeat
+        // its own shape on the next scheduling tick.
+        BulletTemplate rotated = t;
+        rotated.angle_init = 135.0;
+        d.waves.push_back({45, MakeCommand(36, 90.0, 0.0, 10, 3.0f), rotated, AimMode::None, 0.0});
         lib.push_back(std::move(d));
     }
 
