@@ -8,6 +8,7 @@
 #include "phk/battle/danmaku/boss_catalog.hpp"
 #include "phk/battle/danmaku/bullet_motion.hpp"
 #include "phk/battle/danmaku/chain_split.hpp"
+#include "phk/battle/danmaku/judgment.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
 #include "phk/battle/protocol.hpp"
@@ -36,6 +37,25 @@ inline constexpr std::uint32_t kBossRaceMaxBulletsPerPlayer = 384;
 inline constexpr std::size_t kBossRaceMaxPlayers = 2;
 inline constexpr std::size_t kBossRaceMinPlayers = 2;
 inline constexpr std::size_t kBossRacePatternCount = 10;
+
+// 特殊机制（铁拳 / 黑色帷幕）开关用的 ruleset。默认关闭 → 现有模式逐字节不变；
+// 只有显式把 ruleset_version 设成这个值才启用（计划 §2.4 / §2.7）。
+inline constexpr const char* kRulesetDanmakuMechanics = "tna-1.40-danmaku";
+
+// 特殊机制排期（P1 占位数值，P4 移到 boss_catalog 数据表，双端同值）。
+// 触发规则：tick % interval == offset 且该机制当前 Idle → 起手；否则推进一 tick。
+struct BossSpecialMechanicsSchedule {
+    bool enabled = false;
+    // 铁拳：默认每 600 tick 一次、相位 300；长度 200 px。
+    std::uint32_t iron_fist_interval_ticks = 600;
+    std::uint32_t iron_fist_offset_ticks = 300;
+    std::int32_t iron_fist_length_milli = 200000;
+    danmaku::IronFistParams iron_fist;
+    // 黑色帷幕：默认每 900 tick 一次、相位 600。
+    std::uint32_t curtain_interval_ticks = 900;
+    std::uint32_t curtain_offset_ticks = 600;
+    danmaku::BlackCurtainParams curtain;
+};
 
 enum class BossRaceState {
     Waiting,
@@ -68,6 +88,9 @@ struct BossRaceConfig {
     std::string boss_id;
     // 每玩家自机 loadout（空 = 默认自机行为）。
     std::vector<PlayerLoadoutSpec> loadouts;
+    // 特殊机制排期（默认 disabled；ruleset_version == kRulesetDanmakuMechanics 时
+    // 构造函数自动置 enabled）。
+    BossSpecialMechanicsSchedule special_mechanics;
 };
 
 // ---------------------------------------------------------------------------
@@ -300,6 +323,8 @@ private:
     void SpawnRealBulletsForTick(std::uint64_t tick);
     void SpawnSyntheticBulletsForTick(std::uint64_t tick);  // mvp-boss-race-s0 兼容
     void AdvanceBullets(std::uint64_t tick);
+    // 特殊机制（铁拳/黑色帷幕）状态推进；disabled 时是 no-op（现有模式零变化）。
+    void AdvanceSpecialMechanics(std::uint64_t tick);
     void CheckRaceWinner(std::uint64_t tick);
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
     [[nodiscard]] std::size_t EmittedBulletsFor(const std::string& player_id) const;
@@ -320,6 +345,10 @@ private:
     std::map<std::string, const danmaku::PlayerBombSpec*> bomb_by_player_;
     // F3 事件收集器（见 PushEvent 注释）。
     std::vector<CardCastEvent> events_;
+    // 特殊机制状态（enabled 才推进；快照 effects[] 从这里读）。
+    BossSpecialMechanicsSchedule mechanics_;
+    danmaku::IronFistState iron_fist_;
+    danmaku::BlackCurtainState black_curtain_;
 };
 
 }  // namespace phk::battle

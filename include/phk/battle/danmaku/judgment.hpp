@@ -34,13 +34,38 @@ struct PointMilli {
 [[nodiscard]] std::int64_t DistanceSquaredMilli(PointMilli a, PointMilli b);
 
 // 点到线段 (a→b) 的最短距离平方。a == b 时退化为点-点距离。
+// 最近点用整数除法，误差 ≤1 milli（判定半径 3000 milli 量级，可忽略）。
 [[nodiscard]] std::int64_t PointSegmentDistanceSquaredMilli(PointMilli point, PointMilli a, PointMilli b);
 
-// 点-圆命中：distance(point, center) <= radius。
-[[nodiscard]] bool PointHitsCircle(PointMilli point, PointMilli center, std::int32_t radius_milli);
+// 点-圆命中（自机弹 vs Boss 圆形命中盒、Boss 弹 vs 自机判定点）：distance <= radius。
+[[nodiscard]] bool PointInCircle(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t cx,
+    std::int32_t cy,
+    std::int32_t radius_milli
+);
 
-// 点-胶囊命中：点到线段 (a→b) 的最短距离 <= radius（铁拳 strike 的判定盒）。
-[[nodiscard]] bool PointHitsCapsule(PointMilli point, PointMilli a, PointMilli b, std::int32_t radius_milli);
+// 点-胶囊命中（铁拳 strike 的判定盒）：点到线段 (x0,y0)→(x0+dx×len, y0+dy×len)
+// 的最短距离 <= radius。(dx,dy) 是**单位方向 ×1000**（如 (1000,0) = 向右）。
+[[nodiscard]] bool PointInCapsule(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t x0,
+    std::int32_t y0,
+    std::int32_t dx_milli,
+    std::int32_t dy_milli,
+    std::int32_t length_milli,
+    std::int32_t radius_milli
+);
+
+// 黑色帷幕 sweep 期边缘线命中：|py - edge_y| <= radius（水平扫屏线）。
+[[nodiscard]] bool CurtainSweepHit(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t edge_y_milli,
+    std::int32_t radius_milli
+);
 
 // ---------------------------------------------------------------------------
 // 判定事件（进快照 events[]，§2.4.6）
@@ -111,7 +136,6 @@ void StartIronFist(
     PointMilli point,
     const IronFistParams& params
 );
-
 // ---------------------------------------------------------------------------
 // 黑色帷幕 black_curtain（§2.4.5）：fall（下落）→ hold（隐藏弹幕，判定照算）
 //                                → sweep（边缘扫屏激光线）

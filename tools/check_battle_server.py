@@ -366,7 +366,7 @@ def main() -> int:
 
     simulation_text = (ROOT / "include" / "phk" / "battle" / "simulation.hpp").read_text(encoding="utf-8")
     if (
-        "kBattleTickRateHz = 60" not in simulation_text
+        "kBattleTickRateHz = 64" not in simulation_text
         or "BattleSimulation" not in simulation_text
         or "kDefaultMaxBossIdentityBytes" not in simulation_text
         or "kBossModeMinPlayers = 4" not in simulation_text
@@ -900,22 +900,22 @@ def main() -> int:
         or "BattlePayloadType::ModeAction" not in tests_text
         or "DriveAuthoritativeReplay60Ticks" not in tests_text
         or "fnv64:183370bd6f8c18e7" not in tests_text
-        or "fnv64:7c13fa803ae1b2dd" not in tests_text
-        or "sha256:dev-fnv64-70b0875fedb4037c" not in tests_text
+        or "fnv64:0677a65d73320761" not in tests_text
+        or "sha256:dev-fnv64-66b995a29f031d2c" not in tests_text
         or "fnv64:a0b383d4a7be0bf7" not in tests_text
-        or "fnv64:8049946f03724f36" not in tests_text
-        or "sha256:dev-fnv64-a7c5633652ee3768" not in tests_text
+        or "fnv64:5f33da6decc15fe2" not in tests_text
+        or "sha256:dev-fnv64-5e34e1e7e791e251" not in tests_text
         or "CanonicalReplayInputStreamSummaryRecord(summary_record) ==" not in tests_text
         or "DevReplayInputStreamSummaryHash(summary_record)" not in tests_text
-        or "sha256:dev-fnv64-575ffa809639f4b8" not in tests_text
+        or "sha256:dev-fnv64-5744e92122181d4d" not in tests_text
         or "CanonicalReplayFixturePayload(fixture)" not in tests_text
-        or "sha256:dev-fnv64-433cb92be24ade8e" not in tests_text
+        or "sha256:dev-fnv64-a8a9b9ae56150800" not in tests_text
         or "ReplayRecordBridgeBoundary" not in tests_text
         or "BuildReplayRecord(\"match-001\"" not in tests_text
         or "CanonicalReplayRecordBridgePayload(built.replay_record)" not in tests_text
         or "CanonicalReplayLoadoutBridgePayload(built.replay_record.loadout)" not in tests_text
         or "DevReplayRecordBridgeHash(built.replay_record)" not in tests_text
-        or "sha256:dev-fnv64-44d0a58dc50f8cc8" not in tests_text
+        or "sha256:dev-fnv64-f97b0a9233aa2141" not in tests_text
         or "final_snapshot_tick_mismatch" not in tests_text
         or "final_snapshot_kind_mismatch" not in tests_text
         or "final_snapshot_state_hash_mismatch" not in tests_text
@@ -947,9 +947,9 @@ def main() -> int:
         or "ReplaceJsonStringField" not in tests_text
         or "ModeResultJsonForSummary" in tests_text
         or "MakeBattleResultForSummary" in tests_text
-        or "sha256:dev-fnv64-19959dc47479580d" not in tests_text
-        or "sha256:dev-fnv64-1c107f0eca53f2ea" not in tests_text
-        or "sha256:dev-fnv64-94475f8b5b3d0865" not in tests_text
+        or "sha256:dev-fnv64-af04afa9640e9e44" not in tests_text
+        or "sha256:dev-fnv64-ca85014d790beb78" not in tests_text
+        or "sha256:dev-fnv64-198659418f8a31d2" not in tests_text
         or "input_buffer_peak_record_count_mismatch" not in tests_text
         or "mode_action_buffer_peak_record_count_mismatch" not in tests_text
         or "replay_summary_hash_mismatch" not in tests_text

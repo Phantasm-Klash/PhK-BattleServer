@@ -486,28 +486,40 @@ void TestPatternRhythm() {
 // P1 只测纯函数，不涉及 Tick 循环接线（P3）。
 // ---------------------------------------------------------------------------
 void TestJudgmentGeometry() {
-    using phk::battle::danmaku::PointHitsCapsule;
-    using phk::battle::danmaku::PointHitsCircle;
+    using phk::battle::danmaku::CurtainSweepHit;
+    using phk::battle::danmaku::PointInCapsule;
+    using phk::battle::danmaku::PointInCircle;
     using phk::battle::danmaku::PointMilli;
     using phk::battle::danmaku::PointSegmentDistanceSquaredMilli;
 
     // 点-圆：边界含等号。
-    Check(PointHitsCircle(PointMilli{0, 0}, PointMilli{0, 0}, 3000), "circle: center hits");
-    Check(PointHitsCircle(PointMilli{3000, 0}, PointMilli{0, 0}, 3000), "circle: boundary hits (<=)");
-    Check(!PointHitsCircle(PointMilli{3001, 0}, PointMilli{0, 0}, 3000), "circle: outside misses");
-    Check(!PointHitsCircle(PointMilli{0, 0}, PointMilli{0, 0}, -1), "circle: negative radius never hits");
+    Check(PointInCircle(0, 0, 0, 0, 3000), "circle: center hits");
+    Check(PointInCircle(3000, 0, 0, 0, 3000), "circle: boundary hits (<=)");
+    Check(!PointInCircle(3001, 0, 0, 0, 3000), "circle: outside misses");
+    Check(!PointInCircle(0, 0, 0, 0, -1), "circle: negative radius never hits");
 
-    // 点-胶囊：水平线段 (0,0)-(10000,0)，半宽 3000。
-    const PointMilli a{0, 0};
-    const PointMilli b{10000, 0};
-    Check(PointHitsCapsule(PointMilli{5000, 2999}, a, b, 3000), "capsule: inside half-width hits");
-    Check(!PointHitsCapsule(PointMilli{5000, 3001}, a, b, 3000), "capsule: outside half-width misses");
-    Check(PointHitsCapsule(PointMilli{12000, 0}, a, b, 3000), "capsule: beyond endpoint within radius hits");
-    Check(!PointHitsCapsule(PointMilli{13001, 0}, a, b, 3000), "capsule: far beyond endpoint misses");
-    // 退化线段（a == b）= 点。
-    Check(PointSegmentDistanceSquaredMilli(PointMilli{3000, 4000}, a, a) == 25000000,
+    // 点-胶囊：起点 (0,0)、方向 (1000,0)=右、长度 10000、半径 3000。
+    Check(PointInCapsule(5000, 2999, 0, 0, 1000, 0, 10000, 3000), "capsule: inside half-width hits");
+    Check(!PointInCapsule(5000, 3001, 0, 0, 1000, 0, 10000, 3000), "capsule: outside half-width misses");
+    Check(PointInCapsule(12000, 0, 0, 0, 1000, 0, 10000, 3000), "capsule: beyond tip within radius hits");
+    Check(!PointInCapsule(13001, 0, 0, 0, 1000, 0, 10000, 3000), "capsule: far beyond tip misses");
+    // 竖直方向 (0,1000)=下，验证方向换算不只对水平成立。
+    Check(PointInCapsule(2000, 5000, 0, 0, 0, 1000, 10000, 3000), "capsule: vertical direction hits");
+    Check(!PointInCapsule(4000, 5000, 0, 0, 0, 1000, 10000, 3000), "capsule: vertical direction misses sideways");
+    // length = 0 → 退化成点-圆。
+    Check(PointInCapsule(2999, 0, 0, 0, 1000, 0, 0, 3000), "capsule: zero length degenerates to circle");
+    Check(!PointInCapsule(3001, 0, 0, 0, 1000, 0, 0, 3000), "capsule: zero length outside misses");
+
+    // 扫屏线：只取决于 y，横向全屏。
+    Check(CurtainSweepHit(0, 0, 0, 2500), "sweep: on the line hits");
+    Check(CurtainSweepHit(999999, -2500, 0, 2500), "sweep: spans the full width");
+    Check(!CurtainSweepHit(0, 2501, 0, 2500), "sweep: beyond half thickness misses");
+    Check(!CurtainSweepHit(0, 0, 5000, 2500), "sweep: line position matters");
+
+    // 线段距离平方（点-胶囊的底层）。
+    Check(PointSegmentDistanceSquaredMilli(PointMilli{3000, 4000}, PointMilli{0, 0}, PointMilli{0, 0}) == 25000000,
           "segment: degenerate case equals point distance");
-    Check(PointSegmentDistanceSquaredMilli(PointMilli{5000, 2000}, a, b) == 4000000,
+    Check(PointSegmentDistanceSquaredMilli(PointMilli{5000, 2000}, PointMilli{0, 0}, PointMilli{10000, 0}) == 4000000,
           "segment: perpendicular distance squared");
 }
 

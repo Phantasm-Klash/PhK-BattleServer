@@ -54,14 +54,48 @@ std::int64_t PointSegmentDistanceSquaredMilli(PointMilli point, PointMilli a, Po
     return Square(dx) + Square(dy);
 }
 
-bool PointHitsCircle(PointMilli point, PointMilli center, std::int32_t radius_milli) {
+bool PointInCircle(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t cx,
+    std::int32_t cy,
+    std::int32_t radius_milli
+) {
     if (radius_milli < 0) return false;
-    return DistanceSquaredMilli(point, center) <= Square(radius_milli);
+    return DistanceSquaredMilli(PointMilli{px, py}, PointMilli{cx, cy}) <= Square(radius_milli);
 }
 
-bool PointHitsCapsule(PointMilli point, PointMilli a, PointMilli b, std::int32_t radius_milli) {
+bool PointInCapsule(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t x0,
+    std::int32_t y0,
+    std::int32_t dx_milli,
+    std::int32_t dy_milli,
+    std::int32_t length_milli,
+    std::int32_t radius_milli
+) {
     if (radius_milli < 0) return false;
-    return PointSegmentDistanceSquaredMilli(point, a, b) <= Square(radius_milli);
+    // 方向是单位向量 ×1000：终点 = 起点 + dir × length / 1000。
+    PointMilli tip;
+    tip.x = ClampToInt32(static_cast<std::int64_t>(x0) +
+                         static_cast<std::int64_t>(dx_milli) * length_milli / 1000);
+    tip.y = ClampToInt32(static_cast<std::int64_t>(y0) +
+                         static_cast<std::int64_t>(dy_milli) * length_milli / 1000);
+    return PointSegmentDistanceSquaredMilli(PointMilli{px, py}, PointMilli{x0, y0}, tip) <=
+        Square(radius_milli);
+}
+
+bool CurtainSweepHit(
+    std::int32_t px,
+    std::int32_t py,
+    std::int32_t edge_y_milli,
+    std::int32_t radius_milli
+) {
+    (void)px;  // 边缘线横贯全屏：命中只取决于 y。
+    if (radius_milli < 0) return false;
+    const std::int64_t dy = static_cast<std::int64_t>(py) - edge_y_milli;
+    return dy <= radius_milli && dy >= -static_cast<std::int64_t>(radius_milli);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +188,10 @@ bool IronFistHitsPoint(
     if (state.phase != IronFistPhase::Strike) {
         return false;
     }
-    return PointHitsCapsule(point, state.origin, IronFistStrikeTip(state), params.hit_radius_milli);
+    const PointMilli tip = IronFistStrikeTip(state);
+    // 直接用 origin → tip 两点做胶囊判定（拳尖已按推进比例算好，不再二次换算长度）。
+    return PointSegmentDistanceSquaredMilli(point, state.origin, tip) <=
+        Square(params.hit_radius_milli);
 }
 
 // ---------------------------------------------------------------------------
@@ -232,9 +269,7 @@ bool BlackCurtainHitsPoint(
                             span * static_cast<std::int64_t>(state.phase_elapsed) /
                                 static_cast<std::int64_t>(total));
     }
-    const std::int64_t dy = static_cast<std::int64_t>(point.y) - edge;
-    const std::int64_t limit = params.edge_half_thickness_milli;
-    return dy <= limit && dy >= -limit;
+    return CurtainSweepHit(point.x, point.y, edge, params.edge_half_thickness_milli);
 }
 
 }  // namespace phk::battle::danmaku

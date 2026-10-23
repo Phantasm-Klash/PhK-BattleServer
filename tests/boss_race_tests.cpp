@@ -470,6 +470,65 @@ void TestSnapshotCarriesP1WireFields() {
     Check(snapshot.event_cursor == 0, "event_cursor defaults to 0 (P3)");
 }
 
+// 特殊机制（铁拳/黑色帷幕）：默认关闭（现有模式零变化），只有
+// ruleset_version == "tna-1.40-danmaku" 才启用并进快照 effects[]。
+void TestSpecialMechanicsGateAndEffects() {
+    auto tick_to = [](phk::battle::BossRaceSimulation& sim, std::uint64_t target) {
+        while (sim.CurrentTick() < target) {
+            sim.Tick();
+        }
+    };
+
+    // 1) 默认 ruleset：300 tick（本该是铁拳起手相位）后 effects 仍为空。
+    auto plain_config = MakeConfig(31337u, 1000000);
+    phk::battle::BossRaceSimulation plain(plain_config);
+    plain.AddPlayer("player_a", 0, 60000);
+    plain.AddPlayer("player_b", 0, 60000);
+    tick_to(plain, 310);
+    Check(plain.Snapshot().boss.effects.empty(), "mechanics: disabled by default (effects empty)");
+
+    // 2) 启用 ruleset：tick 300 铁拳 windup → tick 345 strike → tick 600 帷幕 fall。
+    auto config = MakeConfig(31337u, 1000000);
+    config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+    phk::battle::BossRaceSimulation sim(config);
+    sim.AddPlayer("player_a", 0, 60000);
+    sim.AddPlayer("player_b", 0, 60000);
+
+    tick_to(sim, 300);
+    const auto at_windup = sim.Snapshot();
+    Check(!at_windup.boss.effects.empty(), "mechanics: iron fist appears at its offset tick");
+    Check(at_windup.boss.effects[0].type == "iron_fist", "mechanics: effect type = iron_fist");
+    Check(at_windup.boss.effects[0].state == "windup", "mechanics: starts in windup");
+    Check(at_windup.boss.effects[0].t_remaining == 45, "mechanics: windup length = T1 (45)");
+    Check(at_windup.boss.effects[0].length_milli == 200000, "mechanics: iron fist length carried on wire");
+
+    tick_to(sim, 345);
+    const auto at_strike = sim.Snapshot();
+    Check(at_strike.boss.effects[0].state == "strike", "mechanics: windup -> strike at T1");
+    Check(at_strike.boss.effects[0].t_remaining == 15, "mechanics: strike length = T2 (15)");
+
+    tick_to(sim, 600);
+    const auto at_fall = sim.Snapshot();
+    bool curtain_seen = false;
+    for (const auto& effect : at_fall.boss.effects) {
+        if (effect.type == "black_curtain" && effect.state == "fall") curtain_seen = true;
+    }
+    Check(curtain_seen, "mechanics: black curtain falls at its offset tick");
+
+    tick_to(sim, 650);
+    const auto at_hold = sim.Snapshot();
+    bool hold_seen = false;
+    for (const auto& effect : at_hold.boss.effects) {
+        if (effect.type == "black_curtain" && effect.state == "hold") hold_seen = true;
+    }
+    Check(hold_seen, "mechanics: black curtain reaches hold after T4");
+    bool all_hidden = true;
+    for (const auto& bullet : at_hold.bullets) {
+        if (!bullet.hidden) all_hidden = false;
+    }
+    Check(all_hidden, "mechanics: bullets carry hidden=true during curtain hold");
+}
+
 int main() {
     if (const char* fixture_path = std::getenv("PHK_BOSS_RACE_FIXTURE"); fixture_path != nullptr) {
         WriteGoldenFixture(fixture_path);
@@ -489,6 +548,7 @@ int main() {
     TestPlayerLoadoutSelectsShotAndBomb();
     TestTickRateIs64AndPeriodsUnscaled();
     TestSnapshotCarriesP1WireFields();
+    TestSpecialMechanicsGateAndEffects();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

@@ -3,7 +3,7 @@
 // Lifecycle:
 //   1. parse CLI args (match id, seed, players, lobby endpoint, port),
 //   2. bind a UDP port and speak KCP with the two racing clients,
-//   3. advance the BossRaceSimulation at a fixed 60 Hz tick rate,
+//   3. advance the BossRaceSimulation at a fixed 64 Hz tick rate,
 //   4. on completion POST the result to the lobby and exit,
 //   5. exit cleanly on SIGTERM / SIGINT (the lobby kills the process).
 
@@ -105,7 +105,7 @@ void PrintUsage() {
         << "  --boss-id <id>        room boss selection (tian|hui; empty = default timeline)\n"
         << "  --loadout <specs>     per-player loadout: p:char:shot:bomb[,...]\n"
         << "  --max-ticks <N>       safety tick cap (0 = unlimited)\n"
-        << "  --tick-rate <Hz>      server tick rate (60, 64, 128; default 60)\n"
+        << "  --tick-rate <Hz>      server tick rate (64 default; 60/128 accepted for tooling)\n"
         << "  --tick-scale <f>      test pacing: scales the wall-clock tick interval\n"
         << "                        (1 = real time, 0 = run ticks as fast as the CPU allows)\n"
         << "  --callback-secret <hex>  battle callback HMAC secret (registration response)\n"
@@ -247,7 +247,10 @@ int main(int argc, char** argv) {
               << " require_ticket=" << phk::battle::MatchTicketRequirementName(config.require_ticket)
               << std::endl;
 
-    const std::uint32_t tick_rate = server.Config().tick_rate_hz == 0 ? 60 : server.Config().tick_rate_hz;
+    // 64 tick 基准（计划 §2.1）：默认值跟 kBattleTickRateHz 走，别在这里写死数字。
+    const std::uint32_t tick_rate = server.Config().tick_rate_hz == 0
+        ? phk::battle::kBossRaceTickRateHz
+        : server.Config().tick_rate_hz;
     const auto tick_interval = std::chrono::microseconds(1000000 / tick_rate);
     // The simulation is per-tick, so pacing is wall-clock only: --tick-scale
     // shrinks the interval (0 = no pacing at all) and automated runs can walk a

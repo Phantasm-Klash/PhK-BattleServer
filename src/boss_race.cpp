@@ -88,6 +88,27 @@ std::int32_t FacingMilliDegFromDirection(std::uint32_t direction_bits) {
     return 0;
 }
 
+// §2.8 wire：特殊机制阶段名（与 judgment.hpp 的枚举一一对应）。
+const char* IronFistStateName(danmaku::IronFistPhase phase) {
+    switch (phase) {
+        case danmaku::IronFistPhase::Windup: return "windup";
+        case danmaku::IronFistPhase::Strike: return "strike";
+        case danmaku::IronFistPhase::Recover: return "recover";
+        case danmaku::IronFistPhase::Idle: return "idle";
+    }
+    return "idle";
+}
+
+const char* BlackCurtainStateName(danmaku::BlackCurtainPhase phase) {
+    switch (phase) {
+        case danmaku::BlackCurtainPhase::Fall: return "fall";
+        case danmaku::BlackCurtainPhase::Hold: return "hold";
+        case danmaku::BlackCurtainPhase::Sweep: return "sweep";
+        case danmaku::BlackCurtainPhase::Idle: return "idle";
+    }
+    return "idle";
+}
+
 }  // namespace
 
 const std::vector<std::string>& BossRacePatternIds() {
@@ -135,6 +156,11 @@ BossRaceSimulation::BossRaceSimulation(BossRaceConfig config) : config_(std::mov
         config_.pattern_period_ticks = kBossRacePatternPeriodTicks;
     }
     ResolveBossAndLoadouts();
+    // 特殊机制：只有显式 ruleset 才启用（默认关闭 → 现有模式逐字节不变）。
+    mechanics_ = config_.special_mechanics;
+    if (config_.ruleset_version == kRulesetDanmakuMechanics) {
+        mechanics_.enabled = true;
+    }
     if (config_.boss_max_hp == 0) {
         // boss 目录存在时以目录 HP 为准，否则回退默认（默认路径逐字节不变）。
         config_.boss_max_hp = boss_entry_ != nullptr ? boss_entry_->boss_max_hp : kBossRaceDefaultBossHp;
@@ -713,6 +739,53 @@ bool BossRaceSimulation::InjectLiveBulletForTest(
     return true;
 }
 
+void BossRaceSimulation::AdvanceSpecialMechanics(std::uint64_t tick) {
+    if (!mechanics_.enabled) {
+        return;
+    }
+
+    // 铁拳：到相位且当前 Idle → 起手（朝 map 序第一个玩家，确定性）；否则推进。
+    const bool iron_fist_due = mechanics_.iron_fist_interval_ticks != 0 &&
+        (tick % mechanics_.iron_fist_interval_ticks) == mechanics_.iron_fist_offset_ticks;
+    if (iron_fist_.phase == danmaku::IronFistPhase::Idle) {
+        if (iron_fist_due) {
+            std::int32_t dir_x = 1000;
+            std::int32_t dir_y = 0;
+            if (!players_.empty()) {
+                const PlayerState& target = players_.begin()->second;
+                const double vx = static_cast<double>(target.x_milli - kBossOriginXMilli);
+                const double vy = static_cast<double>(target.y_milli - kBossOriginYMilli);
+                const double len = std::sqrt(vx * vx + vy * vy);
+                if (len > 0.0) {
+                    dir_x = static_cast<std::int32_t>(std::llround(vx / len * 1000.0));
+                    dir_y = static_cast<std::int32_t>(std::llround(vy / len * 1000.0));
+                }
+            }
+            danmaku::StartIronFist(
+                &iron_fist_,
+                danmaku::PointMilli{kBossOriginXMilli, kBossOriginYMilli},
+                dir_x,
+                dir_y,
+                mechanics_.iron_fist_length_milli,
+                mechanics_.iron_fist
+            );
+        }
+    } else {
+        (void)danmaku::AdvanceIronFist(&iron_fist_, tick, mechanics_.iron_fist);
+    }
+
+    // 黑色帷幕：同理。
+    const bool curtain_due = mechanics_.curtain_interval_ticks != 0 &&
+        (tick % mechanics_.curtain_interval_ticks) == mechanics_.curtain_offset_ticks;
+    if (black_curtain_.phase == danmaku::BlackCurtainPhase::Idle) {
+        if (curtain_due) {
+            danmaku::StartBlackCurtain(&black_curtain_, mechanics_.curtain);
+        }
+    } else {
+        (void)danmaku::AdvanceBlackCurtain(&black_curtain_, tick, mechanics_.curtain);
+    }
+}
+
 void BossRaceSimulation::CheckRaceWinner(std::uint64_t tick) {
     if (state_ == BossRaceState::Finished) {
         return;
@@ -742,6 +815,7 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
         ApplyPlayerTick(tick_to_apply);
         SpawnBulletsForTick(tick_to_apply);
         AdvanceBullets(tick_to_apply);
+        AdvanceSpecialMechanics(tick_to_apply);
         CheckRaceWinner(tick_to_apply);
     }
     current_tick_ = tick_to_apply;
@@ -798,6 +872,9 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         snapshot.players.push_back(player);
     }
     snapshot.bullets.reserve(live_bullets_.size());
+    // 黑色帷幕 hold 期：子弹 hidden=true（客户端不渲染，服务端判定照算）。
+    const bool bullets_hidden = mechanics_.enabled &&
+        danmaku::BulletsHiddenDuringCurtain(black_curtain_);
     for (const LiveBullet& live : live_bullets_) {
         BossRaceBullet bullet;
         bullet.bullet_id = live.bullet_id;
@@ -812,7 +889,7 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         bullet.motion_func = live.motion.bullet_func_no;
         bullet.chain_id = live.pattern_index;  // P1 占位：链 id = 发射它的 pattern
         bullet.generation = live.generation;
-        bullet.hidden = false;                 // 黑色帷幕 hold 期 P4 置真
+        bullet.hidden = bullets_hidden;        // 黑色帷幕 hold 期（P4 起有真值）
         snapshot.bullets.push_back(std::move(bullet));
     }
 
@@ -837,6 +914,30 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         snapshot.boss.movement.phase_t = boss_entry_->movement.period_ticks == 0
             ? 0
             : static_cast<std::int32_t>(current_tick_ % boss_entry_->movement.period_ticks);
+    }
+
+    // §2.8 boss.effects：特殊机制只在启用 ruleset 下出现（默认空数组）。
+    if (mechanics_.enabled) {
+        if (iron_fist_.phase != danmaku::IronFistPhase::Idle) {
+            BossEffectWire effect;
+            effect.type = "iron_fist";
+            effect.state = IronFistStateName(iron_fist_.phase);
+            effect.t_remaining = static_cast<std::int32_t>(iron_fist_.t_remaining);
+            effect.x0_milli = iron_fist_.origin.x;
+            effect.y0_milli = iron_fist_.origin.y;
+            effect.dx_milli = iron_fist_.dir_x_milli;
+            effect.dy_milli = iron_fist_.dir_y_milli;
+            effect.length_milli = iron_fist_.length_milli;
+            snapshot.boss.effects.push_back(std::move(effect));
+        }
+        if (black_curtain_.phase != danmaku::BlackCurtainPhase::Idle) {
+            BossEffectWire effect;
+            effect.type = "black_curtain";
+            effect.state = BlackCurtainStateName(black_curtain_.phase);
+            effect.t_remaining = static_cast<std::int32_t>(black_curtain_.t_remaining);
+            effect.edge_y_milli = black_curtain_.edge_y_milli;
+            snapshot.boss.effects.push_back(std::move(effect));
+        }
     }
 
     // §2.8 chains：按 pattern_index 聚合活跃弹幕（node_id/rng_cursor P2 才有真值）。
