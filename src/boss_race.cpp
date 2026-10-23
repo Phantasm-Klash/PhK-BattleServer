@@ -368,12 +368,24 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
         player.x_milli = ClampMilli(player.x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
         player.y_milli = ClampMilli(player.y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
 
+        // 炸弹（只在 kRulesetDanmakuMechanics 下消耗残弹并给无敌帧；默认 ruleset
+        // 保持现状：只按自机表加伤害，不消耗炸弹、不加无敌帧）。
+        if (mechanics_.enabled && input.bomb && player.bombs > 0 && player.alive) {
+            --player.bombs;
+            player.invulnerable_until_tick = tick + kDanmakuInvulnerableTicks;
+            BossEventWire event;
+            event.tick = tick;
+            event.type = kBombUsedEvent;
+            event.player_id = player.player_id;
+            tick_events_.push_back(std::move(event));
+        }
+
         // Shooting damages this player's own Boss copy.
         // 默认（未配置自机 loadout）：每 tick 固定 kBossRaceDamagePerShotTick，
         // 与现状逐字节一致。配置了 shot_type/bomb_type 时改用真实自机表：
         //   * shot_type → danmaku::PlayerShotTable() 的 damage（主弹伤害）；
         //   * bomb_type → danmaku::PlayerBombTable() 的 damage（该 tick 触发的炸弹）。
-        if (player.boss_current_hp > 0) {
+        if (player.boss_current_hp > 0 && player.alive) {
             std::uint64_t tick_damage = 0;
             if (input.shoot) {
                 tick_damage += kBossRaceDamagePerShotTick;
@@ -769,9 +781,18 @@ void BossRaceSimulation::AdvanceSpecialMechanics(std::uint64_t tick) {
                 mechanics_.iron_fist_length_milli,
                 mechanics_.iron_fist
             );
+            BossEventWire wire;
+            wire.tick = tick;
+            wire.type = danmaku::kIronFistWindupEvent;
+            tick_events_.push_back(std::move(wire));
         }
     } else {
-        (void)danmaku::AdvanceIronFist(&iron_fist_, tick, mechanics_.iron_fist);
+        for (const danmaku::JudgeEvent& event : danmaku::AdvanceIronFist(&iron_fist_, tick, mechanics_.iron_fist)) {
+            BossEventWire wire;
+            wire.tick = event.tick;
+            wire.type = event.type;
+            tick_events_.push_back(std::move(wire));
+        }
     }
 
     // 黑色帷幕：同理。
@@ -780,9 +801,84 @@ void BossRaceSimulation::AdvanceSpecialMechanics(std::uint64_t tick) {
     if (black_curtain_.phase == danmaku::BlackCurtainPhase::Idle) {
         if (curtain_due) {
             danmaku::StartBlackCurtain(&black_curtain_, mechanics_.curtain);
+            BossEventWire wire;
+            wire.tick = tick;
+            wire.type = danmaku::kBlackCurtainFallEvent;
+            tick_events_.push_back(std::move(wire));
         }
     } else {
-        (void)danmaku::AdvanceBlackCurtain(&black_curtain_, tick, mechanics_.curtain);
+        for (const danmaku::JudgeEvent& event : danmaku::AdvanceBlackCurtain(&black_curtain_, tick, mechanics_.curtain)) {
+            BossEventWire wire;
+            wire.tick = event.tick;
+            wire.type = event.type;
+            tick_events_.push_back(std::move(wire));
+        }
+    }
+}
+
+// 玩家受击判定（§2.4 第 2 条）。只在 kRulesetDanmakuMechanics 下生效：
+//   * 命中（dist <= 弹半径 + r_hit）→ lives-1、无敌帧 120 tick、事件 player_hit
+//     （lives 归零再发 player_dead 并置 alive=false）；
+//   * 擦弹（dist <= 弹半径 + r_graze 且未命中）→ graze+1、事件 player_graze，
+//     同一颗弹对同一玩家只计一次（LiveBullet::grazed 去重）；
+//   * 无敌帧内两者都不计。
+// 子弹按 owner_player_id 归属到「自己那份 Boss 副本」，故只判定该玩家自己的弹。
+void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
+    if (!mechanics_.enabled) {
+        return;
+    }
+    for (auto& item : players_) {
+        PlayerState& player = item.second;
+        if (!player.connected || !player.alive) {
+            continue;
+        }
+        const bool invulnerable = tick <= player.invulnerable_until_tick;
+        for (LiveBullet& live : live_bullets_) {
+            if (live.owner_player_id != player.player_id) {
+                continue;
+            }
+            const std::int32_t bullet_x = ToMilli(live.motion.x - kScreenCenterX);
+            const std::int32_t bullet_y = ToMilli(live.motion.y - kScreenCenterY);
+            const std::int32_t bullet_radius = ToMilli(live.motion.hit_dis);
+            const std::int64_t distance_squared = danmaku::DistanceSquaredMilli(
+                danmaku::PointMilli{bullet_x, bullet_y},
+                danmaku::PointMilli{player.x_milli, player.y_milli}
+            );
+            if (invulnerable) {
+                continue;
+            }
+            const std::int64_t hit_radius = bullet_radius + kDanmakuHitRadiusMilli;
+            if (distance_squared <= hit_radius * hit_radius) {
+                if (player.lives > 0) {
+                    --player.lives;
+                }
+                player.invulnerable_until_tick = tick + kDanmakuInvulnerableTicks;
+                BossEventWire hit;
+                hit.tick = tick;
+                hit.type = kPlayerHitEvent;
+                hit.player_id = player.player_id;
+                tick_events_.push_back(std::move(hit));
+                if (player.lives == 0) {
+                    player.alive = false;
+                    BossEventWire dead;
+                    dead.tick = tick;
+                    dead.type = kPlayerDeadEvent;
+                    dead.player_id = player.player_id;
+                    tick_events_.push_back(std::move(dead));
+                }
+                break;  // 本 tick 已进入无敌帧，剩余子弹不再判定
+            }
+            const std::int64_t graze_radius = bullet_radius + kDanmakuGrazeRadiusMilli;
+            if (!live.grazed && distance_squared <= graze_radius * graze_radius) {
+                live.grazed = true;
+                ++player.graze;
+                BossEventWire graze;
+                graze.tick = tick;
+                graze.type = kPlayerGrazeEvent;
+                graze.player_id = player.player_id;
+                tick_events_.push_back(std::move(graze));
+            }
+        }
     }
 }
 
@@ -810,13 +906,16 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
     }
 
     const std::uint64_t tick_to_apply = current_tick_ + 1;
+    tick_events_.clear();
     StartIfReady();
     if (state_ == BossRaceState::Running) {
         ApplyPlayerTick(tick_to_apply);
         SpawnBulletsForTick(tick_to_apply);
         AdvanceBullets(tick_to_apply);
         AdvanceSpecialMechanics(tick_to_apply);
+        JudgePlayerContacts(tick_to_apply);
         CheckRaceWinner(tick_to_apply);
+        event_cursor_ += static_cast<std::uint64_t>(tick_events_.size());
     }
     current_tick_ = tick_to_apply;
     return Snapshot();
@@ -865,10 +964,19 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         player.vx_milli = item.second.vx_milli;
         player.vy_milli = item.second.vy_milli;
         player.facing_millideg = FacingMilliDegFromDirection(item.second.last_input.direction_bits);
-        player.lives = item.second.alive ? kSnapshotDefaultLives : 0u;
-        player.bombs = kSnapshotDefaultBombs;
-        player.invulnerable_until_tick = 0;  // 判定系统 P3 才产生无敌帧
-        player.graze = 0;                    // 擦弹计数 P3
+        if (mechanics_.enabled) {
+            // 真实受击状态（§2.4 第 2 条）。
+            player.lives = item.second.lives;
+            player.bombs = item.second.bombs;
+            player.invulnerable_until_tick = item.second.invulnerable_until_tick;
+            player.graze = item.second.graze;
+        } else {
+            // 默认 ruleset：判定系统未启用，保持占位值（现有玩法零变化）。
+            player.lives = item.second.alive ? kSnapshotDefaultLives : 0u;
+            player.bombs = kSnapshotDefaultBombs;
+            player.invulnerable_until_tick = 0;
+            player.graze = 0;
+        }
         snapshot.players.push_back(player);
     }
     snapshot.bullets.reserve(live_bullets_.size());
@@ -956,8 +1064,10 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         snapshot.chains.push_back(chain);
     }
 
-    // hand/deck/draw_cooldown/events：对局内抽卡（P3）与判定事件（P3）才产生，
-    // P1 保持空数组与 0 默认值（字段存在即可解析）。
+    // hand/deck/draw_cooldown：对局内抽卡（P3）才产生，P1 保持空数组与 0 默认值。
+    // events：本 tick 的机制/判定事件（§2.4.6），event_cursor = 累计事件数。
+    snapshot.events = tick_events_;
+    snapshot.event_cursor = event_cursor_;
     snapshot.state_hash = CanonicalStateHash();
     return snapshot;
 }

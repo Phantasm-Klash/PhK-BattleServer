@@ -40,18 +40,33 @@ inline constexpr std::size_t kBossRacePatternCount = 10;
 
 // 特殊机制（铁拳 / 黑色帷幕）开关用的 ruleset。默认关闭 → 现有模式逐字节不变；
 // 只有显式把 ruleset_version 设成这个值才启用（计划 §2.4 / §2.7）。
+// 同一开关也启用「玩家受击判定」（§2.4 第 2 条）：命中/擦弹/无敌帧/残机。
 inline constexpr const char* kRulesetDanmakuMechanics = "tna-1.40-danmaku";
+
+// 玩家受击判定常量（§2.4 第 2 条，单位 milli；只在 kRulesetDanmakuMechanics 下生效）。
+inline constexpr std::int32_t kDanmakuHitRadiusMilli = 3000;    // r_hit ≈3px（判定点）
+inline constexpr std::int32_t kDanmakuGrazeRadiusMilli = 20000;  // r_graze ≈20px
+inline constexpr std::uint64_t kDanmakuInvulnerableTicks = 120;  // 命中/炸弹后的无敌帧
+inline constexpr std::uint32_t kDanmakuDefaultLives = 3;
+inline constexpr std::uint32_t kDanmakuDefaultBombs = 3;
+
+// 判定事件类型（进快照 events[].type，与 judgment.hpp 的机制事件并列）。
+inline constexpr const char* kPlayerHitEvent = "player_hit";
+inline constexpr const char* kPlayerGrazeEvent = "player_graze";
+inline constexpr const char* kPlayerDeadEvent = "player_dead";
+inline constexpr const char* kBombUsedEvent = "bomb_used";
 
 // 特殊机制排期（P1 占位数值，P4 移到 boss_catalog 数据表，双端同值）。
 // 触发规则：tick % interval == offset 且该机制当前 Idle → 起手；否则推进一 tick。
+// 默认排期 = 铁拳 tick 300 / 900 / 1500…、帷幕 tick 600 / 1500 / 2400…（主控冻结）。
 struct BossSpecialMechanicsSchedule {
     bool enabled = false;
-    // 铁拳：默认每 600 tick 一次、相位 300；长度 200 px。
+    // 铁拳：每 600 tick 一次、相位 300；长度 200 px。
     std::uint32_t iron_fist_interval_ticks = 600;
     std::uint32_t iron_fist_offset_ticks = 300;
     std::int32_t iron_fist_length_milli = 200000;
     danmaku::IronFistParams iron_fist;
-    // 黑色帷幕：默认每 900 tick 一次、相位 600。
+    // 黑色帷幕：每 900 tick 一次、相位 600。
     std::uint32_t curtain_interval_ticks = 900;
     std::uint32_t curtain_offset_ticks = 600;
     danmaku::BlackCurtainParams curtain;
@@ -299,6 +314,11 @@ private:
         std::uint64_t damage_dealt = 0;
         bool connected = true;
         bool alive = true;
+        // 受击判定状态（只在 kRulesetDanmakuMechanics 下被写；默认 ruleset 保持占位值）。
+        std::uint32_t lives = kDanmakuDefaultLives;
+        std::uint32_t bombs = kDanmakuDefaultBombs;
+        std::uint32_t graze = 0;
+        std::uint64_t invulnerable_until_tick = 0;
         BattleInput last_input;
     };
 
@@ -313,6 +333,8 @@ private:
         // 上限 danmaku::kChainSplitMaxGeneration（叶子代不再分裂）。
         // 仅服务端内部使用，不进快照/hash（客户端本地重推自行推导）。
         std::uint32_t generation = 0;
+        // 擦弹去重：同一颗弹对同一玩家只计一次（§2.4 擦弹计数）。
+        bool grazed = false;
         danmaku::BulletMotion motion;
     };
 
@@ -325,6 +347,8 @@ private:
     void AdvanceBullets(std::uint64_t tick);
     // 特殊机制（铁拳/黑色帷幕）状态推进；disabled 时是 no-op（现有模式零变化）。
     void AdvanceSpecialMechanics(std::uint64_t tick);
+    // 玩家受击判定（§2.4 第 2 条）：boss 弹 vs 自机判定点/擦弹圈；disabled 时 no-op。
+    void JudgePlayerContacts(std::uint64_t tick);
     void CheckRaceWinner(std::uint64_t tick);
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
     [[nodiscard]] std::size_t EmittedBulletsFor(const std::string& player_id) const;
@@ -349,6 +373,9 @@ private:
     BossSpecialMechanicsSchedule mechanics_;
     danmaku::IronFistState iron_fist_;
     danmaku::BlackCurtainState black_curtain_;
+    // 本 tick 产生的判定/机制事件（每 Tick 清空，快照 events[] 从这里读）。
+    std::vector<BossEventWire> tick_events_;
+    std::uint64_t event_cursor_ = 0;
 };
 
 }  // namespace phk::battle

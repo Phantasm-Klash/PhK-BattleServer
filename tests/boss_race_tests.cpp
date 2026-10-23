@@ -501,32 +501,150 @@ void TestSpecialMechanicsGateAndEffects() {
     Check(at_windup.boss.effects[0].state == "windup", "mechanics: starts in windup");
     Check(at_windup.boss.effects[0].t_remaining == 45, "mechanics: windup length = T1 (45)");
     Check(at_windup.boss.effects[0].length_milli == 200000, "mechanics: iron fist length carried on wire");
+    bool windup_event = false;
+    for (const auto& event : at_windup.events) {
+        if (event.type == "iron_fist_windup") windup_event = true;
+    }
+    Check(windup_event, "mechanics: iron_fist_windup event emitted");
 
     tick_to(sim, 345);
     const auto at_strike = sim.Snapshot();
     Check(at_strike.boss.effects[0].state == "strike", "mechanics: windup -> strike at T1");
     Check(at_strike.boss.effects[0].t_remaining == 15, "mechanics: strike length = T2 (15)");
+    bool strike_event = false;
+    for (const auto& event : at_strike.events) {
+        if (event.type == "iron_fist_strike") strike_event = true;
+    }
+    Check(strike_event, "mechanics: iron_fist_strike event emitted");
 
     tick_to(sim, 600);
     const auto at_fall = sim.Snapshot();
     bool curtain_seen = false;
+    bool fall_event = false;
     for (const auto& effect : at_fall.boss.effects) {
         if (effect.type == "black_curtain" && effect.state == "fall") curtain_seen = true;
     }
+    for (const auto& event : at_fall.events) {
+        if (event.type == "black_curtain_fall") fall_event = true;
+    }
     Check(curtain_seen, "mechanics: black curtain falls at its offset tick");
+    Check(fall_event, "mechanics: black_curtain_fall event emitted");
 
-    tick_to(sim, 650);
+    // 帷幕 T4=45：fall 从 600 起，645 进 hold（事件只在发生那一 tick 出现）。
+    tick_to(sim, 645);
     const auto at_hold = sim.Snapshot();
     bool hold_seen = false;
+    bool hold_event = false;
     for (const auto& effect : at_hold.boss.effects) {
         if (effect.type == "black_curtain" && effect.state == "hold") hold_seen = true;
     }
+    for (const auto& event : at_hold.events) {
+        if (event.type == "black_curtain_hold") hold_event = true;
+    }
     Check(hold_seen, "mechanics: black curtain reaches hold after T4");
+    Check(hold_event, "mechanics: black_curtain_hold event emitted");
+    Check(at_hold.event_cursor > 0, "mechanics: event_cursor advances with emitted events");
     bool all_hidden = true;
     for (const auto& bullet : at_hold.bullets) {
         if (!bullet.hidden) all_hidden = false;
     }
     Check(all_hidden, "mechanics: bullets carry hidden=true during curtain hold");
+}
+
+// 玩家受击判定（§2.4 第 2 条）：只在 tna-1.40-danmaku 下生效。
+// 判定点 r_hit=3000、擦弹 r_graze=20000、命中 lives-1 + 无敌帧 120 tick。
+void TestPlayerHitJudgment() {
+    // 屏幕坐标 (320,540) = 居中 milli (0,60000)，即 player_a 的出生点。
+    auto make_bullet = [](double x, double y, double hit_dis) {
+        phk::battle::danmaku::BulletMotion motion;
+        motion.x = x;
+        motion.y = y;
+        motion.hit_dis = hit_dis;
+        return motion;
+    };
+
+    // 1) 命中：子弹压在判定点上 → lives-1 + 无敌帧 + player_hit。
+    {
+        auto config = MakeConfig(9001u, 1000000);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();  // tick 1，进入 Running
+        Check(sim.InjectLiveBulletForTest("player_a", make_bullet(320.0, 540.0, 4.0)),
+              "hit: bullet injected");
+        const auto snapshot = sim.Tick();  // tick 2
+        Check(snapshot.players[0].lives == phk::battle::kDanmakuDefaultLives - 1,
+              "hit: lives decremented");
+        Check(snapshot.players[0].invulnerable_until_tick == 2 + phk::battle::kDanmakuInvulnerableTicks,
+              "hit: invulnerable window = 120 ticks");
+        bool hit_event = false;
+        for (const auto& event : snapshot.events) {
+            if (event.type == phk::battle::kPlayerHitEvent && event.player_id == "player_a") hit_event = true;
+        }
+        Check(hit_event, "hit: player_hit event emitted");
+
+        // 2) 无敌帧内再压一颗弹 → 不再扣命。
+        Check(sim.InjectLiveBulletForTest("player_a", make_bullet(320.0, 540.0, 4.0)),
+              "hit: second bullet injected");
+        const auto during_invuln = sim.Tick();  // tick 3
+        Check(during_invuln.players[0].lives == phk::battle::kDanmakuDefaultLives - 1,
+              "hit: invulnerable window blocks a second hit");
+    }
+
+    // 3) 擦弹：距离 10px（10000 milli）落在 7000 < d <= 24000 之间 → graze+1 且只计一次。
+    {
+        auto config = MakeConfig(9002u, 1000000);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        Check(sim.InjectLiveBulletForTest("player_a", make_bullet(320.0, 530.0, 4.0)),
+              "graze: bullet injected");
+        const auto first = sim.Tick();
+        Check(first.players[0].lives == phk::battle::kDanmakuDefaultLives, "graze: does not cost a life");
+        Check(first.players[0].graze == 1, "graze: counter incremented once");
+        bool graze_event = false;
+        for (const auto& event : first.events) {
+            if (event.type == phk::battle::kPlayerGrazeEvent) graze_event = true;
+        }
+        Check(graze_event, "graze: player_graze event emitted");
+        const auto second = sim.Tick();
+        Check(second.players[0].graze == 1, "graze: same bullet is not counted twice");
+    }
+
+    // 4) 炸弹：消耗残弹 + 给无敌帧 + bomb_used 事件。
+    {
+        auto config = MakeConfig(9003u, 1000000);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        auto bomb_input = MakeInput(config.match_id, "player_a", 2, 1, false, 0u);
+        bomb_input.bomb = true;
+        Check(sim.SubmitInput(bomb_input), "bomb: input accepted");
+        const auto snapshot = sim.Tick();
+        Check(snapshot.players[0].bombs == phk::battle::kDanmakuDefaultBombs - 1, "bomb: bomb count decremented");
+        Check(snapshot.players[0].invulnerable_until_tick == 2 + phk::battle::kDanmakuInvulnerableTicks,
+              "bomb: grants the same invulnerable window");
+    }
+
+    // 5) 默认 ruleset：判定不启用，子弹压在判定点也不扣命、不发事件。
+    {
+        auto config = MakeConfig(9004u, 1000000);
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        sim.InjectLiveBulletForTest("player_a", make_bullet(320.0, 540.0, 4.0));
+        const auto snapshot = sim.Tick();
+        Check(snapshot.players[0].lives == 1, "judgment: default ruleset keeps placeholder lives");
+        Check(snapshot.players[0].graze == 0, "judgment: default ruleset never grazes");
+        Check(snapshot.events.empty(), "judgment: default ruleset emits no events");
+        Check(snapshot.event_cursor == 0, "judgment: default ruleset keeps event_cursor at 0");
+    }
 }
 
 int main() {
@@ -549,6 +667,7 @@ int main() {
     TestTickRateIs64AndPeriodsUnscaled();
     TestSnapshotCarriesP1WireFields();
     TestSpecialMechanicsGateAndEffects();
+    TestPlayerHitJudgment();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";
