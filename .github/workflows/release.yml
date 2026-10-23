@@ -3,6 +3,7 @@ name: Release
 # Builds the C++ battle server on a `v*` tag and publishes the executable and
 # static core library as a workflow artifact + GitHub Release asset.
 # Self-contained: uses the vendored PhK-Protocol manifest.
+# Tags containing -rc*/-beta*/-alpha* are published as prereleases.
 
 on:
   push:
@@ -58,7 +59,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          # Tags like v0.1.0-rc1 are prereleases, not full releases.
+          case "${GITHUB_REF_NAME}" in
+            *-rc*|*-beta*|*-alpha*)
+              gh release create "${GITHUB_REF_NAME}" dist/* \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${GITHUB_REF_NAME}" \
+                --prerelease \
+                --generate-notes ;;
+            *)
+              gh release create "${GITHUB_REF_NAME}" dist/* \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${GITHUB_REF_NAME}" \
+                --generate-notes ;;
+          esac
