@@ -9,10 +9,12 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "phk/battle/danmaku/bullet_kind.hpp"
 #include "phk/battle/danmaku/bullet_motion.hpp"
 #include "phk/battle/danmaku/emitter.hpp"
+#include "phk/battle/danmaku/judgment.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
 
@@ -479,6 +481,144 @@ void TestPatternRhythm() {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// 判定系统骨架（计划 §2.4）：几何工具 + 铁拳三阶段 + 黑色帷幕三阶段。
+// P1 只测纯函数，不涉及 Tick 循环接线（P3）。
+// ---------------------------------------------------------------------------
+void TestJudgmentGeometry() {
+    using phk::battle::danmaku::PointHitsCapsule;
+    using phk::battle::danmaku::PointHitsCircle;
+    using phk::battle::danmaku::PointMilli;
+    using phk::battle::danmaku::PointSegmentDistanceSquaredMilli;
+
+    // 点-圆：边界含等号。
+    Check(PointHitsCircle(PointMilli{0, 0}, PointMilli{0, 0}, 3000), "circle: center hits");
+    Check(PointHitsCircle(PointMilli{3000, 0}, PointMilli{0, 0}, 3000), "circle: boundary hits (<=)");
+    Check(!PointHitsCircle(PointMilli{3001, 0}, PointMilli{0, 0}, 3000), "circle: outside misses");
+    Check(!PointHitsCircle(PointMilli{0, 0}, PointMilli{0, 0}, -1), "circle: negative radius never hits");
+
+    // 点-胶囊：水平线段 (0,0)-(10000,0)，半宽 3000。
+    const PointMilli a{0, 0};
+    const PointMilli b{10000, 0};
+    Check(PointHitsCapsule(PointMilli{5000, 2999}, a, b, 3000), "capsule: inside half-width hits");
+    Check(!PointHitsCapsule(PointMilli{5000, 3001}, a, b, 3000), "capsule: outside half-width misses");
+    Check(PointHitsCapsule(PointMilli{12000, 0}, a, b, 3000), "capsule: beyond endpoint within radius hits");
+    Check(!PointHitsCapsule(PointMilli{13001, 0}, a, b, 3000), "capsule: far beyond endpoint misses");
+    // 退化线段（a == b）= 点。
+    Check(PointSegmentDistanceSquaredMilli(PointMilli{3000, 4000}, a, a) == 25000000,
+          "segment: degenerate case equals point distance");
+    Check(PointSegmentDistanceSquaredMilli(PointMilli{5000, 2000}, a, b) == 4000000,
+          "segment: perpendicular distance squared");
+}
+
+void TestIronFistStateMachine() {
+    using phk::battle::danmaku::AdvanceIronFist;
+    using phk::battle::danmaku::IronFistHitsPoint;
+    using phk::battle::danmaku::IronFistParams;
+    using phk::battle::danmaku::IronFistPhase;
+    using phk::battle::danmaku::IronFistState;
+    using phk::battle::danmaku::IronFistStrikeTip;
+    using phk::battle::danmaku::kIronFistEndEvent;
+    using phk::battle::danmaku::kIronFistRecoverEvent;
+    using phk::battle::danmaku::kIronFistStrikeEvent;
+    using phk::battle::danmaku::PointMilli;
+
+    IronFistParams params;
+    IronFistState state;
+    phk::battle::danmaku::StartIronFist(&state, PointMilli{0, 0}, 1000, 0, 10000, params);
+    Check(state.phase == IronFistPhase::Windup, "iron fist: starts in windup");
+    Check(state.t_remaining == params.windup_ticks, "iron fist: windup length = T1");
+
+    for (std::uint32_t i = 0; i + 1 < params.windup_ticks; ++i) {
+        const auto events = AdvanceIronFist(&state, i + 1, params);
+        Check(events.empty(), "iron fist: no event during windup");
+    }
+    Check(state.phase == IronFistPhase::Windup, "iron fist: still winding up before T1");
+    Check(!IronFistHitsPoint(state, PointMilli{0, 0}, params), "iron fist: windup never hits");
+
+    const auto strike_events = AdvanceIronFist(&state, params.windup_ticks, params);
+    Check(state.phase == IronFistPhase::Strike, "iron fist: windup -> strike at exactly T1");
+    Check(state.t_remaining == params.strike_ticks, "iron fist: strike length = T2");
+    Check(strike_events.size() == 1 && strike_events[0].type == kIronFistStrikeEvent,
+          "iron fist: strike event emitted");
+
+    // strike 推进：7/15 处拳尖 = 10000 × 7 / 15 = 4666 milli。
+    for (std::uint32_t i = 0; i < 7; ++i) {
+        AdvanceIronFist(&state, params.windup_ticks + 1 + i, params);
+    }
+    const PointMilli tip = IronFistStrikeTip(state);
+    Check(tip.x == 4666 && tip.y == 0, "iron fist: strike tip advances along direction");
+    Check(IronFistHitsPoint(state, PointMilli{2000, 2999}, params), "iron fist: point inside capsule hits");
+    Check(!IronFistHitsPoint(state, PointMilli{2000, 3001}, params), "iron fist: point outside capsule misses");
+    Check(!IronFistHitsPoint(state, PointMilli{9000, 0}, params), "iron fist: point beyond current tip misses");
+
+    // 剩余 8 tick 走完 strike → recover。
+    std::vector<std::string> events;
+    for (std::uint32_t i = 0; i < params.strike_ticks - 7; ++i) {
+        for (const auto& event : AdvanceIronFist(&state, 0, params)) {
+            events.push_back(event.type);
+        }
+    }
+    Check(state.phase == IronFistPhase::Recover, "iron fist: strike -> recover at exactly T2");
+    Check(state.t_remaining == params.recover_ticks, "iron fist: recover length = T3");
+    Check(!events.empty() && events.back() == kIronFistRecoverEvent, "iron fist: recover event emitted");
+
+    for (std::uint32_t i = 0; i < params.recover_ticks; ++i) {
+        AdvanceIronFist(&state, 0, params);
+    }
+    Check(state.phase == IronFistPhase::Idle, "iron fist: recover -> idle at exactly T3");
+    Check(AdvanceIronFist(&state, 0, params).empty(), "iron fist: idle is a no-op");
+    Check(!IronFistHitsPoint(state, PointMilli{0, 0}, params), "iron fist: idle never hits");
+    (void)kIronFistEndEvent;
+}
+
+void TestBlackCurtainStateMachine() {
+    using phk::battle::danmaku::AdvanceBlackCurtain;
+    using phk::battle::danmaku::BlackCurtainHitsPoint;
+    using phk::battle::danmaku::BlackCurtainParams;
+    using phk::battle::danmaku::BlackCurtainPhase;
+    using phk::battle::danmaku::BlackCurtainState;
+    using phk::battle::danmaku::BulletsHiddenDuringCurtain;
+    using phk::battle::danmaku::PointMilli;
+
+    BlackCurtainParams params;
+    BlackCurtainState state;
+    phk::battle::danmaku::StartBlackCurtain(&state, params);
+    Check(state.phase == BlackCurtainPhase::Fall, "curtain: starts in fall");
+    Check(!BulletsHiddenDuringCurtain(state), "curtain: bullets visible during fall");
+
+    for (std::uint32_t i = 0; i < params.fall_ticks; ++i) {
+        AdvanceBlackCurtain(&state, i + 1, params);
+    }
+    Check(state.phase == BlackCurtainPhase::Hold, "curtain: fall -> hold at exactly T4");
+    Check(BulletsHiddenDuringCurtain(state), "curtain: bullets hidden during hold (judgment still runs)");
+    Check(!BlackCurtainHitsPoint(state, PointMilli{0, 0}, params), "curtain: hold does not sweep-hit");
+
+    for (std::uint32_t i = 0; i < params.hold_ticks; ++i) {
+        AdvanceBlackCurtain(&state, 0, params);
+    }
+    Check(state.phase == BlackCurtainPhase::Sweep, "curtain: hold -> sweep at exactly T5");
+    Check(!BulletsHiddenDuringCurtain(state), "curtain: bullets visible again during sweep");
+    Check(state.edge_y_milli == params.sweep_start_y_milli, "curtain: sweep starts at top edge");
+
+    // 扫屏推进：22/45 处边缘 = -480000 + 960000×22/45 = -10667。
+    for (std::uint32_t i = 0; i < 22; ++i) {
+        AdvanceBlackCurtain(&state, 0, params);
+    }
+    Check(BlackCurtainHitsPoint(state, PointMilli{0, -10667}, params),
+          "curtain: point on sweep edge hits");
+    Check(!BlackCurtainHitsPoint(state, PointMilli{0, -10667 + 2501}, params),
+          "curtain: point off the sweep edge misses");
+    Check(!BlackCurtainHitsPoint(state, PointMilli{0, -480000}, params),
+          "curtain: edge line has moved away from start");
+
+    for (std::uint32_t i = 22; i < params.sweep_ticks; ++i) {
+        AdvanceBlackCurtain(&state, 0, params);
+    }
+    Check(state.phase == BlackCurtainPhase::Idle, "curtain: sweep -> idle at exactly T6");
+    Check(!BlackCurtainHitsPoint(state, PointMilli{0, 0}, params), "curtain: idle never hits");
+}
+
 int main() {
     TestFamilyAStraightLine();
     TestFamilyBAccelerate();
@@ -494,6 +634,9 @@ int main() {
     TestDeterminism();
     TestCoverage();
     TestPatternRhythm();
+    TestJudgmentGeometry();
+    TestIronFistStateMachine();
+    TestBlackCurtainStateMachine();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " danmaku test(s) failed\n";

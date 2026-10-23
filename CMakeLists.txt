@@ -61,6 +61,7 @@ add_library(phk_battle_core
     src/danmaku/bullet_motion.cpp
     src/danmaku/chain_split.cpp
     src/danmaku/emitter.cpp
+    src/danmaku/judgment.cpp
     src/danmaku/pattern_timeline.cpp
     src/danmaku/player_loadout.cpp
     src/handshake.cpp
