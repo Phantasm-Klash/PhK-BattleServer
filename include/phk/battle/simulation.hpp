@@ -14,7 +14,8 @@
 
 namespace phk::battle {
 
-inline constexpr std::uint32_t kBattleTickRateHz = 60;
+// 64 tick 基准（计划 §2.1）：真实加速，非重采样；每帧常量数值原样当每 tick 用。
+inline constexpr std::uint32_t kBattleTickRateHz = 64;
 inline constexpr std::int32_t kArenaHalfWidthMilli = 120000;
 inline constexpr std::int32_t kArenaHalfHeightMilli = 90000;
 inline constexpr std::size_t kDefaultMaxModeActionIdBytes = 128;

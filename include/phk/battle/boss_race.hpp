@@ -24,7 +24,11 @@
 namespace phk::battle {
 
 inline constexpr const char* kMvpBossRaceModeId = "mvp_boss_race";
-inline constexpr std::uint32_t kBossRaceTickRateHz = 60;
+// 64 tick 基准（DANMAKU_CLIENT_ENGINE_PLAN §2.1，用户 2026-10-24 裁决）：
+// 这是**真实加速**（每秒多算 4 tick），不是从 60 重采样。因此下面所有
+// 「每帧」常量（速度、角度增量、周期 tick 数）数值原样保留，直接当每 tick 用；
+// 禁止任何 ×60/64 换算，也禁止引入 FramesToTicks 之类的缩放工具。
+inline constexpr std::uint32_t kBossRaceTickRateHz = 64;
 inline constexpr std::uint64_t kBossRaceDefaultBossHp = 6000;
 inline constexpr std::uint64_t kBossRaceDamagePerShotTick = 10;
 inline constexpr std::uint32_t kBossRacePatternPeriodTicks = 45;
@@ -66,6 +70,79 @@ struct BossRaceConfig {
     std::vector<PlayerLoadoutSpec> loadouts;
 };
 
+// ---------------------------------------------------------------------------
+// §2.8 快照 wire 增补（race 与 coop 共用；全部字段带默认值 → 向后兼容）
+//
+// P1 只保证「字段存在且可解析」，数值先填现有状态或合理占位：
+//   * effects 恒为空数组（铁拳/黑色帷幕状态机 P4 接线后才填）；
+//   * hand 恒为空、deck_remaining/draw_cooldown_ticks 恒为 0（对局内抽卡 P3）；
+//   * chains 由活跃弹幕聚合（chain_id = pattern_index，node_id = 0，rng_cursor = 0）；
+//   * events 恒为空、event_cursor 恒为 0（判定事件 P3 才产生）。
+// ---------------------------------------------------------------------------
+
+// boss 移动方式（§2.6 wire 取值）。P1 只把既有整数三角波映射成 "sine"，
+// move_to / move_by / angle_speed 留给 P4 的真实状态机。
+struct BossMovementWire {
+    std::string type = "static";  // static|move_to|move_by|sine|angle_speed
+    std::int32_t phase_t = 0;     // 该移动方式内部的相位 tick
+};
+
+// 特殊机制状态（§2.4 铁拳 / 黑色帷幕）。state 取值：
+//   iron_fist     : windup|strike|recover
+//   black_curtain : fall|hold|sweep
+struct BossEffectWire {
+    std::string type;    // iron_fist | black_curtain
+    std::string state;   // 见上
+    std::int32_t t_remaining = 0;
+    // iron_fist：起点 (x0,y0) + 单位方向 (dx,dy)（milli 定点）+ 长度。
+    std::int32_t x0_milli = 0;
+    std::int32_t y0_milli = 0;
+    std::int32_t dx_milli = 0;
+    std::int32_t dy_milli = 0;
+    std::int32_t length_milli = 0;
+    // black_curtain：sweep 期扫屏边缘线 y。
+    std::int32_t edge_y_milli = 0;
+};
+
+// 链状态（§2.5）：客户端镜像重放校验用。
+struct BossChainWire {
+    std::uint32_t chain_id = 0;
+    std::uint32_t pattern_index = 0;
+    std::uint32_t node_id = 0;
+    std::uint32_t generation = 0;
+    std::uint32_t rng_cursor = 0;
+};
+
+// 手牌（§2.3 / §2.9 手牌栏）。
+struct BossHandCardWire {
+    std::string card_id;
+    std::int32_t slot = -1;
+    bool selected = false;
+};
+
+// 判定/机制事件行（§2.4.6）：tick + 类型 + 归属玩家。
+struct BossEventWire {
+    std::uint64_t tick = 0;
+    std::string type;
+    std::string player_id;
+};
+
+// boss 本体视角：race = 本地玩家自己的 Boss 副本（广播负载共享一份，hp 取各
+// 副本最大值；每玩家真实 HP 见 players[].boss_current_hp），coop = 共享 Boss。
+struct BossStateWire {
+    std::int32_t x_milli = 0;
+    std::int32_t y_milli = 0;
+    std::uint64_t hp = 0;
+    std::uint64_t max_hp = 0;
+    std::uint32_t phase = 0;
+    BossMovementWire movement;
+    std::vector<BossEffectWire> effects;
+};
+
+// P1 占位默认：判定系统落地前没有命/残机/炸弹消耗，故固定给「满状态」。
+inline constexpr std::uint32_t kSnapshotDefaultLives = 1;
+inline constexpr std::uint32_t kSnapshotDefaultBombs = 3;
+
 struct BossRaceBullet {
     std::string bullet_id;
     std::string owner_player_id;  // the player whose Boss copy fired it
@@ -78,6 +155,10 @@ struct BossRaceBullet {
     // 真实弹幕扩展（tna-1.40）：原版 kEnemyBullet 值 + bulletFunc 编号。
     std::int32_t bullet_kind = 0;
     std::int32_t motion_func = 0;
+    // §2.8 增补：所属链、分裂代数、帷幕 hold 期隐藏标记（判定照算）。
+    std::uint32_t chain_id = 0;
+    std::uint32_t generation = 0;
+    bool hidden = false;
 };
 
 struct BossRacePlayerSnapshot {
@@ -87,6 +168,14 @@ struct BossRacePlayerSnapshot {
     std::uint64_t boss_current_hp = 0;
     std::uint64_t damage_dealt = 0;
     bool connected = true;
+    // §2.8 增补（客户端插值 §2.9 用 vx/vy，其余为判定系统预留）。
+    std::int32_t vx_milli = 0;
+    std::int32_t vy_milli = 0;
+    std::int32_t facing_millideg = 0;
+    std::uint32_t lives = kSnapshotDefaultLives;
+    std::uint32_t bombs = kSnapshotDefaultBombs;
+    std::uint64_t invulnerable_until_tick = 0;
+    std::uint32_t graze = 0;
 };
 
 struct BossRaceSnapshot {
@@ -97,6 +186,14 @@ struct BossRaceSnapshot {
     std::vector<BossRacePlayerSnapshot> players;
     std::vector<BossRaceBullet> bullets;
     std::string state_hash;
+    // §2.8 增补。
+    BossStateWire boss;
+    std::vector<BossChainWire> chains;
+    std::vector<BossHandCardWire> hand;
+    std::uint32_t deck_remaining = 0;
+    std::uint32_t draw_cooldown_ticks = 0;
+    std::vector<BossEventWire> events;
+    std::uint64_t event_cursor = 0;
 };
 
 // Returns the ten pattern ids, in scheduler order (real tna-1.40 patterns).
@@ -171,6 +268,9 @@ private:
         std::string player_id;
         std::int32_t x_milli = 0;
         std::int32_t y_milli = 0;
+        // 本 tick 位移速度（§2.8 快照 vx/vy；客户端 §2.9 用它做速度外推插值）。
+        std::int32_t vx_milli = 0;
+        std::int32_t vy_milli = 0;
         std::uint64_t last_seq = 0;
         std::uint64_t boss_current_hp = 0;
         std::uint64_t damage_dealt = 0;

@@ -26,7 +26,8 @@
 namespace phk::battle {
 
 inline constexpr const char* kCoopBossModeId = "coop_boss";
-inline constexpr std::uint32_t kCoopBossTickRateHz = 60;
+// 64 tick 基准（计划 §2.1）：真实加速，非重采样；周期常量数值原样不动。
+inline constexpr std::uint32_t kCoopBossTickRateHz = 64;
 inline constexpr std::int32_t kCoopArenaHalfMilli = 90000;
 inline constexpr std::uint64_t kCoopBossHpPerPlayer = 5000;
 inline constexpr std::uint64_t kCoopDamagePerShotTick = 10;
@@ -83,6 +84,10 @@ struct CoopBossBullet {
     std::uint32_t radius_milli = 4000;
     std::uint32_t kind = 0;
     std::string pattern_id;
+    // §2.8 增补（coop 没有链式分裂，恒为 0/0/false；字段存在以统一双端解析）。
+    std::uint32_t chain_id = 0;
+    std::uint32_t generation = 0;
+    bool hidden = false;
 };
 
 struct CoopBossPlayerSnapshot {
@@ -96,6 +101,13 @@ struct CoopBossPlayerSnapshot {
     bool connected = true;
     bool locked = false;     // cannon 封锁中（位移/射击冻结）
     bool shielded = false;   // 本方向被格挡（伤害归零）
+    // §2.8 增补（与 race 同名字段同语义）。
+    std::int32_t vx_milli = 0;
+    std::int32_t vy_milli = 0;
+    std::uint32_t lives = kSnapshotDefaultLives;
+    std::uint32_t bombs = kSnapshotDefaultBombs;
+    std::uint64_t invulnerable_until_tick = 0;
+    std::uint32_t graze = 0;
 };
 
 struct CoopBossSnapshot {
@@ -111,6 +123,14 @@ struct CoopBossSnapshot {
     std::vector<CoopBossPlayerSnapshot> players;
     std::vector<CoopBossBullet> bullets;
     std::string state_hash;
+    // §2.8 增补（共享 Boss 视角；coop 无链树/手牌/判定事件，P1 保持默认空值）。
+    BossStateWire boss;
+    std::vector<BossChainWire> chains;
+    std::vector<BossHandCardWire> hand;
+    std::uint32_t deck_remaining = 0;
+    std::uint32_t draw_cooldown_ticks = 0;
+    std::vector<BossEventWire> events;
+    std::uint64_t event_cursor = 0;
 };
 
 [[nodiscard]] bool IsCoopBossMode(const std::string& mode_id);
@@ -156,6 +176,9 @@ private:
         std::string player_id;
         std::int32_t x_milli = 0;
         std::int32_t y_milli = 0;
+        // 本 tick 位移速度（§2.8 快照 vx/vy；封锁时为 0）。
+        std::int32_t vx_milli = 0;
+        std::int32_t vy_milli = 0;
         std::uint64_t last_seq = 0;
         std::uint64_t damage_dealt = 0;
         bool connected = true;

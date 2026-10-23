@@ -258,12 +258,21 @@ void CoopBossSimulation::ApplyPlayerTick(std::uint64_t tick) {
         // 巨炮封锁：该座位位移与射击冻结（契约 §2.3.3）。
         const bool locked = (lock_dir_ >= 0 && static_cast<std::uint32_t>(lock_dir_) == seat);
         if (!locked) {
-            if ((input.direction_bits & 0x1u) != 0) player.y_milli -= kCoopMoveMilli;
-            if ((input.direction_bits & 0x2u) != 0) player.x_milli += kCoopMoveMilli;
-            if ((input.direction_bits & 0x4u) != 0) player.y_milli += kCoopMoveMilli;
-            if ((input.direction_bits & 0x8u) != 0) player.x_milli -= kCoopMoveMilli;
+            std::int32_t vx = 0;
+            std::int32_t vy = 0;
+            if ((input.direction_bits & 0x1u) != 0) vy -= kCoopMoveMilli;
+            if ((input.direction_bits & 0x2u) != 0) vx += kCoopMoveMilli;
+            if ((input.direction_bits & 0x4u) != 0) vy += kCoopMoveMilli;
+            if ((input.direction_bits & 0x8u) != 0) vx -= kCoopMoveMilli;
+            player.vx_milli = vx;
+            player.vy_milli = vy;
+            player.x_milli += vx;
+            player.y_milli += vy;
             player.x_milli = ClampMilli(player.x_milli, -kCoopArenaHalfMilli, kCoopArenaHalfMilli);
             player.y_milli = ClampMilli(player.y_milli, -kCoopArenaHalfMilli, kCoopArenaHalfMilli);
+        } else {
+            player.vx_milli = 0;
+            player.vy_milli = 0;
         }
         // 射击：对共享 Boss 造成伤害；本方向被格挡时归零（契约 §2.3.2）。
         const bool shielded = (shield_dir_mask_ & (1u << seat)) != 0;
@@ -487,6 +496,12 @@ CoopBossSnapshot CoopBossSimulation::Snapshot() const {
         player.connected = item.second.connected;
         player.locked = (lock_dir_ >= 0 && static_cast<std::uint32_t>(lock_dir_) == seat);
         player.shielded = (shield_dir_mask_ & (1u << seat)) != 0;
+        player.vx_milli = item.second.vx_milli;
+        player.vy_milli = item.second.vy_milli;
+        player.lives = kSnapshotDefaultLives;
+        player.bombs = kSnapshotDefaultBombs;
+        player.invulnerable_until_tick = 0;  // 判定系统 P3
+        player.graze = 0;                    // 擦弹计数 P3
         snapshot.players.push_back(std::move(player));
         ++seat;
     }
@@ -502,8 +517,20 @@ CoopBossSnapshot CoopBossSimulation::Snapshot() const {
         bullet.radius_milli = live.radius_milli;
         bullet.kind = live.kind;
         bullet.pattern_id = live.pattern_id;
+        bullet.chain_id = 0;    // coop 无链式分裂
+        bullet.generation = 0;
+        bullet.hidden = false;  // 黑色帷幕 P4
         snapshot.bullets.push_back(std::move(bullet));
     }
+    // §2.8 共享 Boss 视角：coop 的 Boss 固定在池中心（无移动状态机）。
+    snapshot.boss.x_milli = 0;
+    snapshot.boss.y_milli = 0;
+    snapshot.boss.hp = boss_hp_;
+    snapshot.boss.max_hp = config_.boss_max_hp;
+    snapshot.boss.phase = 0;
+    snapshot.boss.movement.type = "static";
+    snapshot.boss.movement.phase_t = 0;
+    // chains/hand/events 在 coop 无对应机制，保持空数组与 0 默认值。
     snapshot.state_hash = CanonicalStateHash();
     return snapshot;
 }

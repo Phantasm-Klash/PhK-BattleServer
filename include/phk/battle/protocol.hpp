@@ -51,6 +51,12 @@ struct BattleInput {
     bool bomb = false;
     int card_slot = -1;
     std::string mode_action_id;
+    // 对局内抽卡/选卡/用卡（DANMAKU_CLIENT_ENGINE_PLAN §2.3）。全部可选：
+    // 老客户端不发这三字段时解码结果即下面的默认值（card_select=-1 = 未选择）。
+    // wire 位置 = mode_action_id 之后、可选 ticket 块之前，见 match_lifecycle.cpp。
+    bool card_draw = false;
+    std::int8_t card_select = -1;
+    bool card_use = false;
 };
 
 struct BattleModeAction {

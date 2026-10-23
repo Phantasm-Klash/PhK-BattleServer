@@ -67,6 +67,27 @@ std::int32_t ClampMilli(std::int32_t value, std::int32_t lo, std::int32_t hi) {
     return value;
 }
 
+// §2.8 wire：boss 移动方式名。P1 把既有整数三角波（SwayX/BobY）统一映射成
+// "sine"；真实 move_to/move_by/angle_speed 状态机 P4 再引入。
+const char* BossMovementWireType(danmaku::BossMovement kind) {
+    switch (kind) {
+        case danmaku::BossMovement::Static: return "static";
+        case danmaku::BossMovement::SwayX:
+        case danmaku::BossMovement::BobY: return "sine";
+    }
+    return "static";
+}
+
+// §2.8 wire：自机朝向（0=上，9000=右，18000=下，27000=左；0.01°）。
+// 原版自机只做横向倾斜，故只按左右输入给朝向，其余保持朝上。
+std::int32_t FacingMilliDegFromDirection(std::uint32_t direction_bits) {
+    const bool left = (direction_bits & 0x8u) != 0;
+    const bool right = (direction_bits & 0x2u) != 0;
+    if (left && !right) return 27000;
+    if (right && !left) return 9000;
+    return 0;
+}
+
 }  // namespace
 
 const std::vector<std::string>& BossRacePatternIds() {
@@ -308,10 +329,16 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
 
         // Movement: 8-direction bitmask (0=up,1=right,2=down,3=left), 3000 milli/tick.
         constexpr std::int32_t kMoveMilli = 3000;
-        if ((input.direction_bits & 0x1u) != 0) { player.y_milli -= kMoveMilli; }
-        if ((input.direction_bits & 0x2u) != 0) { player.x_milli += kMoveMilli; }
-        if ((input.direction_bits & 0x4u) != 0) { player.y_milli += kMoveMilli; }
-        if ((input.direction_bits & 0x8u) != 0) { player.x_milli -= kMoveMilli; }
+        std::int32_t vx = 0;
+        std::int32_t vy = 0;
+        if ((input.direction_bits & 0x1u) != 0) { vy -= kMoveMilli; }
+        if ((input.direction_bits & 0x2u) != 0) { vx += kMoveMilli; }
+        if ((input.direction_bits & 0x4u) != 0) { vy += kMoveMilli; }
+        if ((input.direction_bits & 0x8u) != 0) { vx -= kMoveMilli; }
+        player.vx_milli = vx;
+        player.vy_milli = vy;
+        player.x_milli += vx;
+        player.y_milli += vy;
         player.x_milli = ClampMilli(player.x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
         player.y_milli = ClampMilli(player.y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
 
@@ -761,6 +788,13 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         player.boss_current_hp = item.second.boss_current_hp;
         player.damage_dealt = item.second.damage_dealt;
         player.connected = item.second.connected;
+        player.vx_milli = item.second.vx_milli;
+        player.vy_milli = item.second.vy_milli;
+        player.facing_millideg = FacingMilliDegFromDirection(item.second.last_input.direction_bits);
+        player.lives = item.second.alive ? kSnapshotDefaultLives : 0u;
+        player.bombs = kSnapshotDefaultBombs;
+        player.invulnerable_until_tick = 0;  // 判定系统 P3 才产生无敌帧
+        player.graze = 0;                    // 擦弹计数 P3
         snapshot.players.push_back(player);
     }
     snapshot.bullets.reserve(live_bullets_.size());
@@ -776,8 +810,53 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         bullet.pattern_id = live.pattern_id;
         bullet.bullet_kind = live.motion.bullet_kind;
         bullet.motion_func = live.motion.bullet_func_no;
+        bullet.chain_id = live.pattern_index;  // P1 占位：链 id = 发射它的 pattern
+        bullet.generation = live.generation;
+        bullet.hidden = false;                 // 黑色帷幕 hold 期 P4 置真
         snapshot.bullets.push_back(std::move(bullet));
     }
+
+    // §2.8 boss 视角：race 每玩家一份 Boss 副本，几何/移动完全相同，故广播负载
+    // 共享一份；hp 取各副本剩余最大值（每玩家真实 HP 见 players[].boss_current_hp）。
+    std::int32_t boss_offset_x = 0;
+    std::int32_t boss_offset_y = 0;
+    if (boss_entry_ != nullptr) {
+        danmaku::BossEmitterOffsetMilli(boss_entry_->movement, current_tick_, &boss_offset_x, &boss_offset_y);
+    }
+    snapshot.boss.x_milli = kBossOriginXMilli + boss_offset_x;
+    snapshot.boss.y_milli = kBossOriginYMilli + boss_offset_y;
+    snapshot.boss.max_hp = config_.boss_max_hp;
+    snapshot.boss.hp = players_.empty() ? config_.boss_max_hp : 0;
+    for (const auto& item : players_) {
+        snapshot.boss.hp = std::max<std::uint64_t>(snapshot.boss.hp, item.second.boss_current_hp);
+    }
+    // phase = 当前波次使用的 pattern index（P1 占位；P2 链树落地后换真实阶段号）。
+    snapshot.boss.phase = static_cast<std::uint32_t>(PatternIndexForTick(current_tick_));
+    if (boss_entry_ != nullptr) {
+        snapshot.boss.movement.type = BossMovementWireType(boss_entry_->movement.kind);
+        snapshot.boss.movement.phase_t = boss_entry_->movement.period_ticks == 0
+            ? 0
+            : static_cast<std::int32_t>(current_tick_ % boss_entry_->movement.period_ticks);
+    }
+
+    // §2.8 chains：按 pattern_index 聚合活跃弹幕（node_id/rng_cursor P2 才有真值）。
+    std::map<std::uint32_t, std::uint32_t> chain_generation;
+    for (const LiveBullet& live : live_bullets_) {
+        std::uint32_t& generation = chain_generation[live.pattern_index];
+        generation = std::max(generation, live.generation);
+    }
+    for (const auto& item : chain_generation) {
+        BossChainWire chain;
+        chain.chain_id = item.first;
+        chain.pattern_index = item.first;
+        chain.node_id = 0;
+        chain.generation = item.second;
+        chain.rng_cursor = 0;
+        snapshot.chains.push_back(chain);
+    }
+
+    // hand/deck/draw_cooldown/events：对局内抽卡（P3）与判定事件（P3）才产生，
+    // P1 保持空数组与 0 默认值（字段存在即可解析）。
     snapshot.state_hash = CanonicalStateHash();
     return snapshot;
 }

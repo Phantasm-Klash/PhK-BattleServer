@@ -322,6 +322,55 @@ void TestInputValidation() {
 
 }  // namespace
 
+// 64 tick 基准（计划 §2.1）：coop 同样只改 tick 率，周期常量原样保留。
+void TestTickRateIs64AndSnapshotWireFields() {
+    Check(phk::battle::kCoopBossTickRateHz == 64, "coop tick rate is 64 Hz");
+    Check(phk::battle::kCoopFanIntervalTicks == 90, "coop fan interval stays 90 ticks (no scaling)");
+    Check(phk::battle::kCoopCannonIntervalTicks == 600, "coop cannon interval stays 600 ticks (no scaling)");
+
+    CoopBossSimulation sim(MakeConfig(20261024));
+    Check(sim.Config().tick_rate_hz == 64, "coop config defaults to 64 Hz");
+    sim.AddPlayer("player_a", 0, 70200);
+    sim.AddPlayer("player_b", 0, -70200);
+
+    for (std::uint64_t tick = 1; tick <= 90; ++tick) {
+        // seat0 向上（朝 Boss），seat1 向下。
+        sim.SubmitInput(MakeInput("match_coop_000001", "player_a", tick, tick, true, 0x1u));
+        sim.SubmitInput(MakeInput("match_coop_000001", "player_b", tick, tick, true, 0x4u));
+        sim.Tick();
+    }
+    Check(sim.CurrentTick() == 90, "90 Tick() calls advance 90 ticks");
+
+    const CoopBossSnapshot snapshot = sim.Snapshot();
+    // §2.8 boss 视角：coop 共享 Boss，固定在池中心。
+    Check(snapshot.boss.hp == snapshot.boss_hp, "boss.hp mirrors shared boss_hp");
+    Check(snapshot.boss.max_hp == snapshot.boss_max_hp, "boss.max_hp mirrors boss_max_hp");
+    Check(snapshot.boss.x_milli == 0 && snapshot.boss.y_milli == 0, "coop boss sits at arena center");
+    Check(snapshot.boss.movement.type == "static", "coop boss movement is static");
+    Check(snapshot.boss.effects.empty(), "coop boss.effects defaults to empty");
+
+    Check(snapshot.players.size() == 2, "two coop players in snapshot");
+    const phk::battle::CoopBossPlayerSnapshot& player = snapshot.players[0];
+    Check(player.vy_milli == -3000, "coop player vy mirrors this tick's movement");
+    Check(player.vx_milli == 0, "coop player vx is zero for straight-up movement");
+    Check(player.lives == 1 && player.bombs == 3, "coop lives/bombs placeholders");
+    Check(player.invulnerable_until_tick == 0 && player.graze == 0, "coop judge fields default to 0");
+
+    Check(!snapshot.bullets.empty(), "coop emitted bullets");
+    bool bullets_carry_wire_fields = true;
+    for (const phk::battle::CoopBossBullet& bullet : snapshot.bullets) {
+        if (bullet.chain_id != 0 || bullet.generation != 0 || bullet.hidden) {
+            bullets_carry_wire_fields = false;
+        }
+    }
+    Check(bullets_carry_wire_fields, "coop bullets carry chain_id/generation/hidden defaults");
+
+    Check(snapshot.chains.empty(), "coop has no chains");
+    Check(snapshot.hand.empty() && snapshot.deck_remaining == 0 && snapshot.draw_cooldown_ticks == 0,
+          "coop hand/deck defaults");
+    Check(snapshot.events.empty() && snapshot.event_cursor == 0, "coop events defaults");
+}
+
 int main() {
     TestSeatAssignment();
     TestFanAttackCoversEveryDirection();
@@ -331,6 +380,7 @@ int main() {
     TestDeterminismIsByteIdentical();
     TestBossDefeatFinishesMatch();
     TestInputValidation();
+    TestTickRateIs64AndSnapshotWireFields();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " coop_boss test(s) failed\n";

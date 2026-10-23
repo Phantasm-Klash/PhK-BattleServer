@@ -137,8 +137,103 @@ std::string JsonEscape(const std::string& text) {
     return out;
 }
 
-BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
-    BossRaceConfig boss;
+// §2.8 boss 对象（race/coop 共用序列化）：{x,y,hp,max_hp,phase,movement,effects}。
+void AppendBossStateJson(std::string& json, const BossStateWire& boss) {
+    json += "{\"x_milli\":";
+    json += std::to_string(boss.x_milli);
+    json += ",\"y_milli\":";
+    json += std::to_string(boss.y_milli);
+    json += ",\"hp\":";
+    json += std::to_string(boss.hp);
+    json += ",\"max_hp\":";
+    json += std::to_string(boss.max_hp);
+    json += ",\"phase\":";
+    json += std::to_string(boss.phase);
+    json += ",\"movement\":{\"type\":\"";
+    json += JsonEscape(boss.movement.type);
+    json += "\",\"phase_t\":";
+    json += std::to_string(boss.movement.phase_t);
+    json += "},\"effects\":[";
+    for (std::size_t i = 0; i < boss.effects.size(); ++i) {
+        const BossEffectWire& effect = boss.effects[i];
+        if (i != 0) json += ',';
+        json += "{\"type\":\"";
+        json += JsonEscape(effect.type);
+        json += "\",\"state\":\"";
+        json += JsonEscape(effect.state);
+        json += "\",\"t_remaining\":";
+        json += std::to_string(effect.t_remaining);
+        json += ",\"x0_milli\":";
+        json += std::to_string(effect.x0_milli);
+        json += ",\"y0_milli\":";
+        json += std::to_string(effect.y0_milli);
+        json += ",\"dx_milli\":";
+        json += std::to_string(effect.dx_milli);
+        json += ",\"dy_milli\":";
+        json += std::to_string(effect.dy_milli);
+        json += ",\"length_milli\":";
+        json += std::to_string(effect.length_milli);
+        json += ",\"edge_y_milli\":";
+        json += std::to_string(effect.edge_y_milli);
+        json += '}';
+    }
+    json += "]}";
+}
+
+// §2.8 chains / hand / events（两套快照同形）。
+void AppendChainsJson(std::string& json, const std::vector<BossChainWire>& chains) {
+    json += '[';
+    for (std::size_t i = 0; i < chains.size(); ++i) {
+        const BossChainWire& chain = chains[i];
+        if (i != 0) json += ',';
+        json += "{\"chain_id\":";
+        json += std::to_string(chain.chain_id);
+        json += ",\"pattern_index\":";
+        json += std::to_string(chain.pattern_index);
+        json += ",\"node_id\":";
+        json += std::to_string(chain.node_id);
+        json += ",\"generation\":";
+        json += std::to_string(chain.generation);
+        json += ",\"rng_cursor\":";
+        json += std::to_string(chain.rng_cursor);
+        json += '}';
+    }
+    json += ']';
+}
+
+void AppendHandJson(std::string& json, const std::vector<BossHandCardWire>& hand) {
+    json += '[';
+    for (std::size_t i = 0; i < hand.size(); ++i) {
+        const BossHandCardWire& card = hand[i];
+        if (i != 0) json += ',';
+        json += "{\"card_id\":\"";
+        json += JsonEscape(card.card_id);
+        json += "\",\"slot\":";
+        json += std::to_string(card.slot);
+        json += ",\"selected\":";
+        json += card.selected ? "true" : "false";
+        json += '}';
+    }
+    json += ']';
+}
+
+void AppendEventsJson(std::string& json, const std::vector<BossEventWire>& events) {
+    json += '[';
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const BossEventWire& event = events[i];
+        if (i != 0) json += ',';
+        json += "{\"tick\":";
+        json += std::to_string(event.tick);
+        json += ",\"type\":\"";
+        json += JsonEscape(event.type);
+        json += "\",\"player_id\":\"";
+        json += JsonEscape(event.player_id);
+        json += "\"}";
+    }
+    json += ']';
+}
+
+BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {    BossRaceConfig boss;
     boss.match_id = config.match_id;
     boss.mode_id = config.mode_id;
     boss.ruleset_version = config.ruleset_version;
@@ -200,6 +295,8 @@ std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& 
     json += std::to_string(snapshot.lock_until_tick);
     json += ",\"spiral_active\":";
     json += snapshot.spiral_active ? "true" : "false";
+    json += ",\"boss\":";
+    AppendBossStateJson(json, snapshot.boss);
     json += ",\"players\":[";
     for (std::size_t i = 0; i < snapshot.players.size(); ++i) {
         const CoopBossPlayerSnapshot& player = snapshot.players[i];
@@ -222,6 +319,18 @@ std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& 
         json += player.locked ? "true" : "false";
         json += ",\"shielded\":";
         json += player.shielded ? "true" : "false";
+        json += ",\"vx_milli\":";
+        json += std::to_string(player.vx_milli);
+        json += ",\"vy_milli\":";
+        json += std::to_string(player.vy_milli);
+        json += ",\"lives\":";
+        json += std::to_string(player.lives);
+        json += ",\"bombs\":";
+        json += std::to_string(player.bombs);
+        json += ",\"invulnerable_until_tick\":";
+        json += std::to_string(player.invulnerable_until_tick);
+        json += ",\"graze\":";
+        json += std::to_string(player.graze);
         json += '}';
     }
     json += "],\"bullets\":[";
@@ -246,9 +355,27 @@ std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& 
         json += std::to_string(bullet.kind);
         json += ",\"pattern_id\":\"";
         json += JsonEscape(bullet.pattern_id);
-        json += "\"}";
+        json += "\",\"chain_id\":";
+        json += std::to_string(bullet.chain_id);
+        json += ",\"generation\":";
+        json += std::to_string(bullet.generation);
+        json += ",\"hidden\":";
+        json += bullet.hidden ? "true" : "false";
+        json += '}';
     }
-    json += "],\"state_hash\":\"";
+    json += "],\"chains\":";
+    AppendChainsJson(json, snapshot.chains);
+    json += ",\"hand\":";
+    AppendHandJson(json, snapshot.hand);
+    json += ",\"deck_remaining\":";
+    json += std::to_string(snapshot.deck_remaining);
+    json += ",\"draw_cooldown_ticks\":";
+    json += std::to_string(snapshot.draw_cooldown_ticks);
+    json += ",\"events\":";
+    AppendEventsJson(json, snapshot.events);
+    json += ",\"event_cursor\":";
+    json += std::to_string(snapshot.event_cursor);
+    json += ",\"state_hash\":\"";
     json += JsonEscape(snapshot.state_hash);
     json += "\"}";
 
@@ -339,6 +466,14 @@ bool SendAll(int fd, const char* data, std::size_t size) {
 // ---------------------------------------------------------------------------
 // wire codec
 // ---------------------------------------------------------------------------
+namespace {
+
+// 抽卡/选卡/用卡块的存在标记（§2.3）。取值刻意避开 ticket 块存在位 0/1，
+// 使「老帧（无本块）」与「老帧 + ticket」都能原样解码。
+constexpr std::uint8_t kCardBlockMagic = 0x43;  // 'C'
+
+}  // namespace
+
 std::vector<std::uint8_t> EncodeBattleInputPayload(const BattleInput& input) {
     std::vector<std::uint8_t> out;
     out.push_back(static_cast<std::uint8_t>(BattlePayloadType::Input));
@@ -355,6 +490,14 @@ std::vector<std::uint8_t> EncodeBattleInputPayload(const BattleInput& input) {
     out.push_back(flags);
     out.push_back(static_cast<std::uint8_t>(static_cast<std::int8_t>(input.card_slot)));
     PushString(out, input.mode_action_id);
+    // 抽卡/选卡/用卡块（§2.3）：仅在三字段非默认时写出，默认输入保持逐字节
+    // 与老客户端一致。magic 0x43 与可选 ticket 块的存在位（0/1）不冲突。
+    if (input.card_draw || input.card_select != -1 || input.card_use) {
+        out.push_back(kCardBlockMagic);
+        out.push_back(input.card_draw ? 1u : 0u);
+        out.push_back(static_cast<std::uint8_t>(static_cast<std::int8_t>(input.card_select)));
+        out.push_back(input.card_use ? 1u : 0u);
+    }
     return out;
 }
 
@@ -365,7 +508,7 @@ constexpr std::uint8_t kTicketBlockAbsent = 0;
 constexpr std::uint8_t kTicketBlockPresent = 1;
 
 // Reads the fixed input body that both codecs share; leaves `*cursor` just past
-// `mode_action_id` (i.e. where the optional ticket block starts).
+// the optional card block (i.e. where the optional ticket block starts).
 bool ReadBattleInputBody(
     const std::vector<std::uint8_t>& payload,
     std::size_t* cursor,
@@ -389,6 +532,16 @@ bool ReadBattleInputBody(
     if (*cursor >= payload.size()) return false;
     input.card_slot = static_cast<std::int8_t>(payload[(*cursor)++]);
     if (!ReadString(payload, cursor, &input.mode_action_id)) return false;
+
+    // 抽卡/选卡/用卡块（§2.3）：老帧没有 magic 字节 → 三字段保持默认值。
+    // 老帧若带 ticket 块，其存在位只会是 0/1，绝不会命中 0x43。
+    if (*cursor < payload.size() && payload[*cursor] == kCardBlockMagic) {
+        ++(*cursor);
+        if (payload.size() - *cursor < 3u) return false;
+        input.card_draw = payload[(*cursor)++] != 0;
+        input.card_select = static_cast<std::int8_t>(payload[(*cursor)++]);
+        input.card_use = payload[(*cursor)++] != 0;
+    }
 
     *out = std::move(input);
     return true;
@@ -536,7 +689,9 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
     json += std::to_string(snapshot.winner_tick);
     json += ",\"state_hash\":\"";
     json += JsonEscape(snapshot.state_hash);
-    json += "\",\"players\":[";
+    json += "\",\"boss\":";
+    AppendBossStateJson(json, snapshot.boss);
+    json += ",\"players\":[";
     for (std::size_t i = 0; i < snapshot.players.size(); ++i) {
         const BossRacePlayerSnapshot& player = snapshot.players[i];
         if (i != 0) json += ',';
@@ -552,6 +707,20 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(player.damage_dealt);
         json += ",\"connected\":";
         json += player.connected ? "true" : "false";
+        json += ",\"vx_milli\":";
+        json += std::to_string(player.vx_milli);
+        json += ",\"vy_milli\":";
+        json += std::to_string(player.vy_milli);
+        json += ",\"facing_millideg\":";
+        json += std::to_string(player.facing_millideg);
+        json += ",\"lives\":";
+        json += std::to_string(player.lives);
+        json += ",\"bombs\":";
+        json += std::to_string(player.bombs);
+        json += ",\"invulnerable_until_tick\":";
+        json += std::to_string(player.invulnerable_until_tick);
+        json += ",\"graze\":";
+        json += std::to_string(player.graze);
         json += '}';
     }
     json += "],\"bullets\":[";
@@ -576,11 +745,29 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(bullet.bullet_kind);
         json += ",\"motion_func\":";
         json += std::to_string(bullet.motion_func);
+        json += ",\"chain_id\":";
+        json += std::to_string(bullet.chain_id);
+        json += ",\"generation\":";
+        json += std::to_string(bullet.generation);
+        json += ",\"hidden\":";
+        json += bullet.hidden ? "true" : "false";
         json += ",\"pattern_id\":\"";
         json += JsonEscape(bullet.pattern_id);
         json += "\"}";
     }
-    json += "]}";
+    json += "],\"chains\":";
+    AppendChainsJson(json, snapshot.chains);
+    json += ",\"hand\":";
+    AppendHandJson(json, snapshot.hand);
+    json += ",\"deck_remaining\":";
+    json += std::to_string(snapshot.deck_remaining);
+    json += ",\"draw_cooldown_ticks\":";
+    json += std::to_string(snapshot.draw_cooldown_ticks);
+    json += ",\"events\":";
+    AppendEventsJson(json, snapshot.events);
+    json += ",\"event_cursor\":";
+    json += std::to_string(snapshot.event_cursor);
+    json += '}';
 
     std::vector<std::uint8_t> out;
     out.push_back(static_cast<std::uint8_t>(BattlePayloadType::Snapshot));

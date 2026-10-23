@@ -11,6 +11,7 @@
 #include <string>
 
 #include "phk/battle/boss_race.hpp"
+#include "phk/battle/coop_boss.hpp"  // 64 tick 基准断言要读 coop 常量
 
 namespace {
 
@@ -341,7 +342,8 @@ void WriteGoldenFixture(const std::string& path) {
     std::fprintf(out, "  \"matchSeed\": %llu,\n", static_cast<unsigned long long>(config.match_seed));
     std::fprintf(out, "  \"bossId\": \"%s\",\n", config.boss_id.c_str());
     std::fprintf(out, "  \"rulesetVersion\": \"%s\",\n", config.ruleset_version.c_str());
-    std::fprintf(out, "  \"tickRateHz\": 60,\n");
+    // 64 tick 基准（§2.1）：这是真实加速，不是从 60 重采样，故 fixture 直接写 64。
+    std::fprintf(out, "  \"tickRateHz\": 64,\n");
     std::fprintf(out, "  \"patternPeriodTicks\": 45,\n");
     std::fprintf(out, "  \"tickCount\": %llu,\n", static_cast<unsigned long long>(tick_count));
     std::fprintf(out, "  \"players\": [\n");
@@ -384,6 +386,90 @@ void WriteGoldenFixture(const std::string& path) {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// 64 tick 基准（DANMAKU_CLIENT_ENGINE_PLAN §2.1）
+//
+// 铁则：64 tick 是**真实加速**（每秒多跑 4 tick），不是从 60 重采样。因此所有
+// 「每帧」常量数值原样保留，直接当每 tick 用。本测试把两件事钉死：
+//   1) 三套模拟的 tick 率都是 64；
+//   2) 周期常量一个都没被 ×60/64 缩放（45 还是 45、90 还是 90、600 还是 600）。
+// 后来者若手滑加换算，这里会立刻红。
+// ---------------------------------------------------------------------------
+void TestTickRateIs64AndPeriodsUnscaled() {
+    Check(phk::battle::kBossRaceTickRateHz == 64, "race tick rate is 64 Hz");
+    Check(phk::battle::kCoopBossTickRateHz == 64, "coop tick rate is 64 Hz");
+    Check(phk::battle::kBattleTickRateHz == 64, "battle tick rate is 64 Hz");
+
+    Check(phk::battle::kBossRacePatternPeriodTicks == 45, "pattern period stays 45 ticks (no scaling)");
+    Check(phk::battle::kCoopFanIntervalTicks == 90, "coop fan interval stays 90 ticks (no scaling)");
+    Check(phk::battle::kCoopCannonIntervalTicks == 600, "coop cannon interval stays 600 ticks (no scaling)");
+    Check(phk::battle::kCoopCannonStartOffset == 450, "coop cannon offset stays 450 ticks (no scaling)");
+    Check(phk::battle::kCoopCannonDurationTicks == 150, "coop cannon duration stays 150 ticks (no scaling)");
+    Check(phk::battle::kCoopSpiralEveryTicks == 6, "coop spiral interval stays 6 ticks (no scaling)");
+
+    auto config = MakeConfig(777u, 1000000);
+    phk::battle::BossRaceSimulation sim(config);
+    Check(sim.Config().tick_rate_hz == 64, "race config defaults to 64 Hz");
+    for (int i = 0; i < 64; ++i) {
+        sim.Tick();
+    }
+    Check(sim.CurrentTick() == 64, "64 Tick() calls advance exactly 64 ticks (= one second at 64 Hz)");
+}
+
+// §2.8 快照 wire 新字段：字段必须存在，且 P1 的占位值符合约定。
+void TestSnapshotCarriesP1WireFields() {
+    auto config = MakeConfig(424242u, 1000000);
+    phk::battle::BossRaceSimulation sim(config);
+    sim.AddPlayer("player_a", 0, 60000);
+    sim.AddPlayer("player_b", 0, 60000);
+
+    // 第 45 tick 是 pattern 波次边界：首波发射 + 链聚合有值。
+    for (std::uint64_t tick = 1; tick <= 45; ++tick) {
+        sim.SubmitInput(MakeInput(config.match_id, "player_a", tick, tick, false, 0x2u /* right */));
+        sim.SubmitInput(MakeInput(config.match_id, "player_b", tick, tick, false, 0u));
+        sim.Tick();
+    }
+
+    const phk::battle::BossRaceSnapshot snapshot = sim.Snapshot();
+    Check(snapshot.tick == 45, "snapshot tick");
+
+    Check(snapshot.boss.max_hp == config.boss_max_hp, "boss.max_hp mirrors config");
+    Check(snapshot.boss.hp > 0 && snapshot.boss.hp <= snapshot.boss.max_hp, "boss.hp within range");
+    Check(snapshot.boss.effects.empty(), "boss.effects defaults to empty (P4 fills it)");
+    Check(snapshot.boss.movement.type == "static", "boss movement defaults to static without catalog");
+    Check(snapshot.boss.movement.phase_t == 0, "boss movement phase_t defaults to 0");
+
+    Check(snapshot.players.size() == 2, "two players in snapshot");
+    const phk::battle::BossRacePlayerSnapshot& player_a = snapshot.players[0];
+    Check(player_a.player_id == "player_a", "players[0] is player_a (map order)");
+    Check(player_a.vx_milli == 3000 && player_a.vy_milli == 0, "player vx/vy mirror this tick's movement");
+    Check(player_a.facing_millideg == 9000, "facing follows horizontal input (9000 = right)");
+    Check(player_a.lives == 1, "lives placeholder = 1");
+    Check(player_a.bombs == 3, "bombs placeholder = 3");
+    Check(player_a.invulnerable_until_tick == 0, "invulnerable_until_tick defaults to 0 (P3)");
+    Check(player_a.graze == 0, "graze defaults to 0 (P3)");
+
+    Check(!snapshot.bullets.empty(), "pattern emitted bullets at the wave boundary");
+    bool bullets_carry_chain_fields = true;
+    for (const phk::battle::BossRaceBullet& bullet : snapshot.bullets) {
+        if (bullet.hidden) bullets_carry_chain_fields = false;
+        if (bullet.generation != 0) bullets_carry_chain_fields = false;
+        if (bullet.chain_id != snapshot.boss.phase) bullets_carry_chain_fields = false;
+    }
+    Check(bullets_carry_chain_fields, "bullets carry chain_id/generation/hidden (hidden=false, gen=0)");
+
+    Check(snapshot.chains.size() == 1, "one chain aggregated for the active pattern");
+    Check(snapshot.chains.front().chain_id == snapshot.boss.phase, "chain_id = active pattern index");
+    Check(snapshot.chains.front().node_id == 0 && snapshot.chains.front().rng_cursor == 0,
+          "chain node_id/rng_cursor placeholders");
+
+    Check(snapshot.hand.empty(), "hand defaults to empty (P3)");
+    Check(snapshot.deck_remaining == 0, "deck_remaining defaults to 0 (P3)");
+    Check(snapshot.draw_cooldown_ticks == 0, "draw_cooldown_ticks defaults to 0 (P3)");
+    Check(snapshot.events.empty(), "events defaults to empty (P3)");
+    Check(snapshot.event_cursor == 0, "event_cursor defaults to 0 (P3)");
+}
+
 int main() {
     if (const char* fixture_path = std::getenv("PHK_BOSS_RACE_FIXTURE"); fixture_path != nullptr) {
         WriteGoldenFixture(fixture_path);
@@ -401,6 +487,8 @@ int main() {
     TestBossSelectionIsDeterministicAndDistinct();
     TestUnknownBossFallsBackToDefault();
     TestPlayerLoadoutSelectsShotAndBomb();
+    TestTickRateIs64AndPeriodsUnscaled();
+    TestSnapshotCarriesP1WireFields();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

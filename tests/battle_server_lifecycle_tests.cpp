@@ -101,6 +101,60 @@ void TestInputCodecRoundTrip() {
     Check(!phk::battle::DecodeBattleInputPayload(truncated, &decoded), "codec rejects truncated frame");
 }
 
+// §2.8 快照 JSON 新字段：键必须存在（客户端按名解析），占位值可解析。
+void TestSnapshotJsonCarriesP1WireFields() {
+    phk::battle::BossRaceConfig config;
+    config.match_id = "match_wire_000001";
+    config.match_seed = 20261024u;
+    config.boss_max_hp = 1000000;
+    phk::battle::BossRaceSimulation sim(config);
+    sim.AddPlayer("player_a", 0, 60000);
+    sim.AddPlayer("player_b", 0, 60000);
+    for (std::uint64_t tick = 1; tick <= 45; ++tick) {
+        sim.SubmitInput(MakeInput(config.match_id, "player_a", tick, tick, true));
+        sim.SubmitInput(MakeInput(config.match_id, "player_b", tick, tick, true));
+        sim.Tick();
+    }
+
+    const auto payload = phk::battle::EncodeBossRaceSnapshotPayload(sim.Snapshot());
+    Check(!payload.empty() &&
+              payload[0] == static_cast<std::uint8_t>(phk::battle::BattlePayloadType::Snapshot),
+          "snapshot payload type byte");
+    const std::string json(payload.begin() + 1, payload.end());
+
+    for (const char* key : {
+             "\"boss\":{",
+             "\"max_hp\":",
+             "\"phase\":",
+             "\"movement\":{\"type\":\"",
+             "\"phase_t\":",
+             "\"effects\":[",
+             "\"vx_milli\":",
+             "\"vy_milli\":",
+             "\"facing_millideg\":",
+             "\"lives\":",
+             "\"bombs\":",
+             "\"invulnerable_until_tick\":",
+             "\"graze\":",
+             "\"chain_id\":",
+             "\"generation\":",
+             "\"hidden\":",
+             "\"chains\":[",
+             "\"hand\":[",
+             "\"deck_remaining\":",
+             "\"draw_cooldown_ticks\":",
+             "\"events\":[",
+             "\"event_cursor\":",
+         }) {
+        Check(json.find(key) != std::string::npos, std::string("snapshot json has ") + key);
+    }
+    Check(json.find("\"hidden\":false") != std::string::npos, "snapshot json: hidden defaults to false");
+    Check(json.find("\"hand\":[]") != std::string::npos, "snapshot json: hand defaults to []");
+    Check(json.find("\"events\":[]") != std::string::npos, "snapshot json: events defaults to []");
+    Check(json.find("\"movement\":{\"type\":\"static\"") != std::string::npos,
+          "snapshot json: movement defaults to static");
+}
+
 // ---------------------------------------------------------------------------
 // 1b. signed ticket enforcement on the app (per-match) path
 // ---------------------------------------------------------------------------
@@ -317,6 +371,59 @@ void TestTicketFrameCodec() {
 }
 
 }  // namespace ticket_test
+
+// §2.3 抽卡/选卡/用卡：新帧往返、默认帧不加字节（老帧逐字节兼容）、
+// 老帧带 ticket 仍能解出 ticket（magic 0x43 不与 ticket 存在位 0/1 冲突）。
+void TestCardInputFieldsCodec() {
+    phk::battle::BattleInput input = MakeInput("match_card_000001", "player_a", 11, 5, true);
+    input.card_draw = true;
+    input.card_select = 2;
+    input.card_use = true;
+
+    const auto payload = phk::battle::EncodeBattleInputPayload(input);
+    phk::battle::BattleInput decoded;
+    Check(phk::battle::DecodeBattleInputPayload(payload, &decoded), "card codec: frame with card block decodes");
+    Check(decoded.card_draw, "card codec: card_draw round-trips");
+    Check(decoded.card_select == 2, "card codec: card_select round-trips");
+    Check(decoded.card_use, "card codec: card_use round-trips");
+    Check(decoded.player_id == input.player_id && decoded.seq == input.seq && decoded.shoot,
+          "card codec: legacy fields intact");
+
+    // 默认三字段（false / -1 / false）不写块 → 与老客户端帧逐字节等长。
+    const phk::battle::BattleInput plain = MakeInput("match_card_000001", "player_a", 11, 5, true);
+    const auto legacy = phk::battle::EncodeBattleInputPayload(plain);
+    Check(payload.size() == legacy.size() + 4, "card codec: default fields add exactly 0 bytes");
+    phk::battle::BattleInput legacy_decoded;
+    Check(phk::battle::DecodeBattleInputPayload(legacy, &legacy_decoded), "card codec: legacy frame decodes");
+    Check(!legacy_decoded.card_draw && legacy_decoded.card_select == -1 && !legacy_decoded.card_use,
+          "card codec: legacy frame yields default card fields");
+
+    // 取消选择：card_select = -1 且其余为真 → 仍然写块并原样回读。
+    phk::battle::BattleInput cancel = MakeInput("match_card_000001", "player_a", 12, 6, false);
+    cancel.card_draw = true;
+    cancel.card_select = -1;
+    phk::battle::BattleInput cancel_decoded;
+    Check(phk::battle::DecodeBattleInputPayload(
+              phk::battle::EncodeBattleInputPayload(cancel), &cancel_decoded),
+          "card codec: draw-only frame decodes");
+    Check(cancel_decoded.card_draw && cancel_decoded.card_select == -1 && !cancel_decoded.card_use,
+          "card codec: draw-only frame keeps card_select = -1");
+
+    // 老帧 + ticket 块：新解码器必须跳过「非 magic」字节，交给 ticket 解析。
+    const auto ticket = ticket_test::MakeTicket("match_card_000001", "player_a", ticket_test::kNow);
+    const auto legacy_with_ticket = phk::battle::EncodeBattleInputWithTicketPayload(plain, ticket);
+    phk::battle::SignedBattleTicket decoded_ticket;
+    Check(phk::battle::DecodeBattleInputTicketPayload(legacy_with_ticket, &decoded_ticket),
+          "card codec: legacy frame with ticket still decodes as ticket");
+    Check(decoded_ticket.ticket.ticket_id == ticket.ticket.ticket_id, "card codec: ticket payload intact");
+
+    // 新帧 + ticket 块：card block 在前，ticket 块仍可解。
+    const auto new_with_ticket = phk::battle::EncodeBattleInputWithTicketPayload(input, ticket);
+    Check(phk::battle::DecodeBattleInputTicketPayload(new_with_ticket, &decoded_ticket),
+          "card codec: card block + ticket block both decode");
+    Check(phk::battle::DecodeBattleInputPayload(new_with_ticket, &decoded), "card codec: card block + ticket as input");
+    Check(decoded.card_select == 2, "card codec: card fields survive ticket suffix");
+}
 
 // ---------------------------------------------------------------------------
 // 2. deterministic result payload + JSON
@@ -1024,10 +1131,12 @@ void TestEventsFlushRetriesAfterFailure() {
 
 int main() {
     TestInputCodecRoundTrip();
+    TestSnapshotJsonCarriesP1WireFields();
     ticket_test::TestTicketFrameCodec();
     ticket_test::TestTicketVerifiedBindsPlayer();
     ticket_test::TestTicketRejectionsRecordReason();
     ticket_test::TestTicketWarnAndOffModes();
+    TestCardInputFieldsCodec();
     TestResultPayloadAndJson();
     TestSocketSmokeRace();
     TestSocketSmokeCoop();
