@@ -494,9 +494,6 @@ std::string JsonEscape(std::string_view value) {
 }
 
 bool ContainsJsonStringField(const std::string& json, std::string_view field_name, const std::string& expected) {
-    if (expected.empty()) {
-        return true;
-    }
     const auto value_start = JsonFieldValueStart(json, field_name);
     if (value_start == std::string_view::npos ||
         value_start >= json.size() ||

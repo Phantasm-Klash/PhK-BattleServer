@@ -2,6 +2,12 @@
 
 Status date: 2026-06-30
 
+## 2026-10-09 Result Empty-String Presence Boundary
+
+- Result string-field verification now requires the top-level field to exist even when the server-owned expected value is empty.
+- CTest and `tools/check_battle_server.py` cover the undefeated World Boss announcement key, preventing a missing empty audit field from being confused with an explicitly emitted empty value.
+- This remains replay/result audit validation only. The C++ battle server still does not send announcements or persist rewards, inventory, wallet, or business database state.
+
 ## 2026-07-01 Retired Encrypted Dispatch Boundary
 
 - CTest now covers encrypted client-to-server dispatch after `RetireMatch`, ensuring retired rooms reject late KCP/AEAD scaffold packets as `match_retired`.
