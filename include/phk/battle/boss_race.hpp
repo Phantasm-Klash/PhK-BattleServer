@@ -55,6 +55,16 @@ inline constexpr const char* kPlayerHitEvent = "player_hit";
 inline constexpr const char* kPlayerGrazeEvent = "player_graze";
 inline constexpr const char* kPlayerDeadEvent = "player_dead";
 inline constexpr const char* kBombUsedEvent = "bomb_used";
+inline constexpr const char* kBossDamageEvent = "boss_damage";
+inline constexpr const char* kSpellPhaseStartEvent = "spell_phase_start";
+inline constexpr const char* kSpellPhaseEndEvent = "spell_phase_end";
+inline constexpr const char* kSpellCaptureEvent = "spell_capture";
+
+// 自机弹 vs Boss 判定（§2.4 第 1 条，只在 kRulesetDanmakuMechanics 下生效）。
+inline constexpr std::int32_t kBossHitRadiusMilli = 40000;  // r_boss ≈40px（P4 进 boss_catalog）
+inline constexpr std::uint64_t kBossDamageEventIntervalTicks = 8;  // boss_damage 聚合上报间隔
+// 符卡阶段：3 段，阈值 100% / 66% / 33%（P4 搬 boss_catalog 数据表）。
+inline constexpr std::uint32_t kSpellPhaseCount = 3;
 
 // 特殊机制排期（P1 占位数值，P4 移到 boss_catalog 数据表，双端同值）。
 // 触发规则：tick % interval == offset 且该机制当前 Idle → 起手；否则推进一 tick。
@@ -158,11 +168,12 @@ struct BossHandCardWire {
     bool selected = false;
 };
 
-// 判定/机制事件行（§2.4.6）：tick + 类型 + 归属玩家。
+// 判定/机制事件行（§2.4.6）：tick + 类型 + 归属玩家 + 数值（伤害/阶段号等）。
 struct BossEventWire {
     std::uint64_t tick = 0;
     std::string type;
     std::string player_id;
+    std::int64_t value = 0;
 };
 
 // boss 本体视角：race = 本地玩家自己的 Boss 副本（广播负载共享一份，hp 取各
@@ -197,6 +208,8 @@ struct BossRaceBullet {
     std::uint32_t chain_id = 0;
     std::uint32_t generation = 0;
     bool hidden = false;
+    // 阶段切换清屏标记（§2.4 第 3 条）：非 0 = 该 tick 被清除，客户端播消弹动画。
+    std::uint64_t vanish_tick = 0;
 };
 
 struct BossRacePlayerSnapshot {
@@ -284,6 +297,18 @@ public:
         std::uint32_t generation = 0
     );
 
+    // 测试/调试注入：放一颗自机弹（只在 kRulesetDanmakuMechanics 下参与判定）。
+    // 生产路径由 SpawnMyBulletsForPlayer 按 player_loadout 表发射，不调用此口。
+    bool InjectMyBulletForTest(
+        const std::string& owner_player_id,
+        std::int32_t x_milli,
+        std::int32_t y_milli,
+        std::int32_t vx_milli,
+        std::int32_t vy_milli,
+        std::uint64_t damage,
+        std::int32_t penetrate = 0
+    );
+
     // F3 事件收集器（与 BattleSimulation 的 card_cast_events_ 同形）：
     // Push 入队（超过 kCardCastEventRowLimit 时丢弃，防宿主不上报时无界增长），
     // Take 排空（limit=0 = 全部），Restore 失败重发时放回队首。
@@ -319,6 +344,11 @@ private:
         std::uint32_t bombs = kDanmakuDefaultBombs;
         std::uint32_t graze = 0;
         std::uint64_t invulnerable_until_tick = 0;
+        // 自机弹：上次齐射 tick、待上报伤害（每 8 tick 聚合成一条 boss_damage）。
+        std::uint64_t last_shot_tick = 0;
+        std::uint64_t pending_boss_damage = 0;
+        // 符卡阶段（0 起；跨阈值 +1，清屏 + spell_phase_start/end）。
+        std::uint32_t spell_phase = 0;
         BattleInput last_input;
     };
 
@@ -335,7 +365,21 @@ private:
         std::uint32_t generation = 0;
         // 擦弹去重：同一颗弹对同一玩家只计一次（§2.4 擦弹计数）。
         bool grazed = false;
+        // 消弹标记：阶段切换清屏时置为该 tick，客户端播消弹动画；下一 tick 移除。
+        std::uint64_t vanish_tick = 0;
         danmaku::BulletMotion motion;
+    };
+
+    // 自机弹（§2.4 第 1 条）：只在 kRulesetDanmakuMechanics 下产生与判定。
+    // 位置/速度用居中 milli（与玩家同坐标系），Boss 命中盒 = 圆心 (kBossOrigin) + r_boss。
+    struct MyBullet {
+        std::string owner_player_id;
+        std::int32_t x_milli = 0;
+        std::int32_t y_milli = 0;
+        std::int32_t vx_milli = 0;
+        std::int32_t vy_milli = 0;
+        std::uint64_t damage = 0;
+        std::int32_t penetrate = 0;  // 剩余穿透次数（>0 命中后继续，递减）
     };
 
     void ResolveBossAndLoadouts();
@@ -345,6 +389,12 @@ private:
     void SpawnRealBulletsForTick(std::uint64_t tick);
     void SpawnSyntheticBulletsForTick(std::uint64_t tick);  // mvp-boss-race-s0 兼容
     void AdvanceBullets(std::uint64_t tick);
+    // 自机弹（§2.4 第 1 条）：发射 / 推进 / vs Boss 命中盒 / 符卡阶段。
+    void SpawnMyBulletsForPlayer(PlayerState& player, std::uint64_t tick);
+    void AdvanceMyBullets(std::uint64_t tick);
+    void JudgeMyBullets(std::uint64_t tick);
+    void ApplyBossDamage(PlayerState& player, std::uint64_t damage, std::uint64_t tick);
+    void CheckSpellPhase(PlayerState& player, std::uint64_t tick);
     // 特殊机制（铁拳/黑色帷幕）状态推进；disabled 时是 no-op（现有模式零变化）。
     void AdvanceSpecialMechanics(std::uint64_t tick);
     // 玩家受击判定（§2.4 第 2 条）：boss 弹 vs 自机判定点/擦弹圈；disabled 时 no-op。
@@ -362,6 +412,7 @@ private:
     std::map<std::string, PlayerState> players_;
     std::map<std::uint64_t, std::map<std::string, BattleInput>> pending_inputs_by_tick_;
     std::vector<LiveBullet> live_bullets_;
+    std::vector<MyBullet> my_bullets_;
     // 解析后的 boss / 自机（构造期固定，运行期不可变 → 确定性）。
     const danmaku::BossCatalogEntry* boss_entry_ = nullptr;
     std::map<std::string, PlayerLoadoutSpec> loadout_by_player_;

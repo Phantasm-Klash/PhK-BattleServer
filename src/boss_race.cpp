@@ -378,6 +378,11 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
             event.type = kBombUsedEvent;
             event.player_id = player.player_id;
             tick_events_.push_back(std::move(event));
+            // 真实路径下炸弹伤害直接结算（炸弹没有弹实体，一次性生效）。
+            if (const danmaku::PlayerBombSpec* bomb = PlayerBombSpecFor(player.player_id);
+                bomb != nullptr && bomb->damage > 0 && player.boss_current_hp > 0) {
+                ApplyBossDamage(player, static_cast<std::uint64_t>(bomb->damage), tick);
+            }
         }
 
         // Shooting damages this player's own Boss copy.
@@ -385,7 +390,9 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
         // 与现状逐字节一致。配置了 shot_type/bomb_type 时改用真实自机表：
         //   * shot_type → danmaku::PlayerShotTable() 的 damage（主弹伤害）；
         //   * bomb_type → danmaku::PlayerBombTable() 的 damage（该 tick 触发的炸弹）。
-        if (player.boss_current_hp > 0 && player.alive) {
+        // kRulesetDanmakuMechanics 下改为「自机弹实体 vs Boss 命中盒」真实判定
+        // （§2.4 第 1 条），这里不再叠加合成伤害。
+        if (!mechanics_.enabled && player.boss_current_hp > 0 && player.alive) {
             std::uint64_t tick_damage = 0;
             if (input.shoot) {
                 tick_damage += kBossRaceDamagePerShotTick;
@@ -405,6 +412,9 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
                 player.boss_current_hp -= damage;
                 player.damage_dealt += damage;
             }
+        } else if (mechanics_.enabled && input.shoot && player.alive) {
+            // 真实路径：按住射击 → 按 loadout 表的冷却节奏发射自机弹实体。
+            SpawnMyBulletsForPlayer(player, tick);
         }
     }
     if (tick_it != pending_inputs_by_tick_.end()) {
@@ -625,8 +635,21 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
     std::vector<AdvanceSplitRequest> requests;
     std::map<std::string, std::uint32_t> host_budget;  // 每玩家本 tick 分裂宿主预算
 
+    // 阶段切换清屏的子弹：上一 tick 已广播 vanish_tick，本 tick 正式移除。
+    live_bullets_.erase(
+        std::remove_if(
+            live_bullets_.begin(),
+            live_bullets_.end(),
+            [tick](const LiveBullet& live) { return live.vanish_tick != 0 && live.vanish_tick < tick; }
+        ),
+        live_bullets_.end()
+    );
+
     for (std::size_t i = 0; i < live_bullets_.size(); ++i) {
         LiveBullet& live = live_bullets_[i];
+        if (live.vanish_tick != 0) {
+            continue;  // 消弹中的子弹不再运动/分裂
+        }
         danmaku::MotionTargets targets;
         const auto owner_it = players_.find(live.owner_player_id);
         if (owner_it != players_.end()) {
@@ -725,12 +748,190 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 自机弹 vs Boss（§2.4 第 1 条，仅 kRulesetDanmakuMechanics）
+// ---------------------------------------------------------------------------
+void BossRaceSimulation::SpawnMyBulletsForPlayer(PlayerState& player, std::uint64_t tick) {
+    const danmaku::PlayerShotSpec* spec = PlayerShotSpecFor(player.player_id);
+    const std::uint64_t cooldown = (spec != nullptr && spec->cooldown_frames > 0)
+        ? static_cast<std::uint64_t>(spec->cooldown_frames)
+        : 8;  // 无 loadout 时的默认齐射间隔（帧→tick 数值原样，不做缩放）
+    if (player.last_shot_tick != 0 && tick - player.last_shot_tick < cooldown) {
+        return;
+    }
+    player.last_shot_tick = tick;
+
+    const int volley = (spec != nullptr && spec->bullets_per_volley > 0) ? spec->bullets_per_volley : 1;
+    for (int i = 0; i < volley; ++i) {
+        if (my_bullets_.size() >= kBossRaceMaxBulletsPerPlayer * kBossRaceMaxPlayers) {
+            break;
+        }
+        double angle_deg = 90.0;  // 90° = 正上方（原版约定）
+        double speed = (spec != nullptr && spec->speed > 0.0) ? spec->speed : 12.0;
+        double offset_x = 0.0;
+        double offset_y = 0.0;
+        int damage = (spec != nullptr && spec->damage > 0) ? spec->damage : 1;
+        if (spec != nullptr && spec->bullets != nullptr && i < spec->bullet_count) {
+            angle_deg = spec->bullets[i].angle_deg;
+            if (spec->bullets[i].speed > 0.0) speed = spec->bullets[i].speed;
+            offset_x = spec->bullets[i].dx;
+            offset_y = spec->bullets[i].dy;
+        } else if (spec != nullptr && volley > 1) {
+            // 没有逐弹表时，把齐射角度均分到 [angle_min, angle_max]。
+            const double span = spec->angle_max_deg - spec->angle_min_deg;
+            angle_deg = spec->angle_min_deg + span * static_cast<double>(i) / static_cast<double>(volley - 1);
+        }
+
+        MyBullet bullet;
+        bullet.owner_player_id = player.player_id;
+        bullet.x_milli = player.x_milli + static_cast<std::int32_t>(std::llround(offset_x * kMilliPerPixel));
+        bullet.y_milli = player.y_milli + static_cast<std::int32_t>(std::llround(offset_y * kMilliPerPixel));
+        const double rad = angle_deg * (kPi / 180.0);
+        bullet.vx_milli = static_cast<std::int32_t>(std::llround(speed * kMilliPerPixel * std::cos(rad)));
+        bullet.vy_milli = -static_cast<std::int32_t>(std::llround(speed * kMilliPerPixel * std::sin(rad)));
+        bullet.damage = static_cast<std::uint64_t>(damage);
+        bullet.penetrate = 0;  // 自机射击表没有穿透列 → 默认单段（穿透留给测试注入验证）
+        my_bullets_.push_back(std::move(bullet));
+    }
+}
+
+void BossRaceSimulation::AdvanceMyBullets(std::uint64_t tick) {
+    if (!mechanics_.enabled) {
+        return;
+    }
+    (void)tick;
+    for (MyBullet& bullet : my_bullets_) {
+        bullet.x_milli += bullet.vx_milli;
+        bullet.y_milli += bullet.vy_milli;
+    }
+    my_bullets_.erase(
+        std::remove_if(
+            my_bullets_.begin(),
+            my_bullets_.end(),
+            [](const MyBullet& bullet) {
+                return bullet.x_milli < -kArenaHalfWidthMilli || bullet.x_milli > kArenaHalfWidthMilli ||
+                    bullet.y_milli < -kArenaHalfHeightMilli || bullet.y_milli > kArenaHalfHeightMilli;
+            }
+        ),
+        my_bullets_.end()
+    );
+}
+
+void BossRaceSimulation::ApplyBossDamage(PlayerState& player, std::uint64_t damage, std::uint64_t tick) {
+    if (damage == 0 || player.boss_current_hp == 0) {
+        return;
+    }
+    const std::uint64_t applied = std::min(damage, player.boss_current_hp);
+    player.boss_current_hp -= applied;
+    player.damage_dealt += applied;
+    player.pending_boss_damage += applied;
+    CheckSpellPhase(player, tick);
+    if (player.boss_current_hp == 0) {
+        // 击破时若符卡阶段仍 active → 捕获 bonus（§2.4 第 3 条）。
+        BossEventWire capture;
+        capture.tick = tick;
+        capture.type = kSpellCaptureEvent;
+        capture.player_id = player.player_id;
+        capture.value = static_cast<std::int64_t>(player.spell_phase);
+        tick_events_.push_back(std::move(capture));
+    }
+}
+
+// 符卡阶段：3 段，阈值 100% / 66% / 33%。跨阈值 → phase+1、清屏、阶段事件。
+void BossRaceSimulation::CheckSpellPhase(PlayerState& player, std::uint64_t tick) {
+    const std::uint64_t max_hp = config_.boss_max_hp;
+    if (max_hp == 0) {
+        return;
+    }
+    while (player.spell_phase + 1 < kSpellPhaseCount) {
+        const std::uint64_t remaining_phases = kSpellPhaseCount - 1 - player.spell_phase;
+        if (player.boss_current_hp * kSpellPhaseCount > max_hp * remaining_phases) {
+            break;
+        }
+        BossEventWire phase_end;
+        phase_end.tick = tick;
+        phase_end.type = kSpellPhaseEndEvent;
+        phase_end.player_id = player.player_id;
+        phase_end.value = static_cast<std::int64_t>(player.spell_phase);
+        tick_events_.push_back(std::move(phase_end));
+
+        player.spell_phase += 1;
+
+        // 清屏：该玩家副本的活跃弹幕标 vanish_tick（客户端播消弹；下一 tick 移除）。
+        for (LiveBullet& live : live_bullets_) {
+            if (live.owner_player_id == player.player_id && live.vanish_tick == 0) {
+                live.vanish_tick = tick;
+            }
+        }
+        BossEventWire phase_start;
+        phase_start.tick = tick;
+        phase_start.type = kSpellPhaseStartEvent;
+        phase_start.player_id = player.player_id;
+        phase_start.value = static_cast<std::int64_t>(player.spell_phase);
+        tick_events_.push_back(std::move(phase_start));
+    }
+}
+
+void BossRaceSimulation::JudgeMyBullets(std::uint64_t tick) {
+    if (!mechanics_.enabled) {
+        return;
+    }
+    std::vector<std::size_t> consumed;
+    for (std::size_t i = 0; i < my_bullets_.size(); ++i) {
+        MyBullet& bullet = my_bullets_[i];
+        const auto player_it = players_.find(bullet.owner_player_id);
+        if (player_it == players_.end() || player_it->second.boss_current_hp == 0) {
+            consumed.push_back(i);
+            continue;
+        }
+        PlayerState& player = player_it->second;
+        if (!danmaku::PointInCircle(
+                bullet.x_milli, bullet.y_milli,
+                kBossOriginXMilli, kBossOriginYMilli,
+                kBossHitRadiusMilli)) {
+            continue;
+        }
+        ApplyBossDamage(player, bullet.damage, tick);
+        if (bullet.penetrate > 0) {
+            --bullet.penetrate;  // 穿透弹继续前进，下一 tick 可再判定一段
+        } else {
+            consumed.push_back(i);
+        }
+    }
+    for (auto it = consumed.rbegin(); it != consumed.rend(); ++it) {
+        my_bullets_.erase(my_bullets_.begin() + static_cast<std::ptrdiff_t>(*it));
+    }
+}
+
+bool BossRaceSimulation::InjectMyBulletForTest(
+    const std::string& owner_player_id,
+    std::int32_t x_milli,
+    std::int32_t y_milli,
+    std::int32_t vx_milli,
+    std::int32_t vy_milli,
+    std::uint64_t damage,
+    std::int32_t penetrate
+) {
+    if (players_.find(owner_player_id) == players_.end()) {
+        return false;
+    }
+    MyBullet bullet;
+    bullet.owner_player_id = owner_player_id;
+    bullet.x_milli = x_milli;
+    bullet.y_milli = y_milli;
+    bullet.vx_milli = vx_milli;
+    bullet.vy_milli = vy_milli;
+    bullet.damage = damage;
+    bullet.penetrate = penetrate;
+    my_bullets_.push_back(std::move(bullet));
+    return true;
+}
+
 bool BossRaceSimulation::InjectLiveBulletForTest(
     const std::string& owner_player_id,
     const danmaku::BulletMotion& motion,
     std::uint32_t generation
-) {
-    // 测试/调试专用注入（产品路径与 .dem 重放均不调用）：默认 pattern 库
+) {    // 测试/调试专用注入（产品路径与 .dem 重放均不调用）：默认 pattern 库
     // 没有 func31 波次，链式分裂只能经此入口在测试中触发。
     const auto it = players_.find(owner_player_id);
     if (it == players_.end()) {
@@ -834,7 +1035,7 @@ void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
         }
         const bool invulnerable = tick <= player.invulnerable_until_tick;
         for (LiveBullet& live : live_bullets_) {
-            if (live.owner_player_id != player.player_id) {
+            if (live.owner_player_id != player.player_id || live.vanish_tick != 0) {
                 continue;
             }
             const std::int32_t bullet_x = ToMilli(live.motion.x - kScreenCenterX);
@@ -913,8 +1114,28 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
         SpawnBulletsForTick(tick_to_apply);
         AdvanceBullets(tick_to_apply);
         AdvanceSpecialMechanics(tick_to_apply);
+        AdvanceMyBullets(tick_to_apply);
+        JudgeMyBullets(tick_to_apply);
         JudgePlayerContacts(tick_to_apply);
         CheckRaceWinner(tick_to_apply);
+        // boss_damage 聚合上报：每 8 tick 一条（或击破时立刻发），避免每 tick 刷屏。
+        if (mechanics_.enabled) {
+            for (auto& item : players_) {
+                PlayerState& player = item.second;
+                if (player.pending_boss_damage == 0) {
+                    continue;
+                }
+                if (tick_to_apply % kBossDamageEventIntervalTicks == 0 || player.boss_current_hp == 0) {
+                    BossEventWire damage_event;
+                    damage_event.tick = tick_to_apply;
+                    damage_event.type = kBossDamageEvent;
+                    damage_event.player_id = player.player_id;
+                    damage_event.value = static_cast<std::int64_t>(player.pending_boss_damage);
+                    tick_events_.push_back(std::move(damage_event));
+                    player.pending_boss_damage = 0;
+                }
+            }
+        }
         event_cursor_ += static_cast<std::uint64_t>(tick_events_.size());
     }
     current_tick_ = tick_to_apply;
@@ -998,6 +1219,7 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         bullet.chain_id = live.pattern_index;  // P1 占位：链 id = 发射它的 pattern
         bullet.generation = live.generation;
         bullet.hidden = bullets_hidden;        // 黑色帷幕 hold 期（P4 起有真值）
+        bullet.vanish_tick = live.vanish_tick;  // 阶段切换清屏标记（§2.4 第 3 条）
         snapshot.bullets.push_back(std::move(bullet));
     }
 
@@ -1015,8 +1237,17 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
     for (const auto& item : players_) {
         snapshot.boss.hp = std::max<std::uint64_t>(snapshot.boss.hp, item.second.boss_current_hp);
     }
-    // phase = 当前波次使用的 pattern index（P1 占位；P2 链树落地后换真实阶段号）。
-    snapshot.boss.phase = static_cast<std::uint32_t>(PatternIndexForTick(current_tick_));
+    // phase = 当前波次使用的 pattern index（默认 ruleset 占位）；判定模式下改为
+    // 符卡阶段号（各玩家副本独立推进，广播负载取最大值）。
+    if (mechanics_.enabled) {
+        std::uint32_t phase = 0;
+        for (const auto& item : players_) {
+            phase = std::max(phase, item.second.spell_phase);
+        }
+        snapshot.boss.phase = phase;
+    } else {
+        snapshot.boss.phase = static_cast<std::uint32_t>(PatternIndexForTick(current_tick_));
+    }
     if (boss_entry_ != nullptr) {
         snapshot.boss.movement.type = BossMovementWireType(boss_entry_->movement.kind);
         snapshot.boss.movement.phase_t = boss_entry_->movement.period_ticks == 0

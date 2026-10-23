@@ -228,12 +228,15 @@ void AppendEventsJson(std::string& json, const std::vector<BossEventWire>& event
         json += JsonEscape(event.type);
         json += "\",\"player_id\":\"";
         json += JsonEscape(event.player_id);
-        json += "\"}";
+        json += "\",\"value\":";
+        json += std::to_string(event.value);
+        json += '}';
     }
     json += ']';
 }
 
-BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {    BossRaceConfig boss;
+BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
+    BossRaceConfig boss;
     boss.match_id = config.match_id;
     boss.mode_id = config.mode_id;
     boss.ruleset_version = config.ruleset_version;
@@ -751,6 +754,8 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(bullet.generation);
         json += ",\"hidden\":";
         json += bullet.hidden ? "true" : "false";
+        json += ",\"vanish_tick\":";
+        json += std::to_string(bullet.vanish_tick);
         json += ",\"pattern_id\":\"";
         json += JsonEscape(bullet.pattern_id);
         json += "\"}";

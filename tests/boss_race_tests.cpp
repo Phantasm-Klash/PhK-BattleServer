@@ -647,6 +647,114 @@ void TestPlayerHitJudgment() {
     }
 }
 
+// 自机弹 vs Boss 真实伤害 + 符卡阶段（§2.4 第 1/3 条），只在 tna-1.40-danmaku 下。
+void TestMyBulletDamageAndSpellPhases() {
+    // 1) 单段命中：伤害累计进 boss_current_hp / damage_dealt，弹体被消耗。
+    {
+        auto config = MakeConfig(9101u, 1000000);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        Check(sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 100, 0), "my bullet: injected");
+        const auto snapshot = sim.Tick();
+        Check(snapshot.players[0].boss_current_hp == config.boss_max_hp - 100, "my bullet: boss hp reduced");
+        Check(snapshot.players[0].damage_dealt == 100, "my bullet: damage_dealt accumulates");
+        // 弹体命中即消耗：下一 tick 不再扣血。
+        const auto next = sim.Tick();
+        Check(next.players[0].boss_current_hp == config.boss_max_hp - 100,
+              "my bullet: single-hit bullet is consumed on impact");
+    }
+
+    // 2) 穿透：penetrate=2 → 连续 3 个 tick 各扣一次，然后消耗。
+    {
+        auto config = MakeConfig(9102u, 1000000);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        Check(sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 100, 2), "penetrate: bullet injected");
+        std::uint64_t hp_after = config.boss_max_hp;
+        for (int i = 0; i < 3; ++i) {
+            const auto snapshot = sim.Tick();
+            hp_after = snapshot.players[0].boss_current_hp;
+        }
+        Check(hp_after == config.boss_max_hp - 300, "penetrate: three segments applied");
+        const auto after = sim.Tick();
+        Check(after.players[0].boss_current_hp == config.boss_max_hp - 300,
+              "penetrate: bullet consumed after its segments");
+    }
+
+    // 3) 符卡阶段：66% / 33% 阈值切换 + 清屏 vanish_tick + 击破捕获。
+    {
+        auto config = MakeConfig(9103u, 300);
+        config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        while (sim.CurrentTick() < 45) {
+            sim.Tick();  // 先让 pattern 发一波弹，验证清屏标记
+        }
+        Check(!sim.Snapshot().bullets.empty(), "spell: bullets exist before the phase switch");
+
+        sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 150, 0);
+        const auto phase1 = sim.Tick();
+        Check(phase1.players[0].boss_current_hp == 150, "spell: hp halved");
+        Check(phase1.boss.phase == 1, "spell: crossed the 66% threshold into phase 1");
+        bool start1 = false;
+        bool end0 = false;
+        for (const auto& event : phase1.events) {
+            if (event.type == "spell_phase_start" && event.value == 1) start1 = true;
+            if (event.type == "spell_phase_end" && event.value == 0) end0 = true;
+        }
+        Check(start1, "spell: spell_phase_start(1) emitted");
+        Check(end0, "spell: spell_phase_end(0) emitted");
+        bool vanish_marked = false;
+        for (const auto& bullet : phase1.bullets) {
+            if (bullet.vanish_tick == phase1.tick) vanish_marked = true;
+        }
+        Check(vanish_marked, "spell: bullets carry vanish_tick on the switch tick");
+        const auto after_switch = sim.Tick();
+        bool vanished_gone = true;
+        for (const auto& bullet : after_switch.bullets) {
+            if (bullet.vanish_tick != 0 && bullet.vanish_tick < after_switch.tick) vanished_gone = false;
+        }
+        Check(vanished_gone, "spell: vanished bullets are removed on the next tick");
+
+        sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 100, 0);
+        const auto phase2 = sim.Tick();
+        Check(phase2.players[0].boss_current_hp == 50, "spell: hp down to 50");
+        Check(phase2.boss.phase == 2, "spell: crossed the 33% threshold into phase 2");
+
+        sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 50, 0);
+        const auto defeated = sim.Tick();
+        Check(defeated.players[0].boss_current_hp == 0, "spell: boss defeated");
+        bool captured = false;
+        for (const auto& event : defeated.events) {
+            if (event.type == "spell_capture") captured = true;
+        }
+        Check(captured, "spell: spell_capture emitted on defeat while the phase is active");
+        Check(sim.State() == phk::battle::BossRaceState::Finished, "spell: match finishes on defeat");
+    }
+
+    // 4) 默认 ruleset：自机弹不参与判定，Boss 只吃合成伤害。
+    {
+        auto config = MakeConfig(9104u, 1000000);
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        sim.Tick();
+        sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 999, 0);
+        const auto snapshot = sim.Tick();
+        Check(snapshot.players[0].boss_current_hp == config.boss_max_hp,
+              "judgment: default ruleset ignores my bullets");
+        Check(snapshot.boss.phase == 0, "judgment: default ruleset keeps pattern-index phase");
+        Check(snapshot.events.empty(), "judgment: default ruleset emits no damage events");
+    }
+}
+
 int main() {
     if (const char* fixture_path = std::getenv("PHK_BOSS_RACE_FIXTURE"); fixture_path != nullptr) {
         WriteGoldenFixture(fixture_path);
@@ -668,6 +776,7 @@ int main() {
     TestSnapshotCarriesP1WireFields();
     TestSpecialMechanicsGateAndEffects();
     TestPlayerHitJudgment();
+    TestMyBulletDamageAndSpellPhases();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";
