@@ -102,6 +102,13 @@ add_executable(phk_battle_server
 )
 target_link_libraries(phk_battle_server PRIVATE phk_battle_core)
 
+# 单关 APK 对齐验收（计划 §4.1）的 trace 导出工具：纯模拟、无网络，逐 tick
+# 写快照 JSONL。刻意不注册 ctest——它是产出验收数据的工具，不是测试。
+add_executable(phk_danmaku_trace
+    apps/phk_danmaku_trace/main.cpp
+)
+target_link_libraries(phk_danmaku_trace PRIVATE phk_battle_core)
+
 include(CTest)
 if(PHK_BATTLE_BUILD_TESTS)
     add_executable(phk_battle_tests
