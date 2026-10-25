@@ -245,6 +245,8 @@ BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
     boss.tick_rate_hz = config.tick_rate_hz;
     boss.boss_id = config.boss_id;
     boss.loadouts = config.loadouts;
+    // 对局 tick 上限：只影响结算的「剩余时间奖励」（0 = 不计时间项）。
+    boss.max_ticks = config.max_ticks;
     // boss 目录优先：boss_id 命中目录时以目录 HP 为权威（与 Go/TS 三端一致）。
     // 未配置 boss（默认路径）时保持 config.boss_max_hp 不变，逐字节复现现状。
     if (const danmaku::BossCatalogEntry* entry = danmaku::FindBossCatalogEntry(config.boss_id);
@@ -728,6 +730,16 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(player.invulnerable_until_tick);
         json += ",\"graze\":";
         json += std::to_string(player.graze);
+        // 计分（§计分）：score 是 uint64，按十进制原样输出（一局分值远小于
+        // JS 安全整数上限 2^53）。hit_count / spell_get / spell_total 为计数。
+        json += ",\"score\":";
+        json += std::to_string(player.score);
+        json += ",\"hit_count\":";
+        json += std::to_string(player.hit_count);
+        json += ",\"spell_get\":";
+        json += std::to_string(player.spell_get);
+        json += ",\"spell_total\":";
+        json += std::to_string(player.spell_total);
         json += '}';
     }
     json += "],\"bullets\":[";
@@ -804,6 +816,12 @@ MatchResultPayload BuildMatchResultPayload(const BossRaceSimulation& simulation)
         entry.player_id = player.player_id;
         entry.damage_dealt = player.damage_dealt;
         entry.boss_current_hp = player.boss_current_hp;
+        // 计分：结算与快照同源（都从 Snapshot() 读），保证两端一致。
+        entry.score = player.score;
+        entry.graze = player.graze;
+        entry.hit_count = player.hit_count;
+        entry.spell_get = player.spell_get;
+        entry.spell_total = player.spell_total;
         payload.players.push_back(std::move(entry));
     }
     return payload;
@@ -836,6 +854,17 @@ std::string BuildMatchResultJson(const MatchResultPayload& payload) {
         json += std::to_string(player.damage_dealt);
         json += ",\"boss_current_hp\":";
         json += std::to_string(player.boss_current_hp);
+        // 计分（§计分）：与快照 players[] 同名同值，结算侧一次给全。
+        json += ",\"score\":";
+        json += std::to_string(player.score);
+        json += ",\"graze\":";
+        json += std::to_string(player.graze);
+        json += ",\"hit_count\":";
+        json += std::to_string(player.hit_count);
+        json += ",\"spell_get\":";
+        json += std::to_string(player.spell_get);
+        json += ",\"spell_total\":";
+        json += std::to_string(player.spell_total);
         json += '}';
     }
     json += "]}";

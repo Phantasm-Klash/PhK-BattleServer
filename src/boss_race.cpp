@@ -111,6 +111,12 @@ const char* BlackCurtainStateName(danmaku::BlackCurtainPhase phase) {
     return "idle";
 }
 
+// 符卡获取分：第 n 段（0 起）= base + per_phase × (n+1)（阶段越深越值钱）。
+std::uint64_t SpellCapturePoints(const danmaku::ScoreRules& rules, std::uint32_t phase) {
+    return rules.spell_capture_base +
+        rules.spell_capture_per_phase * (static_cast<std::uint64_t>(phase) + 1);
+}
+
 }  // namespace
 
 const std::vector<std::string>& BossRacePatternIds() {
@@ -263,6 +269,14 @@ const danmaku::PlayerBombSpec* BossRaceSimulation::PlayerBombSpecFor(const std::
     return it == bomb_by_player_.end() ? nullptr : it->second;
 }
 
+std::string_view BossRaceSimulation::ShotTypeFor(const std::string& player_id) const {
+    const auto it = loadout_by_player_.find(player_id);
+    if (it == loadout_by_player_.end()) {
+        return {};
+    }
+    return it->second.shot_type;
+}
+
 bool BossRaceSimulation::AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli) {
     if (player_id.empty() || players_.size() >= kBossRaceMaxPlayers) {
         return false;
@@ -278,6 +292,11 @@ bool BossRaceSimulation::AddPlayer(const std::string& player_id, std::int32_t x_
     player.boss_current_hp = config_.boss_max_hp;
     player.last_input.match_id = config_.match_id;
     player.last_input.player_id = player_id;
+    if (mechanics_.enabled) {
+        // 符卡阶段 0 在开局即生效（没有对应的 spell_phase_start 事件），
+        // 故总数先记 1，之后每进一个新阶段再 +1（见 CheckSpellPhase）。
+        player.spell_total = 1;
+    }
     players_[player_id] = player;
     return true;
 }
@@ -428,6 +447,10 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
                 const std::uint64_t damage = std::min(tick_damage, player.boss_current_hp);
                 player.boss_current_hp -= damage;
                 player.damage_dealt += damage;
+                if (player.boss_current_hp == 0) {
+                    // 默认 ruleset 不走 ApplyBossDamage → 击破奖励在这里补。
+                    AwardBossDefeatBonus(player, tick);
+                }
             }
         } else if (mechanics_.enabled && input.shoot && player.alive) {
             // 真实路径：按住射击 → 按 loadout 表的冷却节奏发射自机弹实体。
@@ -921,6 +944,47 @@ void BossRaceSimulation::AdvanceMyBullets(std::uint64_t tick) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 计分（TNA `GameData` 形状；数值见 danmaku/score_table.hpp 的冻结占位表）
+// ---------------------------------------------------------------------------
+// 所有加分都经这里 → 保证「本局 score_gain 增量之和 == players[].score」。
+// 事件 value 是 int64（wire 既有类型），单次增量远小于 int64 上限。
+void BossRaceSimulation::AddScore(PlayerState& player, std::uint64_t delta, std::uint64_t tick) {
+    if (delta == 0) {
+        return;
+    }
+    player.score += delta;
+    BossEventWire gain;
+    gain.tick = tick;
+    gain.type = kScoreGainEvent;
+    gain.player_id = player.player_id;
+    gain.value = static_cast<std::int64_t>(delta);
+    tick_events_.push_back(std::move(gain));
+}
+
+// 击破奖励：每玩家打掉自己那份 Boss 副本时各算一次（两种 ruleset 都算）。
+void BossRaceSimulation::AwardBossDefeatBonus(PlayerState& player, std::uint64_t tick) {
+    AddScore(player, danmaku::ScoreRulesFor().boss_defeat_bonus, tick);
+}
+
+// 结算奖励（比赛结束时一次性）：残机 + 炸弹 + 剩余时间。
+// 残机/炸弹取 PlayerState 的权威值（默认 ruleset 无受击判定 → 恒满，与快照
+// 的占位口径一致）。时间项只在配置了 max_ticks 且未超时时计，单位 = 整秒
+// （64 tick = 1 秒，与 kBossRaceTickRateHz 一致）。
+void BossRaceSimulation::AwardSettlementBonus(std::uint64_t finish_tick) {
+    const danmaku::ScoreRules rules = danmaku::ScoreRulesFor();
+    for (auto& item : players_) {
+        PlayerState& player = item.second;
+        std::uint64_t bonus = rules.life_bonus * player.lives + rules.bomb_bonus * player.bombs;
+        if (config_.max_ticks > 0 && finish_tick < config_.max_ticks) {
+            const std::uint64_t seconds_left =
+                (config_.max_ticks - finish_tick) / static_cast<std::uint64_t>(kBossRaceTickRateHz);
+            bonus += rules.extra_time_per_second * seconds_left;
+        }
+        AddScore(player, bonus, finish_tick);
+    }
+}
+
 void BossRaceSimulation::ApplyBossDamage(PlayerState& player, std::uint64_t damage, std::uint64_t tick) {
     if (damage == 0 || player.boss_current_hp == 0) {
         return;
@@ -931,6 +995,7 @@ void BossRaceSimulation::ApplyBossDamage(PlayerState& player, std::uint64_t dama
     player.pending_boss_damage += applied;
     CheckSpellPhase(player, tick);
     if (player.boss_current_hp == 0) {
+        AwardBossDefeatBonus(player, tick);
         // 击破时若符卡阶段仍 active → 捕获 bonus（§2.4 第 3 条）。
         BossEventWire capture;
         capture.tick = tick;
@@ -938,6 +1003,14 @@ void BossRaceSimulation::ApplyBossDamage(PlayerState& player, std::uint64_t dama
         capture.player_id = player.player_id;
         capture.value = static_cast<std::int64_t>(player.spell_phase);
         tick_events_.push_back(std::move(capture));
+        // 最后一阶段只可能由击破收尾（没有下一个阈值 → 不会发 spell_phase_end），
+        // 故在这里补一次「未被弹的收尾阶段」捕获分。已经发过 phase_end 的阶段
+        // 早已加过分，且 phase_hit_taken 在每次 phase_start 复位 → 同一阶段
+        // 只会被计一次（不双计）。
+        if (!player.phase_hit_taken) {
+            ++player.spell_get;
+            AddScore(player, SpellCapturePoints(danmaku::ScoreRulesFor(), player.spell_phase), tick);
+        }
     }
 }
 
@@ -959,7 +1032,15 @@ void BossRaceSimulation::CheckSpellPhase(PlayerState& player, std::uint64_t tick
         phase_end.value = static_cast<std::int64_t>(player.spell_phase);
         tick_events_.push_back(std::move(phase_end));
 
+        // 符卡获取：整段没被打过才给分（TNA 的 spell bonus 语义）。
+        if (!player.phase_hit_taken) {
+            ++player.spell_get;
+            AddScore(player, SpellCapturePoints(danmaku::ScoreRulesFor(), player.spell_phase), tick);
+        }
+
         player.spell_phase += 1;
+        ++player.spell_total;
+        player.phase_hit_taken = false;  // 新阶段重新计「是否被打」
 
         // 清屏：该玩家副本的活跃弹幕标 vanish_tick（客户端播消弹；下一 tick 移除）。
         for (LiveBullet& live : live_bullets_) {
@@ -1157,6 +1238,9 @@ void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
                 if (player.lives > 0) {
                     --player.lives;
                 }
+                // 计分：受击次数 + 本阶段符卡作废（该阶段不给捕获分）。
+                ++player.hit_count;
+                player.phase_hit_taken = true;
                 player.invulnerable_until_tick = tick + kDanmakuInvulnerableTicks;
                 BossEventWire hit;
                 hit.tick = tick;
@@ -1182,6 +1266,11 @@ void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
                 graze.type = kPlayerGrazeEvent;
                 graze.player_id = player.player_id;
                 tick_events_.push_back(std::move(graze));
+                // 计分：擦弹分 × 自机特性乘区（乘区全 1.0 占位，见 score_table.hpp）。
+                const double mul = danmaku::GrazeMulForShotType(ShotTypeFor(player.player_id));
+                const std::uint64_t points = static_cast<std::uint64_t>(std::llround(
+                    static_cast<double>(danmaku::ScoreRulesFor().graze_points) * mul));
+                AddScore(player, points, tick);
             }
         }
     }
@@ -1202,6 +1291,9 @@ void BossRaceSimulation::CheckRaceWinner(std::uint64_t tick) {
         state_ = BossRaceState::Finished;
         winner_player_id_ = winner;
         winner_tick_ = tick;
+        // 比赛结束的一次性结算奖励（残机/炸弹/剩余时间；两种 ruleset 都算）。
+        // 放在这里而不是 Tick 尾部：Finished 后 Tick 立刻返回，保证只结算一次。
+        AwardSettlementBonus(tick);
     }
 }
 
@@ -1247,6 +1339,12 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
     return Snapshot();
 }
 
+// 权威状态 hash（客户端镜像重放校验用）。
+//
+// ★ 刻意**不含** score 及其派生字段（score / hit_count / spell_get / spell_total）
+// 与快照里的 vx/vy 同理：它们是「消费态」而非「世界态」，不参与运动学/判定的
+// 重放校验；且分值表是冻结占位（待实测），一旦校准就会变动——放进 hash 会让
+// 全部历史 replay fixture 失效。同 seed 两次 run 的 hash 必须相等（score 可以不同）。
 std::string BossRaceSimulation::CanonicalStateHash() const {
     std::string material = config_.match_id + "|" + std::to_string(config_.match_seed) + "|" +
         std::to_string(current_tick_) + "|" + std::to_string(static_cast<int>(state_)) + "|" +
@@ -1304,6 +1402,11 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
             player.invulnerable_until_tick = 0;
             player.graze = 0;
         }
+        // 计分：两种 ruleset 都填（默认 ruleset 只有击破 + 结算两项非零）。
+        player.score = item.second.score;
+        player.hit_count = item.second.hit_count;
+        player.spell_get = item.second.spell_get;
+        player.spell_total = item.second.spell_total;
         snapshot.players.push_back(player);
     }
     snapshot.bullets.reserve(live_bullets_.size());

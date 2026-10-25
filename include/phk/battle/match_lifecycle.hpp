@@ -58,6 +58,12 @@ struct MatchPlayerResult {
     std::string player_id;
     std::uint64_t damage_dealt = 0;
     std::uint64_t boss_current_hp = 0;
+    // 计分（§计分，与快照 players[] 同源同值；默认 ruleset 只有击破 + 结算非零）。
+    std::uint64_t score = 0;
+    std::uint32_t graze = 0;
+    std::uint32_t hit_count = 0;
+    std::uint32_t spell_get = 0;
+    std::uint32_t spell_total = 0;
 };
 
 struct MatchResultPayload {

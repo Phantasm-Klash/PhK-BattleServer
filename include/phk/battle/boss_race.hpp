@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "phk/battle/danmaku/boss_catalog.hpp"
@@ -12,6 +13,7 @@
 #include "phk/battle/danmaku/judgment.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
+#include "phk/battle/danmaku/score_table.hpp"
 #include "phk/battle/protocol.hpp"
 #include "phk/battle/simulation.hpp"  // CardCastEvent（F3 事件收集器）
 
@@ -60,6 +62,9 @@ inline constexpr const char* kBossDamageEvent = "boss_damage";
 inline constexpr const char* kSpellPhaseStartEvent = "spell_phase_start";
 inline constexpr const char* kSpellPhaseEndEvent = "spell_phase_end";
 inline constexpr const char* kSpellCaptureEvent = "spell_capture";
+// 计分事件（§计分）：每次加分发一条，value = 本次增量（不是累计总分；总分看
+// players[].score）。擦弹/符卡/击破/结算各自独立成条，便于客户端逐项飘分。
+inline constexpr const char* kScoreGainEvent = "score_gain";
 
 // 自机弹 vs Boss 判定（§2.4 第 1 条，只在 kRulesetDanmakuMechanics 下生效）。
 inline constexpr std::int32_t kBossHitRadiusMilli = 40000;  // r_boss ≈40px（P4 进 boss_catalog）
@@ -120,6 +125,11 @@ struct BossRaceConfig {
     std::int32_t difficulty = 1;
     // 每玩家自机 loadout（空 = 默认自机行为）。
     std::vector<PlayerLoadoutSpec> loadouts;
+    // 对局 tick 上限（0 = 不限；由 MatchLifecycleConfig::max_ticks 透传）。
+    // 只被结算的「剩余时间奖励」读取：finish_tick < max_ticks 时
+    // + extra_time_per_second × ((max_ticks - finish_tick) / 64)。
+    // 不改任何发射/判定行为（0 = 逐字节保持现状）。
+    std::uint64_t max_ticks = 0;
     // 特殊机制排期（默认 disabled；ruleset_version == kRulesetDanmakuMechanics 时
     // 构造函数自动置 enabled）。
     BossSpecialMechanicsSchedule special_mechanics;
@@ -234,6 +244,14 @@ struct BossRacePlayerSnapshot {
     std::uint32_t bombs = kSnapshotDefaultBombs;
     std::uint64_t invulnerable_until_tick = 0;
     std::uint32_t graze = 0;
+    // 计分（§计分，TNA `GameData` 形状）。两种 ruleset 都填：
+    //   * score           = 本玩家累计得分（uint64，十进制进 wire）；
+    //   * hit_count       = 受击次数（仅判定 ruleset 会增长）；
+    //   * spell_get/total = 符卡获取数 / 符卡总数（仅判定 ruleset 会增长）。
+    std::uint64_t score = 0;
+    std::uint32_t hit_count = 0;
+    std::uint32_t spell_get = 0;
+    std::uint32_t spell_total = 0;
 };
 
 struct BossRaceSnapshot {
@@ -358,6 +376,16 @@ private:
         std::uint64_t pending_boss_damage = 0;
         // 符卡阶段（0 起；跨阈值 +1，清屏 + spell_phase_start/end）。
         std::uint32_t spell_phase = 0;
+        // 计分（§计分）。score 不进 CanonicalStateHash（见该函数注释）。
+        std::uint64_t score = 0;
+        std::uint32_t hit_count = 0;
+        std::uint32_t spell_get = 0;
+        // 符卡总数：阶段 0 在开局即生效（没有 spell_phase_start 事件），
+        // 故 AddPlayer 时先记 1；之后每进一个新阶段 +1。
+        std::uint32_t spell_total = 0;
+        // 当前符卡阶段内是否被打过（true = 该阶段无法「获取」，不给符卡分）。
+        // 每次 spell_phase_start 复位；判定模式下受击置 true。
+        bool phase_hit_taken = false;
         BattleInput last_input;
     };
 
@@ -416,6 +444,15 @@ private:
     // 玩家受击判定（§2.4 第 2 条）：boss 弹 vs 自机判定点/擦弹圈；disabled 时 no-op。
     void JudgePlayerContacts(std::uint64_t tick);
     void CheckRaceWinner(std::uint64_t tick);
+    // 计分（§计分）：加 delta 分并发一条 score_gain 事件（delta=0 时不发）。
+    // 所有加分都必须走这里，保证 wire 上「增量之和 == players[].score」。
+    void AddScore(PlayerState& player, std::uint64_t delta, std::uint64_t tick);
+    // Boss 归零时的击破奖励（两种 ruleset 都算；每玩家各自的副本各一次）。
+    void AwardBossDefeatBonus(PlayerState& player, std::uint64_t tick);
+    // 比赛结束（state → Finished）时的一次性结算奖励：残机 + 炸弹 + 剩余时间。
+    void AwardSettlementBonus(std::uint64_t finish_tick);
+    // 该玩家的 shot_type（无 loadout / 未知 → 空串）。
+    [[nodiscard]] std::string_view ShotTypeFor(const std::string& player_id) const;
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
     [[nodiscard]] std::size_t EmittedBulletsFor(const std::string& player_id) const;
     // 外层波次调度周期：默认 ruleset / 难度 1 = config_.pattern_period_ticks

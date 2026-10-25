@@ -204,4 +204,11 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_difficulty_scale_tests PRIVATE phk_battle_core)
     add_test(NAME phk_difficulty_scale_tests COMMAND phk_difficulty_scale_tests)
+
+    # 局内计分（TNA GameData 形状）：擦弹/符卡/击破/结算 + score 不进 state hash。
+    add_executable(phk_score_tests
+        tests/score_tests.cpp
+    )
+    target_link_libraries(phk_score_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_score_tests COMMAND phk_score_tests)
 endif()
