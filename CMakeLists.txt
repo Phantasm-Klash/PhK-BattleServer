@@ -109,6 +109,13 @@ add_executable(phk_danmaku_trace
 )
 target_link_libraries(phk_danmaku_trace PRIVATE phk_battle_core)
 
+# 数理差分测试台 C++ 侧：读共享场景跑生产运动学，输出逐 tick 状态。
+# 与 SpellKard/laya/dev/motion_diff.mjs（TS 镜像）交 compare.py 比对。
+add_executable(phk_motion_diff
+    apps/phk_motion_diff/main.cpp
+)
+target_link_libraries(phk_motion_diff PRIVATE phk_battle_core)
+
 include(CTest)
 if(PHK_BATTLE_BUILD_TESTS)
     add_executable(phk_battle_tests
