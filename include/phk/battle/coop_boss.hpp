@@ -70,6 +70,9 @@ struct CoopBossConfig {
     // 0 = 5000 × 玩家数（AddPlayer 后由 StartIfReady 定填）。
     std::uint64_t boss_max_hp = 0;
     std::uint32_t tick_rate_hz = kCoopBossTickRateHz;
+    // P4 难度（默认 1=normal；透传快照 difficulty 字段，客户端只消费。
+    // coop 自身的发射缩放不在本契约内——契约只覆盖 race 的 BossRaceConfig）。
+    std::int32_t difficulty = 1;
     std::vector<PlayerLoadoutSpec> loadouts;
 };
 
@@ -113,6 +116,8 @@ struct CoopBossPlayerSnapshot {
 struct CoopBossSnapshot {
     std::uint64_t tick = 0;
     CoopBossState state = CoopBossState::Waiting;
+    // P4 难度（客户端只消费；与 race 快照同名字段同语义）。
+    std::int32_t difficulty = 1;
     std::uint64_t boss_hp = 0;
     std::uint64_t boss_max_hp = 0;
     std::uint32_t seat_count = 0;

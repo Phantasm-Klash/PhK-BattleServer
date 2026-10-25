@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "phk/battle/danmaku/bullet_motion.hpp"
+#include "phk/battle/danmaku/difficulty_table.hpp"  // DifficultyScale（P4 难度缩放）
 #include "phk/battle/danmaku/spawn_command.hpp"
 
 // 整圆/扇形径向发射器：复刻 Enemy::createBullets1 @0x37bacc 的已解出语义。
@@ -48,10 +49,13 @@ struct BulletTemplate {
 [[nodiscard]] std::vector<double> RadialAngles(double base_angle_deg, double spread_deg, int count);
 
 // 执行一次齐射，返回生成的子弹（已应用运动学模板，未做首帧 update）。
+// difficulty：P4 难度缩放（speed/density 两项在此生效；interval 由调用方的
+// 调度周期负责）。默认恒等 —— 难度 1 / 默认 ruleset 逐字节不变。
 [[nodiscard]] std::vector<BulletMotion> EmitRadial(
     const SpawnCommand& cmd,
     const BulletTemplate& tmpl,
-    const EmitContext& ctx
+    const EmitContext& ctx,
+    const DifficultyScale& difficulty = DifficultyScale{}
 );
 
 }  // namespace phk::battle::danmaku

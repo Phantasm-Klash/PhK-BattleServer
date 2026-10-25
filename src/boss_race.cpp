@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "phk/battle/danmaku/chain_node.hpp"
+
 namespace phk::battle {
 namespace {
 
@@ -161,6 +163,15 @@ BossRaceSimulation::BossRaceSimulation(BossRaceConfig config) : config_(std::mov
     if (config_.ruleset_version == kRulesetDanmakuMechanics) {
         mechanics_.enabled = true;
     }
+    // ChainNode 表路径：tna-1.40-danmaku + 库内 boss_id 时取代 10 模式轮转
+    // （默认 ruleset 与未知 boss_id 逐字节不变）。
+    chain_tables_active_ = danmaku::ChainTablesActive(config_.ruleset_version, config_.boss_id);
+    // 难度缩放：只在 kRulesetDanmakuMechanics 下生效；其余（含难度 1）恒等。
+    // 注意 DifficultyScaleFor(1) 全 1.0，且倍率 1.0 的乘法/llround 均 IEEE 精确，
+    // 故恒等缩放下所有发射参数逐字节不变。
+    difficulty_scale_ = config_.ruleset_version == kRulesetDanmakuMechanics
+        ? danmaku::DifficultyScaleFor(config_.difficulty)
+        : danmaku::DifficultyScale{};
     if (config_.boss_max_hp == 0) {
         // boss 目录存在时以目录 HP 为准，否则回退默认（默认路径逐字节不变）。
         config_.boss_max_hp = boss_entry_ != nullptr ? boss_entry_->boss_max_hp : kBossRaceDefaultBossHp;
@@ -217,8 +228,14 @@ const std::string& BossRaceSimulation::WinnerPlayerId() const {
     return winner_player_id_;
 }
 
+// 外层波次调度周期（难度 interval 缩放的唯一入口；默认/难度 1 = 原值）。
+std::uint32_t BossRaceSimulation::SchedulePeriodTicks() const {
+    const std::uint32_t base = config_.pattern_period_ticks == 0 ? kBossRacePatternPeriodTicks : config_.pattern_period_ticks;
+    return danmaku::ScalePeriod(base, difficulty_scale_.interval_mul);
+}
+
 std::size_t BossRaceSimulation::PatternIndexForTick(std::uint64_t tick) const {
-    const std::uint32_t period = config_.pattern_period_ticks == 0 ? kBossRacePatternPeriodTicks : config_.pattern_period_ticks;
+    const std::uint32_t period = SchedulePeriodTicks();
     const std::size_t wave_index = static_cast<std::size_t>(tick / period);
     if (boss_entry_ != nullptr) {
         // boss 目录：按阶段组展开，循环整条 timeline。
@@ -436,6 +453,10 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
     // 主路径 = 真实弹幕（tna-1.40）；旧合成弹幕仅在 mvp-boss-race-s0 下保留兼容。
     if (config_.ruleset_version == "mvp-boss-race-s0") {
         SpawnSyntheticBulletsForTick(tick);
+    } else if (chain_tables_active_) {
+        // ChainNode 表路径：EmitChainBossTickDetailed 取代 10 模式轮转
+        // （启用条件见 ChainTablesActive：tna-1.40-danmaku + 库内 boss_id）。
+        SpawnChainBulletsForTick(tick);
     } else {
         // 其余（含 kRulesetRealDanmaku）一律走真实弹幕。
         (void)kRulesetRealDanmaku;
@@ -443,8 +464,83 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
     }
 }
 
+// ChainNode 表路径：触发周期来自数据表（300/200 等，非 45 格网格），按 tick
+// 逐节点展开；难度 interval 缩放作用于各节点 trigger period（chain_node.cpp）。
+// 快照 chains[] 的权威来源 = tick_chains_（本 tick 触发的节点，广播级）。
+void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
+    // boss 移动：整数三角波发射点偏移（未配置 boss → (0,0)，与现状一致）。
+    std::int32_t boss_offset_x = 0;
+    std::int32_t boss_offset_y = 0;
+    if (boss_entry_ != nullptr) {
+        danmaku::BossEmitterOffsetMilli(boss_entry_->movement, tick, &boss_offset_x, &boss_offset_y);
+    }
+
+    // chains[] 为广播级视图（每玩家 Boss 副本的同构时间线）：取首个合格玩家的
+    // 展开结构记录一次（节点触发与展开数与玩家无关；瞄准只改角度不改计数）。
+    bool chains_recorded = false;
+
+    for (auto& item : players_) {
+        PlayerState& player = item.second;
+        if (!player.connected || player.boss_current_hp == 0) {
+            continue;
+        }
+        if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
+            continue;
+        }
+
+        danmaku::EmitContext ctx;
+        ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
+        ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli + boss_offset_y);
+
+        danmaku::MotionTargets targets;
+        targets.has_my_ship = true;
+        targets.my_ship_x = kScreenCenterX + ToPixels(player.x_milli);
+        targets.my_ship_y = kScreenCenterY + ToPixels(player.y_milli);
+        targets.has_enemy = true;
+        targets.enemy_x = ctx.emitter_x;
+        targets.enemy_y = ctx.emitter_y;
+
+        const std::vector<danmaku::ChainNodeEmission> emissions =
+            danmaku::EmitChainBossTickDetailed(config_.boss_id, tick, ctx, targets, difficulty_scale_);
+
+        if (!chains_recorded && !emissions.empty()) {
+            for (const danmaku::ChainNodeEmission& emission : emissions) {
+                BossChainWire chain;
+                chain.chain_id = emission.chain_id;              // 节点序号（合并时间线平坦序）
+                chain.pattern_index = emission.table_index;      // 触发表索引
+                chain.node_id = emission.node_id;                 // 节点在表内下标
+                chain.generation = 0;                             // 子代代数（链式子代运行期激活属后续）
+                chain.rng_cursor = static_cast<std::uint32_t>(emission.bullets.size());  // 该 tick 该链已展开节点数
+                tick_chains_.push_back(chain);
+            }
+            chains_recorded = true;
+        }
+
+        // spawn_index = 该玩家该 tick 展开序（跨节点连续，保证 (pattern_index,
+        // spawn_index) 对每颗弹唯一 → 运动学 RNG 输入不撞车）。
+        std::uint32_t spawn_index = 0;
+        for (const danmaku::ChainNodeEmission& emission : emissions) {
+            for (const danmaku::BulletMotion& motion : emission.bullets) {
+                if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
+                    break;
+                }
+                LiveBullet live;
+                live.bullet_id = "b" + std::to_string(next_bullet_id_++);
+                live.owner_player_id = player.player_id;
+                live.pattern_id = "chain:" + config_.boss_id;
+                live.pattern_index = emission.table_index;
+                live.chain_id = emission.chain_id;
+                live.spawn_index = spawn_index++;
+                live.motion = motion;
+                live_bullets_.push_back(std::move(live));
+            }
+        }
+    }
+}
+
 void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
-    if (tick == 0 || (tick % config_.pattern_period_ticks) != 0) {
+    const std::uint32_t schedule = SchedulePeriodTicks();
+    if (tick == 0 || (tick % schedule) != 0) {
         return;
     }
     const std::size_t pattern_index = PatternIndexForTick(tick);
@@ -478,8 +574,13 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
         targets.enemy_x = ctx.emitter_x;
         targets.enemy_y = ctx.emitter_y;
 
+        // 难度 interval 缩放：库内波次偏移按 45 格网格设计（pattern_timeline.cpp
+        // 节奏模型），故把 tick 折算回 45 格再交给模式时间线；恒等缩放下
+        // (tick/schedule)*45 == tick（schedule=45 且 tick 为其倍数），逐字节不变。
+        const std::uint64_t pattern_tick =
+            (tick / schedule) * static_cast<std::uint64_t>(kBossRacePatternPeriodTicks);
         const std::vector<danmaku::BulletMotion> emitted =
-            danmaku::EmitPatternTick(def, tick, ctx, targets);
+            danmaku::EmitPatternTick(def, pattern_tick, ctx, targets, difficulty_scale_);
 
         std::uint32_t spawn_index = 0;
         for (const danmaku::BulletMotion& motion : emitted) {
@@ -491,6 +592,7 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
             live.owner_player_id = player.player_id;
             live.pattern_id = std::string(def.id);
             live.pattern_index = static_cast<std::uint32_t>(pattern_index);
+            live.chain_id = static_cast<std::uint32_t>(pattern_index);  // P1 占位语义（逐字节不变）
             live.spawn_index = spawn_index++;
             live.motion = motion;
             live_bullets_.push_back(std::move(live));
@@ -531,6 +633,7 @@ void BossRaceSimulation::SpawnSyntheticBulletsForTick(std::uint64_t tick) {
             live.owner_player_id = player.player_id;
             live.pattern_id = pattern_id;
             live.pattern_index = static_cast<std::uint32_t>(pattern_index);
+            live.chain_id = static_cast<std::uint32_t>(pattern_index);  // P1 占位语义（逐字节不变）
             live.spawn_index = synthetic_spawn_index++;
             danmaku::BulletMotion motion;
             motion.x = kScreenCenterX + ToPixels(kBossOriginXMilli) + ToPixels(offset_x);
@@ -727,6 +830,7 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
             live.owner_player_id = request.owner_player_id;
             live.pattern_id = host.pattern_id;
             live.pattern_index = request.pattern_index;
+            live.chain_id = request.pattern_index;  // P1 占位语义（逐字节不变）
             live.spawn_index = child.spawn_index;
             live.generation = request.generation + 1;
             live.motion = danmaku::MakeChainSplitChildMotion(host.motion, child);
@@ -1108,6 +1212,7 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
 
     const std::uint64_t tick_to_apply = current_tick_ + 1;
     tick_events_.clear();
+    tick_chains_.clear();
     StartIfReady();
     if (state_ == BossRaceState::Running) {
         ApplyPlayerTick(tick_to_apply);
@@ -1174,6 +1279,7 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
     snapshot.state = state_;
     snapshot.winner_player_id = winner_player_id_;
     snapshot.winner_tick = winner_tick_;
+    snapshot.difficulty = config_.difficulty;  // P4（客户端只消费）
     for (const auto& item : players_) {
         BossRacePlayerSnapshot player;
         player.player_id = item.first;
@@ -1216,7 +1322,7 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         bullet.pattern_id = live.pattern_id;
         bullet.bullet_kind = live.motion.bullet_kind;
         bullet.motion_func = live.motion.bullet_func_no;
-        bullet.chain_id = live.pattern_index;  // P1 占位：链 id = 发射它的 pattern
+        bullet.chain_id = live.chain_id;  // 默认路径 = pattern_index（P1 占位）；ChainNode 路径 = 节点序号
         bullet.generation = live.generation;
         bullet.hidden = bullets_hidden;        // 黑色帷幕 hold 期（P4 起有真值）
         bullet.vanish_tick = live.vanish_tick;  // 阶段切换清屏标记（§2.4 第 3 条）
@@ -1279,20 +1385,26 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         }
     }
 
-    // §2.8 chains：按 pattern_index 聚合活跃弹幕（node_id/rng_cursor P2 才有真值）。
-    std::map<std::uint32_t, std::uint32_t> chain_generation;
-    for (const LiveBullet& live : live_bullets_) {
-        std::uint32_t& generation = chain_generation[live.pattern_index];
-        generation = std::max(generation, live.generation);
-    }
-    for (const auto& item : chain_generation) {
-        BossChainWire chain;
-        chain.chain_id = item.first;
-        chain.pattern_index = item.first;
-        chain.node_id = 0;
-        chain.generation = item.second;
-        chain.rng_cursor = 0;
-        snapshot.chains.push_back(chain);
+    // §2.8 chains：ChainNode 路径 = 本 tick 触发的链节点（真实值，见
+    // SpawnChainBulletsForTick）；其余路径 = 按 pattern_index 聚合活跃弹幕
+    // （P1 占位，逐字节保持现状）。
+    if (chain_tables_active_) {
+        snapshot.chains = tick_chains_;
+    } else {
+        std::map<std::uint32_t, std::uint32_t> chain_generation;
+        for (const LiveBullet& live : live_bullets_) {
+            std::uint32_t& generation = chain_generation[live.pattern_index];
+            generation = std::max(generation, live.generation);
+        }
+        for (const auto& item : chain_generation) {
+            BossChainWire chain;
+            chain.chain_id = item.first;
+            chain.pattern_index = item.first;
+            chain.node_id = 0;
+            chain.generation = item.second;
+            chain.rng_cursor = 0;
+            snapshot.chains.push_back(chain);
+        }
     }
 
     // hand/deck/draw_cooldown：对局内抽卡（P3）才产生，P1 保持空数组与 0 默认值。

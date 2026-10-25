@@ -24,10 +24,12 @@ std::vector<double> RadialAngles(double base_angle_deg, double spread_deg, int c
 std::vector<BulletMotion> EmitRadial(
     const SpawnCommand& cmd,
     const BulletTemplate& tmpl,
-    const EmitContext& ctx
+    const EmitContext& ctx,
+    const DifficultyScale& difficulty
 ) {
     std::vector<BulletMotion> bullets;
-    if (cmd.count <= 0) {  // cbz w8, return
+    const int count = ScaleCount(cmd.count, difficulty.density_mul);  // 密度缩放（恒等 = 原值）
+    if (count <= 0) {  // cbz w8, return
         return bullets;
     }
 
@@ -35,7 +37,6 @@ std::vector<BulletMotion> EmitRadial(
     const double spawn_x = (cmd.spawn_x == kSpawnFollowEmitter) ? ctx.emitter_x : static_cast<double>(cmd.spawn_x);
     const double spawn_y = (cmd.spawn_y == kSpawnFollowEmitter) ? ctx.emitter_y : static_cast<double>(cmd.spawn_y);
 
-    const int count = cmd.count;
     const double step = 360.0 / static_cast<double>(count);
     double start = static_cast<double>(cmd.base_angle_deg) - static_cast<double>(cmd.spread_or_speed);
     while (start < 0.0) {
@@ -43,6 +44,9 @@ std::vector<BulletMotion> EmitRadial(
     }
 
     const int kind = (tmpl.bullet_kind != 0) ? tmpl.bullet_kind : cmd.bullet_type;
+    // 速度缩放（恒等倍率下 x·1.0 == x，逐字节不变）。
+    const double speed = tmpl.speed * difficulty.speed_mul;
+    const double speed_cap = tmpl.speed_cap * difficulty.speed_mul;
 
     bullets.reserve(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i) {
@@ -55,16 +59,16 @@ std::vector<BulletMotion> EmitRadial(
 
         // 构造快照（对应 EnemyBullet ctor 参数）。
         b.angle_init = tmpl.angle_init;
-        b.speed_init = (tmpl.speed != 0.0) ? tmpl.speed : 0.0;
+        b.speed_init = (tmpl.speed != 0.0) ? speed : 0.0;
         b.angle_spd = tmpl.angle_spd;
         b.angle_acc = tmpl.angle_acc;
         b.f56c = tmpl.f56c;
-        b.speed = tmpl.speed;
+        b.speed = speed;
         b.accel = 0.0;
-        b.speed_cap = tmpl.speed_cap;
+        b.speed_cap = speed_cap;
         b.f598 = tmpl.f598;
         b.prev_angle = tmpl.prev_angle;
-        b.spd_init2 = tmpl.speed;
+        b.spd_init2 = speed;
         b.xacc = tmpl.xacc;
         b.xacc_cap = tmpl.xacc_cap;
         b.pf1 = 1.0;

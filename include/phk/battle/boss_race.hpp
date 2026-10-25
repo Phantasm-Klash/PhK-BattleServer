@@ -8,6 +8,7 @@
 #include "phk/battle/danmaku/boss_catalog.hpp"
 #include "phk/battle/danmaku/bullet_motion.hpp"
 #include "phk/battle/danmaku/chain_split.hpp"
+#include "phk/battle/danmaku/difficulty_table.hpp"
 #include "phk/battle/danmaku/judgment.hpp"
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
@@ -111,6 +112,12 @@ struct BossRaceConfig {
     std::uint32_t pattern_period_ticks = kBossRacePatternPeriodTicks;
     // 房间级 boss 选择（空 = 默认 timeline，逐字节保持现状）。
     std::string boss_id;
+    // 难度（P4 契约）：0/1/2/3 = easy/normal/hard/lunatic，默认 1=normal。
+    // 只在 ruleset_version == kRulesetDanmakuMechanics 下按
+    // danmaku::DifficultyScaleFor(difficulty) 缩放发射（速度/密度/间隔）；
+    // 默认 ruleset 完全不读本字段（恒逐字节不变）。大厅/lifecycle 接线未覆盖，
+    // 当前只能由对局配置直接设置（默认 1）。
+    std::int32_t difficulty = 1;
     // 每玩家自机 loadout（空 = 默认自机行为）。
     std::vector<PlayerLoadoutSpec> loadouts;
     // 特殊机制排期（默认 disabled；ruleset_version == kRulesetDanmakuMechanics 时
@@ -234,6 +241,8 @@ struct BossRaceSnapshot {
     BossRaceState state = BossRaceState::Waiting;
     std::string winner_player_id;
     std::uint64_t winner_tick = 0;
+    // P4 难度（客户端只消费：HUD 显示；服务端权威缩放，客户端不本地换算）。
+    std::int32_t difficulty = 1;
     std::vector<BossRacePlayerSnapshot> players;
     std::vector<BossRaceBullet> bullets;
     std::string state_hash;
@@ -358,6 +367,10 @@ private:
         std::string owner_player_id;
         std::string pattern_id;
         std::uint32_t pattern_index = 0;
+        // 链 id（§2.8 快照 bullets[].chain_id）：默认/10 模式/合成路径 =
+        // pattern_index（P1 占位语义，逐字节不变）；ChainNode 路径 = 触发的
+        // 节点序号（chain_id，见 danmaku::ChainNodeEmission）。
+        std::uint32_t chain_id = 0;
         std::uint32_t spawn_index = 0;
         // 链式分裂代数：0 = pattern 库直生（宿主），子子弹 = 宿主 +1，
         // 上限 danmaku::kChainSplitMaxGeneration（叶子代不再分裂）。
@@ -386,6 +399,9 @@ private:
     void StartIfReady();
     void ApplyPlayerTick(std::uint64_t tick);
     void SpawnBulletsForTick(std::uint64_t tick);
+    // ChainNode 表路径（tna-1.40-danmaku + 库内 boss_id）：EmitChainBossTickDetailed
+    // 的产出取代 10 模式轮转；同时填 tick_chains_（快照 chains[] 真实值）。
+    void SpawnChainBulletsForTick(std::uint64_t tick);
     void SpawnRealBulletsForTick(std::uint64_t tick);
     void SpawnSyntheticBulletsForTick(std::uint64_t tick);  // mvp-boss-race-s0 兼容
     void AdvanceBullets(std::uint64_t tick);
@@ -402,6 +418,9 @@ private:
     void CheckRaceWinner(std::uint64_t tick);
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
     [[nodiscard]] std::size_t EmittedBulletsFor(const std::string& player_id) const;
+    // 外层波次调度周期：默认 ruleset / 难度 1 = config_.pattern_period_ticks
+    // 原值；kRulesetDanmakuMechanics 且难度 != 1 时 llround×interval_mul。
+    [[nodiscard]] std::uint32_t SchedulePeriodTicks() const;
 
     BossRaceConfig config_;
     std::uint64_t current_tick_ = 0;
@@ -415,6 +434,10 @@ private:
     std::vector<MyBullet> my_bullets_;
     // 解析后的 boss / 自机（构造期固定，运行期不可变 → 确定性）。
     const danmaku::BossCatalogEntry* boss_entry_ = nullptr;
+    // ChainNode 表启用判定（构造期定；真 = SpawnChainBulletsForTick 取代 10 模式轮转）。
+    bool chain_tables_active_ = false;
+    // 难度缩放（构造期定；非 kRulesetDanmakuMechanics 或难度 1 = 恒等）。
+    danmaku::DifficultyScale difficulty_scale_;
     std::map<std::string, PlayerLoadoutSpec> loadout_by_player_;
     std::map<std::string, const danmaku::PlayerShotSpec*> shot_by_player_;
     std::map<std::string, const danmaku::PlayerBombSpec*> bomb_by_player_;
@@ -426,6 +449,9 @@ private:
     danmaku::BlackCurtainState black_curtain_;
     // 本 tick 产生的判定/机制事件（每 Tick 清空，快照 events[] 从这里读）。
     std::vector<BossEventWire> tick_events_;
+    // 本 tick 触发的链节点（ChainNode 路径；每 Tick 清空，快照 chains[] 真实值）。
+    // 非 ChainNode 路径恒空（chains[] 走 P1 按 pattern_index 聚合占位）。
+    std::vector<BossChainWire> tick_chains_;
     std::uint64_t event_cursor_ = 0;
 };
 

@@ -40,11 +40,14 @@ struct PatternDef {
 [[nodiscard]] const std::vector<PatternDef>& BossRacePatternLibrary();
 
 // 计算某 tick 该模式应发射的全部子弹（已应用角度/瞄准/螺旋，未做首帧 update）。
+// difficulty：P4 难度缩放（speed/density 透传给 EmitRadial；interval 由调用方
+// 以「把 tick 折算回 45 格网格」的方式处理，见 boss_race.cpp）。默认恒等。
 [[nodiscard]] std::vector<BulletMotion> EmitPatternTick(
     const PatternDef& def,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty = DifficultyScale{}
 );
 
 }  // namespace phk::battle::danmaku

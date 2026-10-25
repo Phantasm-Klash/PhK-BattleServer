@@ -114,13 +114,16 @@ struct BossPhaseTable {
 [[nodiscard]] bool ChainTablesActive(std::string_view ruleset_version, std::string_view boss_id);
 
 // 展开某阶段表在指定 tick 的发射（纯函数，不持有状态）。
-// 规则：节点 trigger_period != 0 且 tick % trigger_period == trigger_tick 时触发；
+// 规则：节点 trigger_period != 0 且 tick % trigger_period == trigger_tick 时触发
+// （trigger_period 先按 difficulty.interval_mul 做 llround 缩放；恒等时不变）；
 // count == 0 的节点不发射（原版 createBullets1 入口 cbz 语义——「未转写」节点即如此）。
+// difficulty 默认恒等：难度 1 / 默认 ruleset 逐字节不变。
 [[nodiscard]] std::vector<BulletMotion> EmitChainTableTick(
     const BossPhaseTable& table,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty = DifficultyScale{}
 );
 
 // 展开某 boss 全部阶段表在指定 tick 的发射（合并时间线；库序 + 表内序）。
@@ -128,7 +131,27 @@ struct BossPhaseTable {
     std::string_view boss_id,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty = DifficultyScale{}
+);
+
+// 单节点发射结果（带归属信息）：boss_race.cpp 接线快照 chains[] 用。
+struct ChainNodeEmission {
+    std::uint32_t table_index = 0;  // 触发表索引（FindBossPhaseTables 序）
+    std::uint32_t node_id = 0;      // 节点在表内下标
+    std::uint32_t chain_id = 0;     // 节点序号（该 boss 合并时间线内的平坦序号，库序+表内序）
+    std::vector<BulletMotion> bullets;  // 本节点本 tick 展开的子弹（缩放后）
+};
+
+// 同 EmitChainBossTick，但按触发节点分组并保留归属（纯函数）。
+// 每个「本 tick 触发」的节点产出一条记录（含 count==0 的未转写节点——
+// 链已激活，展开节点数为 0）；未触发的节点不产记录。
+[[nodiscard]] std::vector<ChainNodeEmission> EmitChainBossTickDetailed(
+    std::string_view boss_id,
+    std::uint64_t tick,
+    const EmitContext& ctx,
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty = DifficultyScale{}
 );
 
 // 某阶段表在指定 tick 触发的节点数（含 count==0 的未转写节点；测试/调试用）。

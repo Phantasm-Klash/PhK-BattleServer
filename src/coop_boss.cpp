@@ -477,6 +477,7 @@ CoopBossSnapshot CoopBossSimulation::Snapshot() const {
     CoopBossSnapshot snapshot;
     snapshot.tick = current_tick_;
     snapshot.state = state_;
+    snapshot.difficulty = config_.difficulty;  // P4（客户端只消费）
     snapshot.boss_hp = boss_hp_;
     snapshot.boss_max_hp = config_.boss_max_hp;
     snapshot.seat_count = static_cast<std::uint32_t>(players_.size());

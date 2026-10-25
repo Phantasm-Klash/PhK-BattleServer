@@ -284,7 +284,9 @@ std::vector<std::uint8_t> EncodeCoopBossSnapshotPayload(const CoopBossSnapshot& 
     json += std::to_string(snapshot.tick);
     json += ",\"state\":\"";
     json += CoopStateName(snapshot.state);
-    json += "\",\"boss_hp\":";
+    json += "\",\"difficulty\":";
+    json += std::to_string(snapshot.difficulty);
+    json += ",\"boss_hp\":";
     json += std::to_string(snapshot.boss_hp);
     json += ",\"boss_max_hp\":";
     json += std::to_string(snapshot.boss_max_hp);
@@ -690,6 +692,8 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
     json += JsonEscape(snapshot.winner_player_id);
     json += "\",\"winner_tick\":";
     json += std::to_string(snapshot.winner_tick);
+    json += ",\"difficulty\":";
+    json += std::to_string(snapshot.difficulty);
     json += ",\"state_hash\":\"";
     json += JsonEscape(snapshot.state_hash);
     json += "\",\"boss\":";

@@ -18,6 +18,7 @@
 #include "phk/battle/danmaku/chain_node.hpp"
 
 #include <cstddef>
+#include <utility>
 
 #include "phk/battle/boss_race.hpp"  // kRulesetDanmakuMechanics（权威常量）
 
@@ -151,30 +152,60 @@ bool ChainTablesActive(std::string_view ruleset_version, std::string_view boss_i
     return HasBossPhaseTable(boss_id);
 }
 
+namespace {
+
+// 单节点展开：触发判定（周期先按 interval_mul 缩放）+ 瞄准覆盖 + EmitRadial。
+// triggered=false = 本 tick 未触发（或周期缩放后为 0）；bullets 为空但
+// triggered=true = 已触发但 count==0（未转写/头节点，展开 0 颗）。
+struct ChainNodeExpansion {
+    bool triggered = false;
+    std::vector<BulletMotion> bullets;
+};
+
+ChainNodeExpansion ExpandChainNode(
+    const ChainNode& node,
+    std::uint64_t tick,
+    const EmitContext& ctx,
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty
+) {
+    ChainNodeExpansion out;
+    if (node.trigger_period == 0) {
+        return out;
+    }
+    const std::uint32_t period = ScalePeriod(node.trigger_period, difficulty.interval_mul);
+    if (period == 0 || tick % period != node.trigger_tick) {
+        return out;
+    }
+    out.triggered = true;
+    SpawnCommand cmd = node.spawn_command;
+    if (node.aim == AimMode::AtShip && targets.has_my_ship) {
+        cmd.base_angle_deg = static_cast<float>(
+            AngleToPoint(ctx.emitter_x, ctx.emitter_y, targets.my_ship_x, targets.my_ship_y));
+    } else if (node.aim == AimMode::AtEnemy && targets.has_enemy) {
+        cmd.base_angle_deg = static_cast<float>(
+            AngleToPoint(ctx.emitter_x, ctx.emitter_y, targets.enemy_x, targets.enemy_y));
+    }
+    out.bullets = EmitRadial(cmd, node.motion_override, ctx, difficulty);
+    return out;
+}
+
+}  // namespace
+
 std::vector<BulletMotion> EmitChainTableTick(
     const BossPhaseTable& table,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty
 ) {
     std::vector<BulletMotion> out;
     for (const ChainNode& node : table.nodes) {
-        if (node.trigger_period == 0) {
+        const ChainNodeExpansion expanded = ExpandChainNode(node, tick, ctx, targets, difficulty);
+        if (!expanded.triggered) {
             continue;
         }
-        if (tick % node.trigger_period != node.trigger_tick) {
-            continue;
-        }
-        SpawnCommand cmd = node.spawn_command;
-        if (node.aim == AimMode::AtShip && targets.has_my_ship) {
-            cmd.base_angle_deg = static_cast<float>(
-                AngleToPoint(ctx.emitter_x, ctx.emitter_y, targets.my_ship_x, targets.my_ship_y));
-        } else if (node.aim == AimMode::AtEnemy && targets.has_enemy) {
-            cmd.base_angle_deg = static_cast<float>(
-                AngleToPoint(ctx.emitter_x, ctx.emitter_y, targets.enemy_x, targets.enemy_y));
-        }
-        const std::vector<BulletMotion> emitted = EmitRadial(cmd, node.motion_override, ctx);
-        out.insert(out.end(), emitted.begin(), emitted.end());
+        out.insert(out.end(), expanded.bullets.begin(), expanded.bullets.end());
     }
     return out;
 }
@@ -183,12 +214,44 @@ std::vector<BulletMotion> EmitChainBossTick(
     std::string_view boss_id,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty
 ) {
     std::vector<BulletMotion> out;
-    for (const BossPhaseTable* table : FindBossPhaseTables(boss_id)) {
-        const std::vector<BulletMotion> emitted = EmitChainTableTick(*table, tick, ctx, targets);
-        out.insert(out.end(), emitted.begin(), emitted.end());
+    for (const ChainNodeEmission& emission :
+             EmitChainBossTickDetailed(boss_id, tick, ctx, targets, difficulty)) {
+        out.insert(out.end(), emission.bullets.begin(), emission.bullets.end());
+    }
+    return out;
+}
+
+std::vector<ChainNodeEmission> EmitChainBossTickDetailed(
+    std::string_view boss_id,
+    std::uint64_t tick,
+    const EmitContext& ctx,
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty
+) {
+    std::vector<ChainNodeEmission> out;
+    const std::vector<const BossPhaseTable*> tables = FindBossPhaseTables(boss_id);
+    // chain_id = 节点在合并时间线内的平坦序号（库序 + 表内序），跨表连续计数。
+    std::uint32_t node_ordinal = 0;
+    for (std::size_t table_index = 0; table_index < tables.size(); ++table_index) {
+        const BossPhaseTable& table = *tables[table_index];
+        for (std::size_t node_id = 0; node_id < table.nodes.size(); ++node_id) {
+            const std::uint32_t chain_id = node_ordinal++;
+            const ChainNodeExpansion expanded =
+                ExpandChainNode(table.nodes[node_id], tick, ctx, targets, difficulty);
+            if (!expanded.triggered) {
+                continue;
+            }
+            ChainNodeEmission emission;
+            emission.table_index = static_cast<std::uint32_t>(table_index);
+            emission.node_id = static_cast<std::uint32_t>(node_id);
+            emission.chain_id = chain_id;
+            emission.bullets = std::move(expanded.bullets);
+            out.push_back(std::move(emission));
+        }
     }
     return out;
 }

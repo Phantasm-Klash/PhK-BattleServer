@@ -755,6 +755,76 @@ void TestMyBulletDamageAndSpellPhases() {
     }
 }
 
+
+void TestDifficultyAndChainTables() {
+    auto tick_to = [](phk::battle::BossRaceSimulation& sim, std::uint64_t target) {
+        while (sim.CurrentTick() < target) {
+            sim.Tick();
+        }
+    };
+
+    // 1) 难度系数表：难度 1 = 恒等（现有玩法零变化），未知难度回落 normal。
+    const auto normal = phk::battle::danmaku::DifficultyScaleFor(1);
+    Check(normal.speed_mul == 1.0 && normal.density_mul == 1.0 && normal.interval_mul == 1.0,
+          "difficulty: normal is the identity scale");
+    Check(phk::battle::danmaku::IsIdentityScale(normal), "difficulty: identity predicate");
+    const auto unknown = phk::battle::danmaku::DifficultyScaleFor(99);
+    Check(unknown.speed_mul == normal.speed_mul && unknown.density_mul == normal.density_mul &&
+              unknown.interval_mul == normal.interval_mul,
+          "difficulty: unknown falls back to normal");
+    Check(phk::battle::danmaku::DifficultyScaleFor(3).density_mul > 1.0,
+          "difficulty: lunatic is denser than normal");
+
+    // 2) 默认 ruleset：难度只回显不缩放（同一 seed 下 easy 与 lunatic 的 hash 必须相同）。
+    auto easy_cfg = MakeConfig(5150u, 1000000);
+    easy_cfg.difficulty = 0;
+    auto lunatic_cfg = MakeConfig(5150u, 1000000);
+    lunatic_cfg.difficulty = 3;
+    phk::battle::BossRaceSimulation easy(easy_cfg);
+    phk::battle::BossRaceSimulation lunatic(lunatic_cfg);
+    easy.AddPlayer("player_a", 0, 60000);
+    easy.AddPlayer("player_b", 0, 60000);
+    lunatic.AddPlayer("player_a", 0, 60000);
+    lunatic.AddPlayer("player_b", 0, 60000);
+    tick_to(easy, 200);
+    tick_to(lunatic, 200);
+    Check(easy.Snapshot().state_hash == lunatic.Snapshot().state_hash,
+          "difficulty: the default ruleset ignores the knob (same hash)");
+    Check(lunatic.Snapshot().difficulty == 3, "difficulty: snapshot carries the configured level");
+    Check(easy.Snapshot().difficulty == 0, "difficulty: snapshot carries easy");
+
+    // 3) ChainNode 表：仅 tna ruleset + 库内 boss_id 启用；默认 ruleset 的 chains 恒空。
+    auto chain_cfg = MakeConfig(777u, 1000000);
+    chain_cfg.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+    chain_cfg.boss_id = "boss21";
+    phk::battle::BossRaceSimulation chain_sim(chain_cfg);
+    chain_sim.AddPlayer("player_a", 0, 60000);
+    chain_sim.AddPlayer("player_b", 0, 60000);
+    tick_to(chain_sim, 300);
+    const auto chain_snapshot = chain_sim.Snapshot();
+    Check(!chain_snapshot.chains.empty(), "chain tables: block A fires at tick 300");
+    bool real_node_id = false;
+    for (const auto& chain : chain_snapshot.chains) {
+        if (chain.node_id != 0 || chain.rng_cursor != 0) {
+            real_node_id = true;
+        }
+    }
+    Check(real_node_id, "chain tables: the table path emits real node ids / rng cursors");
+
+    // 默认 ruleset 的 chains 仍是 P1 占位聚合（按 pattern_index，node_id=0、rng_cursor=0），
+    // 与链表路径可区分——证明默认路径没被链表接管。
+    auto plain_cfg = MakeConfig(777u, 1000000);
+    phk::battle::BossRaceSimulation plain(plain_cfg);
+    plain.AddPlayer("player_a", 0, 60000);
+    plain.AddPlayer("player_b", 0, 60000);
+    tick_to(plain, 300);
+    const auto plain_snapshot = plain.Snapshot();
+    for (const auto& chain : plain_snapshot.chains) {
+        Check(chain.node_id == 0 && chain.rng_cursor == 0,
+              "chain tables: the default ruleset keeps the placeholder chain shape");
+    }
+}
+
 int main() {
     if (const char* fixture_path = std::getenv("PHK_BOSS_RACE_FIXTURE"); fixture_path != nullptr) {
         WriteGoldenFixture(fixture_path);
@@ -777,6 +847,7 @@ int main() {
     TestSpecialMechanicsGateAndEffects();
     TestPlayerHitJudgment();
     TestMyBulletDamageAndSpellPhases();
+    TestDifficultyAndChainTables();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " boss race test(s) failed\n";

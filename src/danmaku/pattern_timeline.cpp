@@ -216,7 +216,8 @@ std::vector<BulletMotion> EmitPatternTick(
     const PatternDef& def,
     std::uint64_t tick,
     const EmitContext& ctx,
-    const MotionTargets& targets
+    const MotionTargets& targets,
+    const DifficultyScale& difficulty
 ) {
     std::vector<BulletMotion> out;
     const std::uint32_t period = (def.period_ticks != 0) ? def.period_ticks : 45;
@@ -242,7 +243,7 @@ std::vector<BulletMotion> EmitPatternTick(
                              wave.spin_per_tick_deg * static_cast<double>(tick)));
         }
 
-        std::vector<BulletMotion> emitted = EmitRadial(cmd, wave.tmpl, ctx);
+        std::vector<BulletMotion> emitted = EmitRadial(cmd, wave.tmpl, ctx, difficulty);
         out.insert(out.end(), emitted.begin(), emitted.end());
     }
     return out;
