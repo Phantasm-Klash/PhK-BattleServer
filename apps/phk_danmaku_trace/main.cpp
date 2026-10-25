@@ -8,7 +8,11 @@
 // 用法：
 //   phk_danmaku_trace --out trace.jsonl [--seed 12345] [--ticks 300]
 //                      [--ruleset tna-1.40-danmaku] [--boss-hp 6000]
-//                      [--boss-id tian]
+//                      [--boss-id tian] [--difficulty 1]
+//
+// --difficulty：0/1/2/3 = easy/normal/hard/lunatic（默认 1），透传
+// BossRaceConfig.difficulty；只在 tna-1.40-danmaku 下由服务端权威缩放，
+// 默认 ruleset 只回显不缩放。
 //
 // 输入脚本（确定性，无随机）：两名玩家全程 shoot；p-alpha 走方形走位（每 32 tick
 // 换向）并在 tick 100 放一次 bomb；p-beta 每 64 tick 换向。移动/射击都服务端计算，
@@ -47,6 +51,17 @@ std::uint64_t ParseU64(const std::string& text, std::uint64_t fallback) {
     }
 }
 
+std::int32_t ParseI32(const std::string& text, std::int32_t fallback) {
+    if (text.empty()) {
+        return fallback;
+    }
+    try {
+        return static_cast<std::int32_t>(std::stoll(text));
+    } catch (...) {
+        return fallback;
+    }
+}
+
 phk::battle::BattleInput MakeScriptedInput(
     const std::string& player_id,
     std::uint64_t tick,
@@ -77,7 +92,7 @@ int main(int argc, char** argv) {
     std::string out_path;
     if (!ParseArg(argc, argv, "--out", &out_path) || out_path.empty()) {
         std::fprintf(stderr, "usage: phk_danmaku_trace --out <path> [--seed N] [--ticks N] "
-                             "[--ruleset v] [--boss-hp N] [--boss-id id]\n");
+                             "[--ruleset v] [--boss-hp N] [--boss-id id] [--difficulty N]\n");
         return 2;
     }
     std::string seed_text;
@@ -85,15 +100,19 @@ int main(int argc, char** argv) {
     std::string ruleset;
     std::string boss_hp_text;
     std::string boss_id;
+    std::string difficulty_text;
     ParseArg(argc, argv, "--seed", &seed_text);
     ParseArg(argc, argv, "--ticks", &ticks_text);
     ParseArg(argc, argv, "--ruleset", &ruleset);
     ParseArg(argc, argv, "--boss-hp", &boss_hp_text);
     ParseArg(argc, argv, "--boss-id", &boss_id);
+    ParseArg(argc, argv, "--difficulty", &difficulty_text);
 
     const std::uint64_t seed = ParseU64(seed_text, 12345);
     const std::uint64_t ticks = ParseU64(ticks_text, 300);
     const std::uint64_t boss_hp = ParseU64(boss_hp_text, 6000);
+    // 难度：默认 1（normal）。解析失败/越界交给服务端 DifficultyScaleFor 回落 normal。
+    const std::int32_t difficulty = ParseI32(difficulty_text, 1);
 
     phk::battle::BossRaceConfig config;
     config.match_id = "match_trace_000001";
@@ -101,6 +120,7 @@ int main(int argc, char** argv) {
     config.boss_max_hp = boss_hp;
     config.ruleset_version = ruleset.empty() ? "tna-1.40-danmaku" : ruleset;
     config.boss_id = boss_id;
+    config.difficulty = difficulty;
 
     phk::battle::BossRaceSimulation simulation(config);
     simulation.AddPlayer("p-alpha", 0, 240000);
@@ -114,10 +134,33 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // chains[] 统计（验收用）：tna-1.40-danmaku + 库内 boss_id 时应出现
+    // 真实 node_id / rng_cursor（非 P1 占位 node_id=0 且 rng_cursor=0）。
+    std::uint64_t ticks_with_chains = 0;
+    std::uint64_t max_chains_per_tick = 0;
+    std::uint64_t first_chain_tick = 0;
+    std::uint64_t real_chain_records = 0;
+    std::uint64_t total_chain_records = 0;
+
     for (std::uint64_t tick = 1; tick <= ticks; ++tick) {
         simulation.SubmitInput(MakeScriptedInput("p-alpha", tick, true, tick == 100));
         simulation.SubmitInput(MakeScriptedInput("p-beta", tick, true, false));
         const phk::battle::BossRaceSnapshot snapshot = simulation.Tick();
+        if (!snapshot.chains.empty()) {
+            ++ticks_with_chains;
+            if (first_chain_tick == 0) {
+                first_chain_tick = tick;
+            }
+            if (snapshot.chains.size() > max_chains_per_tick) {
+                max_chains_per_tick = snapshot.chains.size();
+            }
+            for (const phk::battle::BossChainWire& chain : snapshot.chains) {
+                ++total_chain_records;
+                if (chain.node_id != 0 || chain.rng_cursor != 0) {
+                    ++real_chain_records;
+                }
+            }
+        }
         const std::vector<std::uint8_t> payload =
             phk::battle::EncodeBossRaceSnapshotPayload(snapshot);
         if (payload.empty()) {
@@ -148,5 +191,12 @@ int main(int argc, char** argv) {
                  static_cast<unsigned long long>(simulation.CurrentTick()),
                  last.bullets.size(),
                  last.state_hash.c_str());
+    std::fprintf(stdout, "chains: ticks_with_chains=%llu max_per_tick=%llu first_tick=%llu "
+                         "records=%llu real=%llu\n",
+                 static_cast<unsigned long long>(ticks_with_chains),
+                 static_cast<unsigned long long>(max_chains_per_tick),
+                 static_cast<unsigned long long>(first_chain_tick),
+                 static_cast<unsigned long long>(total_chain_records),
+                 static_cast<unsigned long long>(real_chain_records));
     return 0;
 }

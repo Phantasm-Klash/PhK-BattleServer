@@ -190,4 +190,18 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_dem_tests PRIVATE phk_battle_core)
     add_test(NAME phk_dem_tests COMMAND phk_dem_tests)
+
+    # ChainNode 表路径的发射数量/时刻钉帧（P3 验收）。
+    add_executable(phk_chain_table_tests
+        tests/chain_table_tests.cpp
+    )
+    target_link_libraries(phk_chain_table_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_chain_table_tests COMMAND phk_chain_table_tests)
+
+    # 难度缩放钉帧（P4 验收）：默认 ruleset 恒等 + 密度/间隔通道。
+    add_executable(phk_difficulty_scale_tests
+        tests/difficulty_scale_tests.cpp
+    )
+    target_link_libraries(phk_difficulty_scale_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_difficulty_scale_tests COMMAND phk_difficulty_scale_tests)
 endif()
