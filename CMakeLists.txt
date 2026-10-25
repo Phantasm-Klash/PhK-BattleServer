@@ -59,6 +59,7 @@ add_library(phk_battle_core
     src/danmaku/boss_catalog.cpp
     src/danmaku/bullet_mode_map.cpp
     src/danmaku/bullet_motion.cpp
+    src/danmaku/chain_node.cpp
     src/danmaku/chain_split.cpp
     src/danmaku/emitter.cpp
     src/danmaku/judgment.cpp
