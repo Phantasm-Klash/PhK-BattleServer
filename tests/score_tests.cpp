@@ -98,7 +98,8 @@ std::int64_t ScoreGainSum(const phk::battle::BossRaceSnapshot& snapshot, const s
 
 void TestScoreTableShape() {
     const auto rules = phk::battle::danmaku::ScoreRulesFor();
-    Check(rules.graze_points == 500, "rules: graze_points placeholder");
+    // 实测（R1）：0x564d3c / 0x5665e0 / 0x567088 三处擦弹加分点均为 +100。
+    Check(rules.graze_points == 100, "rules: graze_points = 100 (measured @0x564d3c)");
     Check(rules.spell_capture_base == 100000, "rules: spell_capture_base placeholder");
     Check(rules.spell_capture_per_phase == 50000, "rules: spell_capture_per_phase placeholder");
     Check(rules.boss_defeat_bonus == 1000000, "rules: boss_defeat_bonus placeholder");
