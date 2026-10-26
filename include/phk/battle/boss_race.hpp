@@ -450,7 +450,6 @@ private:
     // Boss 归零时的击破奖励（两种 ruleset 都算；每玩家各自的副本各一次）。
     void AwardBossDefeatBonus(PlayerState& player, std::uint64_t tick);
     // 比赛结束（state → Finished）时的一次性结算奖励：残机 + 炸弹 + 剩余时间。
-    void AwardSettlementBonus(std::uint64_t finish_tick);
     // 该玩家的 shot_type（无 loadout / 未知 → 空串）。
     [[nodiscard]] std::string_view ShotTypeFor(const std::string& player_id) const;
     [[nodiscard]] const PlayerState* FirstOpponentOf(const std::string& player_id) const;
