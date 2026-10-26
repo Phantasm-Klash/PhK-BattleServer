@@ -54,10 +54,20 @@ struct ScoreRules {
     return ScoreRules{};
 }
 
+// 无 boss_id 时的默认 Boss 序号。取 11 = 原版第一个 Boss 弹幕函数编号
+// （`setBossBullet11`）：默认竞速局走合成 10 模式、没有具体 boss，但符卡奖励
+// 必须**生效**（用户 2026-10-27 明确要求），故按「第一号 Boss」计。
+// ★ 占位默认值，不是实测映射：真值待 APK 的关卡→Boss 序号表落地后替换。
+inline constexpr std::uint64_t kDefaultBossNumber = 11;
+
 // 原版 Boss 序号（`+0x348`，`setSelectBossNum` 写入）——从 boss_id 的数字部分
-// 推断："boss21" → 21、"boss11" → 11；无数字/空 → 0（→ 符卡分按公式 clamp 到 0）。
-// ★ 映射未实测：TNA 的序号是关卡/阶段编号，与本端 boss_id 的对应关系待确认；
-//   这是本文件唯一「推断」性质的输入。
+// 推断："boss21" → 21、"boss11" → 11。空/无数字 → {@link kDefaultBossNumber}。
+//
+// 反汇编实证（0x55e18c..0x55e1bc）：符卡奖励 = 300000×[+0x348] + 110×[+0x398]
+// + 1100×[+0x514] − 2000000。其中 +0x514 是擦弹计数（本端有），+0x398 是每帧
+// 递减的计数（写入点未定位，按 0 计）。Boss 序号量级为 11..22（与
+// setBossBullet11..22 的命名一致），故 300000×11 − 2000000 = 1,300,000 > 0，
+// 符卡奖励为正——这也是「默认值取 11」的依据之一。
 [[nodiscard]] constexpr std::uint64_t BossNumberOf(std::string_view boss_id) noexcept {
     std::uint64_t value = 0;
     bool any = false;
@@ -69,7 +79,7 @@ struct ScoreRules {
             break;
         }
     }
-    return any ? value : 0;
+    return any ? value : kDefaultBossNumber;
 }
 
 // 符卡获取分：实测求和式，clamp ≥ 0（Boss 序号小、擦弹少时公式为负；原作不扣分）。

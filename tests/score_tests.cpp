@@ -101,8 +101,8 @@ void TestScoreTableShape() {
     using phk::battle::danmaku::BossNumberOf;
     Check(BossNumberOf("boss21") == 21, "boss number: boss21 → 21");
     Check(BossNumberOf("boss11") == 11, "boss number: boss11 → 11");
-    Check(BossNumberOf("") == 0, "boss number: empty → 0");
-    Check(BossNumberOf("tian") == 0, "boss number: no digits → 0");
+    Check(BossNumberOf("") == phk::battle::danmaku::kDefaultBossNumber, "boss number: empty → default 11");
+    Check(BossNumberOf("tian") == phk::battle::danmaku::kDefaultBossNumber, "boss number: no digits → default 11");
 
     using phk::battle::danmaku::SpellCapturePoints;
     const auto& r = phk::battle::danmaku::ScoreRulesFor();
@@ -254,8 +254,12 @@ void TestBulletClearScore() {
     Check(sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 150, 0), "clear: threshold bullet injected");
     const auto cleared = sim.Tick();
     const auto* a = FindPlayer(cleared, "player_a");
-    // 3 颗被清 + 命中 30 + 捕获 0（无 boss_id）+ 击破 0。
-    Check(a != nullptr && a->score == 300 + 30, "clear: 3 bullets × 100 + one hit × 30");
+    // 3 颗被清 300 + 命中 30 + 符卡捕获（无 boss_id → 默认序号 11 → 1,300,000）。
+    const std::uint64_t capture =
+        phk::battle::danmaku::SpellCapturePoints(phk::battle::danmaku::ScoreRulesFor(), 11, 0);
+    Check(capture == 1300000u, "clear: default boss number pays 1,300,000");
+    Check(a != nullptr && a->score == 300 + 30 + capture,
+          "clear: 3 bullets × 100 + one hit × 30 + capture");
 }
 
 // ---------------------------------------------------------------------------
