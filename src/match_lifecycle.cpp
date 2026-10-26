@@ -1,3 +1,4 @@
+#include "phk/battle/aead.hpp"
 #include "phk/battle/card_events_report.hpp"  // BattleCallbackHeaders (T6 签名)
 #include "phk/battle/match_lifecycle.hpp"
 
@@ -1130,13 +1131,45 @@ void MatchServer::HandleSessionPayload(
     const KcpSessionInfo& session,
     const std::vector<std::uint8_t>& payload
 ) {
+    // --- P2：输入面 AEAD -------------------------------------------------
+    // 未配置会话密钥时这里什么都不做：不解析、不改字节、不多记审计，下面的
+    // 两个解码器拿到的就是原始 payload —— 行为与加密存在之前逐字节一致。
+    std::vector<std::uint8_t> wire = payload;
+    if (!config_.session_keys_by_player.empty()) {
+        // 本对局只接受信封。明文输入帧在这里就是降级尝试：把信封剥掉、改完
+        // 再按明文发回来，是绕过认证最省事的办法，必须拒绝而不是"顺便收下"。
+        if (!payload.empty() &&
+            payload[0] == static_cast<std::uint8_t>(BattlePayloadType::Input)) {
+            RecordTicketAudit(session.conv, "", "", "plaintext_input_rejected", true);
+            return;
+        }
+        const EnvelopeResult envelope = ParseEnvelope(payload);
+        if (!envelope.ok()) {
+            RecordTicketAudit(session.conv, "", "", std::string(envelope.reason()), true);
+            return;
+        }
+        const std::string& sealed_player = envelope.packet.header.player_id;
+        const auto key_it = config_.session_keys_by_player.find(sealed_player);
+        if (key_it == config_.session_keys_by_player.end()) {
+            RecordTicketAudit(session.conv, sealed_player, "", "aead_no_key_for_player", true);
+            return;
+        }
+        const AeadResult opened =
+            OpenEnvelope(envelope.packet, config_.session_key_id, key_it->second);
+        if (!opened.ok()) {
+            RecordTicketAudit(session.conv, sealed_player, "", std::string(opened.reason()), true);
+            return;
+        }
+        wire = opened.plaintext;
+    }
+
     BattleInput input;
-    if (!DecodeBattleInputPayload(payload, &input)) {
+    if (!DecodeBattleInputPayload(wire, &input)) {
         return;
     }
 
     SignedBattleTicket ticket;
-    const bool has_ticket = DecodeBattleInputTicketPayload(payload, &ticket);
+    const bool has_ticket = DecodeBattleInputTicketPayload(wire, &ticket);
 
     const auto bound = player_by_conv_.find(session.conv);
     if (bound == player_by_conv_.end()) {

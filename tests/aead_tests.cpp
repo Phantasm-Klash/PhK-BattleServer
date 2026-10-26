@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "phk/battle/aead.hpp"
+#include "phk/battle/match_lifecycle.hpp"
 
 namespace {
 
@@ -314,12 +315,140 @@ void TestOpenEnvelope() {
           "a tampered ciphertext fails the tag check");
 }
 
+// ---------------------------------------------------------------------------
+// 4. 收包路径：向后兼容与降级防护
+//
+// 这两条是 Step 1 的全部意义所在 —— 能力先落地、行为不变。没有它们，"未配置
+// 时逐字节一致"就只是一句注释。
+// ---------------------------------------------------------------------------
+
+phk::battle::BattleInput MakeInput(const std::string& match_id, const std::string& player_id,
+                                   std::uint64_t tick, std::uint64_t seq) {
+    phk::battle::BattleInput in;
+    in.match_id = match_id;
+    in.player_id = player_id;
+    in.tick = tick;
+    in.seq = seq;
+    in.card_slot = -1;
+    return in;
+}
+
+phk::battle::MatchLifecycleConfig MakeConfig() {
+    phk::battle::MatchLifecycleConfig config;
+    config.match_id = "match-1";
+    config.mode_id = "mvp_boss_race";
+    config.player_ids = {"p-1", "p-2"};
+    config.require_ticket = phk::battle::MatchTicketRequirement::Off;
+    return config;
+}
+
+void TestReceivePath() {
+    std::cout << "# aead: the receive path with and without a key\n";
+
+    // --- 未配置密钥：明文输入照常接受，与加密存在之前逐字节一致 -----------
+    {
+        phk::battle::MatchServer server(MakeConfig());
+        std::string error;
+        Check(server.Start(&error), "no key: the server starts (" + error + ")");
+
+        const auto payload =
+            phk::battle::EncodeBattleInputPayload(MakeInput("match-1", "p-1", 1, 1));
+        Check(server.InjectPayload(0x0000A011u, payload), "no key: a plaintext frame is injected");
+        Check(server.BoundPlayerCount() == 1, "no key: the player binds");
+        Check(server.AcceptedInputCount() == 1, "no key: the input is accepted");
+        server.Stop();
+    }
+
+    // --- 配置密钥：明文输入必须被拒（降级防护）-----------------------------
+    {
+        auto config = MakeConfig();
+        config.session_key_id = "bsess-1";
+        config.session_keys_by_player["p-1"] = std::vector<std::uint8_t>(32, 0x55);
+        phk::battle::MatchServer server(config);
+        std::string error;
+        Check(server.Start(&error), "sealed: the server starts (" + error + ")");
+
+        const auto payload =
+            phk::battle::EncodeBattleInputPayload(MakeInput("match-1", "p-1", 1, 1));
+        server.InjectPayload(0x0000A011u, payload);
+        Check(server.BoundPlayerCount() == 0,
+              "sealed: a plaintext frame is rejected, not downgraded");
+        Check(!server.TicketAuditLog().empty() &&
+                  server.TicketAuditLog().back().reason == "plaintext_input_rejected",
+              "sealed: and the rejection says why");
+        server.Stop();
+    }
+
+    // --- 配置密钥：信封被打开、输入被接受 ---------------------------------
+    {
+        auto config = MakeConfig();
+        config.session_key_id = "bsess-1";
+        const std::vector<std::uint8_t> key(32, 0x55);
+        config.session_keys_by_player["p-1"] = key;
+        phk::battle::MatchServer server(config);
+        std::string error;
+        Check(server.Start(&error), "sealed: the server starts (" + error + ")");
+
+        // 按客户端的约定造一个密封帧。
+        phk::battle::BattlePacketHeader header;
+        header.match_id = "match-1";
+        header.player_id = "p-1";
+        header.tick = 1;
+        header.seq = 1;
+        header.payload_type = phk::battle::BattlePayloadType::Input;
+        header.key_id = "bsess-1";
+        header.nonce_hex = phk::battle::DevAeadNonceHex(header);
+
+        const std::vector<std::uint8_t> nonce = FromHex(header.nonce_hex);
+        std::vector<std::uint8_t> aad;
+        const std::string direction = "client_to_server";
+        aad.insert(aad.end(), direction.begin(), direction.end());
+        aad.insert(aad.end(), header.key_id.begin(), header.key_id.end());
+        aad.insert(aad.end(), header.match_id.begin(), header.match_id.end());
+        aad.insert(aad.end(), header.player_id.begin(), header.player_id.end());
+        for (int i = 0; i < 8; i += 1) {
+            aad.push_back(static_cast<std::uint8_t>(
+                (static_cast<std::uint64_t>(header.payload_type) >> (8 * i)) & 0xff));
+        }
+        const std::uint64_t triple[] = {header.tick, header.seq, header.ack};
+        for (const std::uint64_t value : triple) {
+            for (int i = 0; i < 8; i += 1) {
+                aad.push_back(static_cast<std::uint8_t>((value >> (8 * i)) & 0xff));
+            }
+        }
+
+        const std::vector<std::uint8_t> body =
+            phk::battle::EncodeBattleInputPayload(MakeInput("match-1", "p-1", 1, 1));
+        std::vector<std::uint8_t> ciphertext(body.size(), 0);
+        std::vector<std::uint8_t> tag(16, 0);
+        {
+            EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+            int written = 0;
+            EVP_EncryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, nullptr, nullptr);
+            EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, static_cast<int>(nonce.size()), nullptr);
+            EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), nonce.data());
+            EVP_EncryptUpdate(ctx, nullptr, &written, aad.data(), static_cast<int>(aad.size()));
+            EVP_EncryptUpdate(ctx, ciphertext.data(), &written, body.data(),
+                              static_cast<int>(body.size()));
+            EVP_EncryptFinal_ex(ctx, ciphertext.data() + written, &written);
+            EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag.data());
+            EVP_CIPHER_CTX_free(ctx);
+        }
+
+        server.InjectPayload(0x0000A011u, BuildEnvelope(header, ciphertext, tag));
+        Check(server.BoundPlayerCount() == 1, "sealed: the sealed frame binds the player");
+        Check(server.AcceptedInputCount() == 1, "sealed: and its input is accepted");
+        server.Stop();
+    }
+}
+
 }  // namespace
 
 int main() {
     TestRfc8439Vector();
     TestEnvelopeParsing();
     TestOpenEnvelope();
+    TestReceivePath();
     if (g_failures == 0) {
         std::cout << "\naead tests: all passed\n";
         return 0;

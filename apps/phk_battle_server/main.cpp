@@ -188,6 +188,30 @@ bool ParseArgs(
         } else if (arg == "--ticket-key-id") {
             if (!next(&value)) return false;
             config->ticket_key_id = value;
+        } else if (arg == "--session-key-id") {
+            if (!next(&value)) return false;
+            // P2：本对局会话密钥的 id。服务端用它挡掉密钥轮换期到达的旧包。
+            config->session_key_id = value;
+        } else if (arg == "--session-key") {
+            if (!next(&value)) return false;
+            // P2：player_id=<64 hex>，可重复出现 —— 每个玩家每局一把。
+            const auto eq = value.find('=');
+            if (eq == std::string::npos || eq == 0) {
+                std::cerr << "invalid --session-key (want player_id=<64 hex>): " << value << "\n";
+                return false;
+            }
+            const std::string player_id = value.substr(0, eq);
+            const std::string key_hex = value.substr(eq + 1);
+            if (key_hex.size() != 64) {
+                std::cerr << "invalid --session-key (want 64 hex chars): " << value << "\n";
+                return false;
+            }
+            std::vector<std::uint8_t> key;
+            for (std::size_t i = 0; i + 1 < key_hex.size(); i += 2) {
+                key.push_back(
+                    static_cast<std::uint8_t>(std::stoul(key_hex.substr(i, 2), nullptr, 16)));
+            }
+            config->session_keys_by_player[player_id] = key;
         } else if (arg == "--callback-secret") {
             if (!next(&value)) return false;
             // T6：结果回传 HMAC 密钥（注册响应的 callback_secret）。

@@ -180,6 +180,17 @@ struct MatchLifecycleConfig {
     // Optional pinning; empty means "do not check".
     std::string battle_server_id;
     std::string ticket_key_id;
+    // --- 输入面 AEAD（P2，docs/battle-wire-scheme.md）----------------------
+    // 会话密钥**每个玩家、每场对局一把**（用户 2026-10-26 决策）。大厅随票据
+    // 下发给客户端，并放进 assignment 由 battle-agent 透传成本进程启动参数。
+    //
+    // 两者都为空 = 不启用：收包路径与加密存在之前逐字节一致，不解包、不多记
+    // 一条审计。这是上线的第一步，必须先于大厅下发密钥。
+    //
+    // 大厅一旦开始下发密钥，客户端立刻密封 —— 两端必须同时具备能力，顺序反了
+    // 每一帧输入都会被丢弃。
+    std::string session_key_id;
+    std::map<std::string, std::vector<std::uint8_t>> session_keys_by_player;
     // Fixed clock for tests; 0 means "use the wall clock".
     std::int64_t now_ms = 0;
 };
