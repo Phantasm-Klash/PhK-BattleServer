@@ -48,7 +48,18 @@ message(STATUS "PhK-Protocol C++ manifest: ${PHK_PROTOCOL_CPP_INCLUDE_DIR}")
 # .dem v1 container uses zlib for the body (COORDINATION §0.2).
 find_package(ZLIB REQUIRED)
 
+# Battle input AEAD (docs/battle-wire-scheme.md §P2). The cipher comes from
+# OpenSSL rather than a hand-rolled ChaCha20-Poly1305: writing your own AEAD is
+# where this kind of code goes wrong, and the gateway has OpenSSL 3.0 with
+# headers and pkg-config. Only libcrypto is needed.
+#
+# NOTE: `PhK-BattleServer/.github/workflows/protocol-audit.yml` compiles a few
+# sources with a hand-written g++ line; that line needs -lcrypto added whenever
+# `src/aead.cpp` or `src/protocol.cpp` is in it.
+find_package(OpenSSL REQUIRED)
+
 add_library(phk_battle_core
+    src/aead.cpp
     src/card_effects.cpp
     src/card_events_report.cpp
     src/card_hand.cpp
@@ -85,7 +96,7 @@ target_include_directories(phk_battle_core
         ${PHK_PROTOCOL_CPP_INCLUDE_DIR}
 )
 
-target_link_libraries(phk_battle_core PUBLIC ZLIB::ZLIB)
+target_link_libraries(phk_battle_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
 
 # Vendored third-party C code: keep it warning-free from our own -Wall flags.
 set_source_files_properties(third_party/ikcp/ikcp.c PROPERTIES COMPILE_OPTIONS "-w")
@@ -211,4 +222,13 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_score_tests PRIVATE phk_battle_core)
     add_test(NAME phk_score_tests COMMAND phk_score_tests)
+
+    # 计分系统独立验证（V1）：不变量/无双计/受击作废/默认 ruleset/hash/
+    # 结算一次性/时间边界/wire 四字段/自机乘区。
+    # 输入面 AEAD（P2）：RFC 8439 官方向量 + 信封严格解析 + 每条校验分支。
+    add_executable(phk_aead_tests
+        tests/aead_tests.cpp
+    )
+    target_link_libraries(phk_aead_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_aead_tests COMMAND phk_aead_tests)
 endif()
