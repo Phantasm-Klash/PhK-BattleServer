@@ -104,6 +104,13 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     node.trigger_tick = entry.phase;
     node.spawn_command.count = static_cast<std::int16_t>(entry.count_per_node);
     node.spawn_command.base_angle_deg = TnaBoss21NodeAngleDeg(entry, index);
+    // 弹种与初速来自同一份 .rodata 模板（+0x00 / +0x20）；不填这两项，弹幕会全部
+    // 堆在 Boss 点、半径为 0（实测踩过）。
+    node.spawn_command.bullet_type = entry.bullet_type;
+    node.motion_override.speed = static_cast<double>(entry.speed);
+    // 半径：模板里对应 `pf2`（碰撞半径系数）的字段尚未定位，先用引擎直线弹的
+    // 默认 4.0px（= 4000 milli，与合成弹幕同口径），保证可判定、可渲染。
+    node.motion_override.pf2 = 4.0;
     node.spawn_command.spawn_x = -1.0f;  // 跟随发射者（原版哨兵）
     node.spawn_command.spawn_y = -1.0f;
     node.provenance = "tna_boss21.hpp：节奏点实测（subs+msub）+ 9 次循环 × count=1";

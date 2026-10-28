@@ -80,6 +80,11 @@ std::vector<BulletMotion> EmitRadial(
         b.delay = tmpl.delay;
         b.rotate_flg = 0;
         b.hit_hantei = true;
+        // 碰撞半径兜底：运动函数（func 0 等）不写 hit_dis 时用它 = pf2·pf1。
+        // 不兜底的话链式节点的弹幕 radius_milli 恒 0 —— 既画不出来也判不到碰撞。
+        if (b.hit_dis == 0.0 && b.pf2 > 0.0) {
+            b.hit_dis = b.pf2 * b.pf1;
+        }
 
         bullets.push_back(b);
     }

@@ -39,6 +39,8 @@ struct TnaCadenceEntry {
     float base_angle_deg;         // 基准角度（度）
     float angle_jitter_deg;       // 角度抖动 ±（度）
     float angle_step_deg;         // 每轮角度步进（度）
+    std::int32_t bullet_type;     // 弹种（模板 +0x00；0 = 未指定）
+    float speed;                  // 初速（模板 +0x20）
 };
 
 // (400,1) 循环块的实测常量。
@@ -50,20 +52,20 @@ inline constexpr float kTnaBoss21AngleStepDeg = -12.0f;
 
 inline constexpr std::array<TnaCadenceEntry, 11> kTnaBoss21Cadence = {{
     // 4×(400,1)：9 节点循环 × 每节点 1 发
-    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f},
-    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f},
-    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f},
-    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f},
+    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f, 0, 2.0f},
+    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f, 0, 2.0f},
+    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f, 0, 2.0f},
+    {400u, 1u, kTnaBoss21NodesPerTrigger, kTnaBoss21CountPerNode, 270.0f, 10.0f, -12.0f, 0, 2.0f},
     // 4×(300,1) 的 18 帧子节奏：单节点、count 6/8/12/12
-    {18u, 1u, 1, 6, 90.0f, 0.0f, 0.0f},
-    {18u, 1u, 1, 8, 90.0f, 0.0f, 0.0f},
-    {18u, 1u, 1, 12, 90.0f, 0.0f, 0.0f},
-    {18u, 1u, 1, 12, 90.0f, 0.0f, 0.0f},
+    {18u, 1u, 1, 6, 90.0f, 0.0f, 0.0f, 48, 3.6f},
+    {18u, 1u, 1, 8, 90.0f, 0.0f, 0.0f, 48, 3.6f},
+    {18u, 1u, 1, 12, 90.0f, 0.0f, 0.0f, 39, 3.6f},
+    {18u, 1u, 1, 12, 90.0f, 0.0f, 0.0f, 39, 3.6f},
     // 高频小波与 91 相位波
-    {20u, 1u, 1, 30, 90.0f, 0.0f, 0.0f},
-    {112u, 91u, 1, 30, 90.0f, 0.0f, 0.0f},
+    {20u, 1u, 1, 30, 90.0f, 0.0f, 0.0f, 29, 5.0f},
+    {112u, 91u, 1, 30, 90.0f, 0.0f, 0.0f, 172, 4.0f},
     // (120,91)：模板 count 读为 0，未解出 → 不发射
-    {120u, 91u, 1, 0, 90.0f, 0.0f, 0.0f},
+    {120u, 91u, 1, 0, 90.0f, 0.0f, 0.0f, 0, 0.0f},
 }};
 
 // 本 tick 是否触发该节奏点。
