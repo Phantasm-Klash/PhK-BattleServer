@@ -223,6 +223,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     target_link_libraries(phk_score_tests PRIVATE phk_battle_core)
     add_test(NAME phk_score_tests COMMAND phk_score_tests)
 
+    add_executable(phk_tna_cadence_tests
+        tests/tna_cadence_tests.cpp
+    )
+    target_link_libraries(phk_tna_cadence_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_tna_cadence_tests COMMAND phk_tna_cadence_tests)
+
     # 计分系统独立验证（V1）：不变量/无双计/受击作废/默认 ruleset/hash/
     # 结算一次性/时间边界/wire 四字段/自机乘区。
     # 输入面 AEAD（P2）：RFC 8439 官方向量 + 信封严格解析 + 每条校验分支。
