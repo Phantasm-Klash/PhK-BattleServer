@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 
+#include "phk/battle/boss_race.hpp"
+#include "phk/battle/danmaku/chain_node.hpp"
 #include "phk/battle/danmaku/tna_boss21.hpp"
 
 namespace {
@@ -90,6 +92,51 @@ void TestDensityAgainstSynthetic() {
     Check(tna <= synthetic * 2u, "density: decoded subset stays in the synthetic order of magnitude");
 }
 
+
+// 实测节奏表已注册为独立的 boss 表（boss21_tna），与 #11 抽样样板互不干扰。
+void TestRegisteredTable() {
+    using namespace phk::battle::danmaku;
+    Check(HasBossPhaseTable("boss21_tna"), "registry: boss21_tna registered");
+    const std::vector<const BossPhaseTable*> tables = FindBossPhaseTables("boss21_tna");
+    Check(tables.size() == 1, "registry: exactly one cadence table");
+    if (tables.size() != 1) {
+        return;
+    }
+    // 4 条已解码的 (400,1) 波 × 9 节点 = 36 个节点
+    Check(tables.front()->nodes.size() == 36, "registry: 36 nodes (four waves x nine steps)");
+    // 全部在 tick 1 触发（phase=1）
+    Check(ChainTriggerCountAt(*tables.front(), 1) == 36, "registry: all 36 fire at tick 1");
+    Check(ChainTriggerCountAt(*tables.front(), 2) == 0, "registry: nothing fires at tick 2");
+    Check(ChainTriggerCountAt(*tables.front(), 401) == 36, "registry: all 36 fire at tick 401");
+    // 角度 270 → 174，步进 -12
+    const std::vector<ChainNode>& nodes = tables.front()->nodes;
+    Check(nodes[0].spawn_command.base_angle_deg == 270.0f, "registry: node 0 at 270 degrees");
+    Check(nodes[8].spawn_command.base_angle_deg == 174.0f, "registry: node 8 at 174 degrees");
+    Check(nodes[0].spawn_command.count == 1, "registry: each node carries one bullet");
+}
+
+
+// 端到端：tna ruleset + boss_id=boss21_tna → tick 1 每玩家 36 颗真实弹幕。
+void TestSimulationEmits() {
+    phk::battle::BossRaceConfig config;
+    config.match_id = "match_tna_cadence_0001";
+    config.match_seed = 9001u;
+    config.boss_max_hp = 6000;
+    config.ruleset_version = "tna-1.40-danmaku";
+    config.boss_id = "boss21_tna";
+    phk::battle::BossRaceSimulation sim(config);
+    sim.AddPlayer("player_a", 0, 60000);
+    sim.AddPlayer("player_b", 0, 60000);
+
+    const auto first = sim.Tick();  // tick 1：四个 (400,1) 波各 9 发
+    if (first.bullets.size() != 72) { std::cerr << "actual bullets=" << first.bullets.size() << " tick=" << first.tick << " state=" << static_cast<int>(first.state) << "\n"; }
+    Check(first.bullets.size() == 72, "sim: tick 1 spawns 72 bullets (2 players x 36)");
+    Check(first.tick == 1, "sim: first snapshot is tick 1");
+
+    const auto second = sim.Tick();  // tick 2：无触发
+    Check(second.bullets.size() == 72, "sim: tick 2 spawns nothing new");
+}
+
 }  // namespace
 
 int main() {
@@ -98,6 +145,8 @@ int main() {
     TestBulletCounts();
     TestNodeAngles();
     TestDensityAgainstSynthetic();
+    TestRegisteredTable();
+    TestSimulationEmits();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " tna cadence test(s) failed\n";

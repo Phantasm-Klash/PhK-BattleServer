@@ -16,6 +16,9 @@
 // 同样未解码——块 A/B 的周期与门控值取自 #11 解码，标注为样板来源。
 // 节点尺寸 0x40 为任务书指定假定（#11 实测值；#21 尺寸逆向表未给出）。
 #include "phk/battle/danmaku/chain_node.hpp"
+#include "phk/battle/danmaku/tna_boss21.hpp"
+#include "phk/battle/danmaku/tna_boss21.hpp"
+#include "phk/battle/danmaku/tna_boss21.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -91,6 +94,22 @@ ChainNode MakeBlockBNode(std::uint32_t offset) {
     return node;
 }
 
+
+
+// 实测节奏节点（tna_boss21.hpp）：一次触发展开 nodes 个节点、每节点
+// count_per_node 发，角度按 angle_step 递减。
+ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
+    ChainNode node;
+    node.trigger_period = entry.period;
+    node.trigger_tick = entry.phase;
+    node.spawn_command.count = static_cast<std::int16_t>(entry.count_per_node);
+    node.spawn_command.base_angle_deg = TnaBoss21NodeAngleDeg(entry, index);
+    node.spawn_command.spawn_x = -1.0f;  // 跟随发射者（原版哨兵）
+    node.spawn_command.spawn_y = -1.0f;
+    node.provenance = "tna_boss21.hpp：节奏点实测（subs+msub）+ 9 次循环 × count=1";
+    return node;
+}
+
 std::vector<BossPhaseTable> BuildLibrary() {
     std::vector<BossPhaseTable> library;
 
@@ -109,6 +128,24 @@ std::vector<BossPhaseTable> BuildLibrary() {
     }
 
     library.push_back(std::move(table));
+
+    // 实测节奏表单独一张表（boss_id = "boss21_tna"）：与上面的 #11 抽样样板
+    // 互不干扰——样板钉的是「结构」，这张钉的是「实测节奏 + 9 节点循环」。
+    BossPhaseTable cadence_table;
+    cadence_table.boss_id = "boss21_tna";
+    cadence_table.phase_id = 0;
+    cadence_table.node_size_bytes = 0x80;
+    cadence_table.source_node_count = 146;
+    for (const TnaCadenceEntry& entry : kTnaBoss21Cadence) {
+        if (entry.count_per_node == 0) {
+            continue;  // 未解码条目不发射
+        }
+        for (std::uint16_t index = 0; index < entry.nodes; ++index) {
+            cadence_table.nodes.push_back(MakeCadenceNode(entry, index));
+        }
+    }
+    library.push_back(std::move(cadence_table));
+
     return library;
 }
 
