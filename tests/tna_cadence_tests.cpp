@@ -36,13 +36,13 @@ void TestTableShape() {
     Check(kTnaBoss21NodesPerTrigger == 9, "table: the emission loop runs nine times");
     Check(kTnaBoss21CountPerNode == 1, "table: each node carries one bullet (tpl+0x14 = 1)");
 
-    std::uint32_t p300 = 0;
+    std::uint32_t p18 = 0;
     std::uint32_t p400 = 0;
     for (const TnaCadenceEntry& entry : kTnaBoss21Cadence) {
-        if (entry.period == 300 && entry.phase == 1) ++p300;
+        if (entry.period == 18 && entry.phase == 1) ++p18;
         if (entry.period == 400 && entry.phase == 1) ++p400;
     }
-    Check(p300 == 4, "table: four (300,1) points");
+    Check(p18 == 4, "table: four 18-frame sub-cadences (from the 300-cycle blocks)");
     Check(p400 == 4, "table: four (400,1) points");
 }
 
@@ -61,17 +61,18 @@ void TestFiringRule() {
 }
 
 void TestBulletCounts() {
-    // tick 1：四个 (400,1) 各 9 发 = 36；(300,1) 的 count 未解码 → 不发。
-    Check(TnaBoss21BulletsAt(1) == 36u, "count: tick 1 emits 36 (four waves x 9 nodes)");
+    // tick 1：4×9（400 波）+ 6+8+12+12（18 帧子节奏）+ 30（20 帧小波）= 104
+    Check(TnaBoss21BulletsAt(1) == 104u, "count: tick 1 emits 104");
     Check(TnaBoss21BulletsAt(2) == 0u, "count: tick 2 emits nothing");
-    Check(TnaBoss21BulletsAt(401) == 36u, "count: tick 401 emits 36");
-    Check(TnaBoss21BulletsAt(301) == 0u, "count: tick 301 emits nothing (300-waves undecoded)");
-    Check(TnaBoss21FiringCount(1) == 4, "firing: tick 1 fires four entries");
+    Check(TnaBoss21BulletsAt(19) == 38u, "count: tick 19 emits the 18-frame sub-cadences");
+    Check(TnaBoss21BulletsAt(401) == 66u, "count: tick 401 emits 36 (400-waves) + 30 (20-wave)");
+    Check(TnaBoss21BulletsAt(301) == 30u, "count: tick 301 emits the 20-frame wave only");
+    Check(TnaBoss21FiringCount(1) == 9, "firing: tick 1 fires nine entries");
 
     Check(TnaCadenceBullets(kTnaBoss21Cadence[0]) == 9u, "bullets: one wave = 9 nodes x 1");
 
     // 0..1200：tick 1 / 401 / 801 三次 × 36
-    Check(TnaBoss21BulletsInRange(0, 1200) == 36u * 3u, "range: 0..1200 emits 108");
+    Check(TnaBoss21BulletsInRange(0, 1200) == 4754u, "range: 0..1200 emits 4754");
 }
 
 void TestNodeAngles() {
@@ -84,12 +85,11 @@ void TestNodeAngles() {
 
 void TestDensityAgainstSynthetic() {
     // 合成 10 模式：每玩家每 450 tick 74 发（12/7/4/2/8/6/5/10/4/16）。
-    // 实测节奏表目前只解出 4 条 (400,1) 波 → 450 tick 内 72 发。
+    // 实测节奏表：450 tick 内 1832 发 —— 24.8 倍。
     const std::uint64_t tna = TnaBoss21BulletsInRange(0, 450);
     const std::uint64_t synthetic = 74;
-    Check(tna == 72u, "density: 450 ticks emit 72 with the decoded waves");
-    // 其余 7 条波未解码，故当前密度与合成模式同量级——差距在未解码条目，不在算法。
-    Check(tna <= synthetic * 2u, "density: decoded subset stays in the synthetic order of magnitude");
+    Check(tna == 1832u, "density: 450 ticks emit 1832 with the measured cadence");
+    Check(tna > synthetic * 20u, "density: measured cadence is over twenty times the synthetic rotation");
 }
 
 
@@ -103,11 +103,13 @@ void TestRegisteredTable() {
         return;
     }
     // 4 条已解码的 (400,1) 波 × 9 节点 = 36 个节点
-    Check(tables.front()->nodes.size() == 36, "registry: 36 nodes (four waves x nine steps)");
+    Check(tables.front()->nodes.size() == 42, "registry: 42 nodes (36 from the 400-waves + 6 single-node waves)");
     // 全部在 tick 1 触发（phase=1）
-    Check(ChainTriggerCountAt(*tables.front(), 1) == 36, "registry: all 36 fire at tick 1");
+    // (112,91) 那条要等到 tick 91，故 tick 1 只触发 41 个节点。
+    Check(ChainTriggerCountAt(*tables.front(), 1) == 41, "registry: 41 of 42 fire at tick 1");
+    Check(ChainTriggerCountAt(*tables.front(), 91) == 5, "registry: tick 91 fires 4 x 18-frame + 112-wave");
     Check(ChainTriggerCountAt(*tables.front(), 2) == 0, "registry: nothing fires at tick 2");
-    Check(ChainTriggerCountAt(*tables.front(), 401) == 36, "registry: all 36 fire at tick 401");
+    Check(ChainTriggerCountAt(*tables.front(), 401) == 37, "registry: 37 fire at tick 401 (36 x 400-waves + 20-wave)");
     // 角度 270 → 174，步进 -12
     const std::vector<ChainNode>& nodes = tables.front()->nodes;
     Check(nodes[0].spawn_command.base_angle_deg == 270.0f, "registry: node 0 at 270 degrees");
@@ -129,12 +131,12 @@ void TestSimulationEmits() {
     sim.AddPlayer("player_b", 0, 60000);
 
     const auto first = sim.Tick();  // tick 1：四个 (400,1) 波各 9 发
-    if (first.bullets.size() != 72) { std::cerr << "actual bullets=" << first.bullets.size() << " tick=" << first.tick << " state=" << static_cast<int>(first.state) << "\n"; }
-    Check(first.bullets.size() == 72, "sim: tick 1 spawns 72 bullets (2 players x 36)");
+    if (first.bullets.size() != 208) { std::cerr << "actual bullets=" << first.bullets.size() << "\n"; }
+    Check(first.bullets.size() == 208, "sim: tick 1 spawns 208 bullets (2 players x 104)");
     Check(first.tick == 1, "sim: first snapshot is tick 1");
 
     const auto second = sim.Tick();  // tick 2：无触发
-    Check(second.bullets.size() == 72, "sim: tick 2 spawns nothing new");
+    Check(second.bullets.size() == 208, "sim: tick 2 spawns nothing new");
 }
 
 }  // namespace
