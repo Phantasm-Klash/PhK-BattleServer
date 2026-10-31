@@ -16,8 +16,7 @@
 // 同样未解码——块 A/B 的周期与门控值取自 #11 解码，标注为样板来源。
 // 节点尺寸 0x40 为任务书指定假定（#11 实测值；#21 尺寸逆向表未给出）。
 #include "phk/battle/danmaku/chain_node.hpp"
-#include "phk/battle/danmaku/tna_boss21.hpp"
-#include "phk/battle/danmaku/tna_boss21.hpp"
+#include "phk/battle/danmaku/bullet_mode_map.hpp"
 #include "phk/battle/danmaku/tna_boss21.hpp"
 
 #include <cstddef>
@@ -108,12 +107,22 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     // 堆在 Boss 点、半径为 0（实测踩过）。
     node.spawn_command.bullet_type = entry.bullet_type;
     node.motion_override.speed = static_cast<double>(entry.speed);
+    // 运动函数：原版 `Enemy::createBullets1` @0x37bacc 读 command+0x00（= 本表
+    // bullet_type，即节点模式 id），经双跳转表映射出 (w2, w3)，并把这一对作为
+    // 参数 2/3 传给每颗子弹的虚初始化（vtable+0x218）[实测：0x37bef0 起]。
+    // w2 的取值域（24..59）与 bulletFunc 编号域相容 → 取作运动函数号 [推断]。
+    // bullet_type == 0 表示该波模板的弹种字段未定位（4 条 (400,1) 波），
+    // 此时不派生（保持 0 = 直线），避免用一个不属于它的函数号改掉运动。
+    if (entry.bullet_type > 0) {
+        node.motion_override.bullet_func_no = BulletModeForId(entry.bullet_type).w2;
+    }
     // 半径：模板里对应 `pf2`（碰撞半径系数）的字段尚未定位，先用引擎直线弹的
     // 默认 4.0px（= 4000 milli，与合成弹幕同口径），保证可判定、可渲染。
     node.motion_override.pf2 = 4.0;
     node.spawn_command.spawn_x = -1.0f;  // 跟随发射者（原版哨兵）
     node.spawn_command.spawn_y = -1.0f;
-    node.provenance = "tna_boss21.hpp：节奏点实测（subs+msub）+ 9 次循环 × count=1";
+    node.provenance = "tna_boss21.hpp：节奏点实测（subs+msub）+ 9 次循环 × count=1；"
+                      "bullet_func_no 由 BulletModeForId(bullet_type).w2 派生";
     return node;
 }
 
@@ -152,6 +161,22 @@ std::vector<BossPhaseTable> BuildLibrary() {
         }
     }
     library.push_back(std::move(cadence_table));
+
+    // state 20 的独立节奏表：与 state 14 互斥，单独注册以便分别 trace 比对。
+    BossPhaseTable s20_table;
+    s20_table.boss_id = "boss21_tna_s20";
+    s20_table.phase_id = 0;
+    s20_table.node_size_bytes = 0x80;
+    s20_table.source_node_count = 146;
+    for (const TnaCadenceEntry& entry : kTnaBoss21CadenceState20) {
+        if (entry.count_per_node == 0) {
+            continue;
+        }
+        for (std::uint16_t index = 0; index < entry.nodes; ++index) {
+            s20_table.nodes.push_back(MakeCadenceNode(entry, index));
+        }
+    }
+    library.push_back(std::move(s20_table));
 
     return library;
 }
