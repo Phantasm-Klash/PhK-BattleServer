@@ -1,0 +1,21 @@
+{
+  "case": "boss21-d0-hp24",
+  "boss_id": "boss21",
+  "difficulty": 0,
+  "boss_hp": 24,
+  "ticks": 300,
+  "seed": 12345,
+  "ruleset": "tna-1.40-danmaku",
+  "bullets_total": 0,
+  "max_per_tick": 0,
+  "chains_records": 7,
+  "ticks_with_bullets": 0,
+  "trace_lines": 300,
+  "spell_phase_starts": 3,
+  "spell_phases": [
+    1,
+    2
+  ],
+  "pattern_ids": [],
+  "spawn_series_sha256": "c589f7891868bd174368869701c6a143074a0b7b1be967b2876ef5b3f3cacf31"
+}
