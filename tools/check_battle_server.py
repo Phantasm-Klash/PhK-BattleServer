@@ -718,6 +718,7 @@ def main() -> int:
         "ruleset_version_mismatch" not in result_impl
         or "reward_projection_json" not in result_impl
         or "LooksLikeSingleJsonObject" not in result_impl
+        or "if (expected.empty())" in result_impl
         or "mode_result_json_invalid" not in result_impl
         or "reward_projection_json_invalid" not in result_impl
         or "reward_projection_field_unknown" not in result_impl
@@ -959,6 +960,8 @@ def main() -> int:
         or "mode_result_mutation_forbidden" not in tests_text
         or "mode_result_json_invalid" not in tests_text
         or "reward_projection_json_invalid" not in tests_text
+        or "TestWorldBossEmptyAnnouncementKeyIsRequired" not in tests_text
+        or "boss_world_defeat_announcement_key_mismatch" not in tests_text
         or "tampered_fixture_seed" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
