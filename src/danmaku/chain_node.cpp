@@ -211,6 +211,59 @@ bool HasBossPhaseTable(std::string_view boss_id) {
     return !FindBossPhaseTables(boss_id).empty();
 }
 
+namespace {
+
+// 符卡阶段 → 原版 state 段。**整张映射集中在这一处**（校准只改这里）。
+//
+// 依据（docs/apk-reverse-notes/patterns 与 TNA21_REWRITE_PROPOSAL.md）：
+// setBossBullet21 内 state 14（[0x4d6fb8,0x4d89e4)）与 state 20
+// （[0x4d9a88,0x4df70c)）是顺序执行的两段。服务端没有原版的 Boss 阶段字段
+// （Enemy+0x534，未解码），故用 3 段符卡阶段近似这个进度：
+//   phase 0/1（HP 100%~33%）→ state 14 表；phase 2（HP < 33%）→ state 20 表。
+// 这是**假设**，不是实测；实测进度推进方式不同的话只改这张表。
+struct BossStateSegmentGroup {
+    std::string_view base_boss_id;
+    std::vector<BossStateSegment> segments;
+};
+
+const std::vector<BossStateSegmentGroup>& BossStateSegmentLibrary() {
+    static const std::vector<BossStateSegmentGroup> kLibrary = {
+        {"boss21_tna", {{"boss21_tna", 0}, {"boss21_tna_s20", 2}}},
+    };
+    return kLibrary;
+}
+
+}  // namespace
+
+const std::vector<BossStateSegment>& BossStateSegments(std::string_view base_boss_id) {
+    static const std::vector<BossStateSegment> kNoSegments;
+    for (const BossStateSegmentGroup& group : BossStateSegmentLibrary()) {
+        if (group.base_boss_id == base_boss_id) {
+            return group.segments;
+        }
+    }
+    return kNoSegments;
+}
+
+std::string_view BossStateBossIdForPhase(std::string_view base_boss_id, std::uint32_t spell_phase) {
+    const std::vector<BossStateSegment>& segments = BossStateSegments(base_boss_id);
+    // 默认 = 原样返回：无段表 / 所有段的 from_phase 都大于 spell_phase 时走这里。
+    std::string_view resolved = base_boss_id;
+    std::uint32_t best_from_phase = 0;
+    bool matched = false;
+    for (const BossStateSegment& segment : segments) {
+        if (segment.from_phase > spell_phase) {
+            continue;
+        }
+        if (!matched || segment.from_phase >= best_from_phase) {
+            best_from_phase = segment.from_phase;
+            resolved = segment.boss_id;
+            matched = true;
+        }
+    }
+    return resolved;
+}
+
 bool ChainTablesActive(std::string_view ruleset_version, std::string_view boss_id) {
     if (ruleset_version != kRulesetDanmakuMechanics) {
         return false;

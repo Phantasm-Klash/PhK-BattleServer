@@ -106,6 +106,28 @@ struct BossPhaseTable {
 // 该 boss 是否有阶段表。
 [[nodiscard]] bool HasBossPhaseTable(std::string_view boss_id);
 
+// ---------------------------------------------------------------------------
+// 符卡阶段 → 原版 state 段（顺序段的轮转调度）
+// ---------------------------------------------------------------------------
+// 原版 `setBossBullet21` 的 state 14 段（[0x4d6fb8, 0x4d89e4)）与 state 20 段
+// （[0x4d9a88, 0x4df70c)）是**顺序执行**的两段，不是同时播。自研服务端用符卡阶段
+// （PlayerState::spell_phase，3 段：HP 100% / 66% / 33%）近似这个进度。
+//
+// ★ 映射本身是**假设**：原版按 `Enemy+0x534` 的阶段字段切换，该字段未解码。
+// 因此映射集中在本文件的段表里（chain_node.cpp），日后校准只改那一处。
+struct BossStateSegment {
+    std::string_view boss_id;   // 该段用哪张发射表
+    std::uint32_t from_phase;   // 从第几个符卡阶段起生效（含）
+};
+
+// 某 base boss_id 的段表（from_phase 升序）。无段表 → 空（静态空表，引用有效）。
+[[nodiscard]] const std::vector<BossStateSegment>& BossStateSegments(std::string_view base_boss_id);
+
+// 取 from_phase <= spell_phase 里最大的那一段（同值取段表中靠后的）；
+// 没有匹配段（或该 boss 无段表）返回 base_boss_id 本身 ——
+// 保证未知 boss / 旧调用点的行为逐字节不变。
+[[nodiscard]] std::string_view BossStateBossIdForPhase(std::string_view base_boss_id, std::uint32_t spell_phase);
+
 // ChainNode 路径启用判定（硬约束）：
 //   ruleset_version == kRulesetDanmakuMechanics（"tna-1.40-danmaku"）
 //   && boss_id 非空 && 库内有该 boss 的表。

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -789,6 +790,8 @@ void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
 
 // ChainNode 表路径：触发周期来自数据表（300/200 等，非 45 格网格），按 tick
 // 逐节点展开；难度 interval 缩放作用于各节点 trigger period（chain_node.cpp）。
+// 用哪张表由玩家的符卡阶段决定（BossStateBossIdForPhase）：原版 setBossBullet21
+// 的 state 14 / state 20 是顺序两段，服务端用 spell_phase 近似该进度。
 // 快照 chains[] 的权威来源 = tick_chains_（本 tick 触发的节点，广播级）。
 void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
     // boss 移动：整数三角波发射点偏移（未配置 boss → (0,0)，与现状一致）。
@@ -800,6 +803,9 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
 
     // chains[] 为广播级视图（每玩家 Boss 副本的同构时间线）：取首个合格玩家的
     // 展开结构记录一次（节点触发与展开数与玩家无关；瞄准只改角度不改计数）。
+    // ★ 但「用哪张表」是**逐玩家**的（见循环内的 BossStateBossIdForPhase）——
+    // 所以 chains[] 必须顺着下面那个玩家的同一次解析结果记录，否则 chains[] 与
+    // bullets[] 会指向不同的表，客户端按 chain_id 对齐时错位。
     bool chains_recorded = false;
 
     for (auto& item : players_) {
@@ -810,6 +816,12 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
         if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
             continue;
         }
+
+        // 符卡阶段 → 原版 state 段：每玩家的 Boss 副本各自推进 spell_phase，
+        // 同一 tick 两个玩家可能处在不同阶段、用不同的表，故解析必须在本循环内做
+        // （不能用全局 config_.boss_id）。无段表的 boss → 原样返回 config_.boss_id。
+        const std::string_view boss_id =
+            danmaku::BossStateBossIdForPhase(config_.boss_id, player.spell_phase);
 
         danmaku::EmitContext ctx;
         ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
@@ -824,7 +836,7 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
         targets.enemy_y = ctx.emitter_y;
 
         const std::vector<danmaku::ChainNodeEmission> emissions =
-            danmaku::EmitChainBossTickDetailed(config_.boss_id, tick, ctx, targets, difficulty_scale_);
+            danmaku::EmitChainBossTickDetailed(boss_id, tick, ctx, targets, difficulty_scale_);
 
         if (!chains_recorded && !emissions.empty()) {
             for (const danmaku::ChainNodeEmission& emission : emissions) {
@@ -850,7 +862,7 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
                 LiveBullet live;
                 live.bullet_id = "b" + std::to_string(next_bullet_id_++);
                 live.owner_player_id = player.player_id;
-                live.pattern_id = "chain:" + config_.boss_id;
+                live.pattern_id = "chain:" + std::string(boss_id);
                 live.pattern_index = emission.table_index;
                 live.chain_id = emission.chain_id;
                 live.spawn_index = spawn_index++;

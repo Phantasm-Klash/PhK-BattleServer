@@ -3,6 +3,8 @@
 // 表来源见 include/phk/battle/danmaku/tna_boss21.hpp 的头注释（capstone 实测）。
 #include <cstdint>
 #include <iostream>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -242,6 +244,198 @@ void TestState20Table() {
     Check(TnaBoss21State20BulletsAt(1) == 0u, "s20: tick 1 emits nothing");
 }
 
+// ---------------------------------------------------------------------------
+// 符卡阶段 → 原版 state 段的轮转调度（BossStateSegments / BossStateBossIdForPhase）
+// ---------------------------------------------------------------------------
+//
+// 背景：原版 setBossBullet21 的 state 14 与 state 20 是**顺序**两段；服务端把它们
+// 注册成两张表（boss21_tna / boss21_tna_s20），由段表按 spell_phase 轮转。
+// 段表映射本身是**假设**（原版按 Enemy+0x534 切换，未解码），故这里只钉住
+// 「段表长什么样」与「解析出来的 id 是什么」，不钉住它为何这样映射。
+
+void TestBossStateSegments() {
+    using namespace phk::battle::danmaku;
+    const std::vector<BossStateSegment>& segments = BossStateSegments("boss21_tna");
+    Check(segments.size() == 2, "segments: boss21_tna declares two state segments");
+    if (segments.size() == 2) {
+        Check(segments[0].from_phase == 0, "segments: the first segment starts at spell phase 0");
+        Check(segments[0].boss_id == "boss21_tna", "segments: phase 0 plays the state-14 table");
+        Check(segments[1].from_phase == 2, "segments: the second segment starts at spell phase 2");
+        Check(segments[1].boss_id == "boss21_tna_s20", "segments: phase 2 plays the state-20 table");
+        Check(segments[0].from_phase < segments[1].from_phase, "segments: from_phase is strictly ascending");
+        // 段表指向的每一张表都必须真的注册过，否则解析出的 boss_id 会静默发射为空。
+        for (const BossStateSegment& segment : segments) {
+            Check(HasBossPhaseTable(segment.boss_id),
+                  "segments: " + std::string(segment.boss_id) + " is registered in the library");
+        }
+    }
+    // 其它 boss（含 #11 抽样样板）没有段表 → 空。
+    Check(BossStateSegments("boss21").empty(), "segments: boss21 has no segment table");
+    Check(BossStateSegments("boss21_tna_s20").empty(), "segments: the segment target has no segment table itself");
+    Check(BossStateSegments("unknown").empty(), "segments: unknown boss has no segment table");
+    Check(BossStateSegments("").empty(), "segments: empty boss id has no segment table");
+}
+
+void TestBossStateBossIdForPhase() {
+    using namespace phk::battle::danmaku;
+    Check(BossStateBossIdForPhase("boss21_tna", 0) == "boss21_tna", "phase map: spell phase 0 -> state 14");
+    Check(BossStateBossIdForPhase("boss21_tna", 1) == "boss21_tna", "phase map: spell phase 1 -> state 14");
+    Check(BossStateBossIdForPhase("boss21_tna", 2) == "boss21_tna_s20", "phase map: spell phase 2 -> state 20");
+    // 越过最后一段仍取最大的匹配段（不会掉回第一段）。
+    Check(BossStateBossIdForPhase("boss21_tna", 3) == "boss21_tna_s20",
+          "phase map: a phase beyond the table stays on the last segment");
+    // 无段表 → 原样返回（旧调用点 / 未知 boss 逐字节不变）。
+    Check(BossStateBossIdForPhase("boss21", 2) == "boss21", "phase map: boss21 is returned as-is");
+    Check(BossStateBossIdForPhase("unknown", 2) == "unknown", "phase map: unknown boss is returned as-is");
+    Check(BossStateBossIdForPhase("", 2) == "", "phase map: empty boss id stays empty");
+}
+
+// 端到端：boss21_tna 的发射按符卡阶段在 state 14 / state 20 两张表之间轮转。
+// 时间线（boss_max_hp = 300；单针 120 伤害；两玩家同步跨阈值，避免两人处在不同阶段）：
+//   tick 5  跨 66% → phase 1；tick 25 跨 33% → phase 2（伤害在发射之后结算，
+//   所以 tick 25 本身仍用旧阶段发射，新阶段从 tick 26 起生效）。
+//   state 14 表在 tick 1（400 波）/ 19（18 帧子节奏）发射；state 20 表在 tick 30 发射。
+void TestPhaseRotationEndToEnd() {
+    using namespace phk::battle::danmaku;
+    phk::battle::BossRaceConfig config;
+    config.match_id = "match_tna_phase_0001";
+    config.match_seed = 20261031u;
+    config.boss_max_hp = 300;  // 低 HP：一针就跨一个阈值
+    config.ruleset_version = "tna-1.40-danmaku";
+    config.boss_id = "boss21_tna";
+    phk::battle::BossRaceSimulation sim(config);
+    sim.AddPlayer("player_a", 0, 60000);
+    sim.AddPlayer("player_b", 0, 60000);
+
+    // 本 tick 新生成的弹幕（按 bullet_id 差分）的 pattern_id 集合：只统计 player_a。
+    std::set<std::string> seen_bullet_ids;
+    std::map<std::uint64_t, std::set<std::string>> patterns_by_tick;
+    std::map<std::uint64_t, std::uint32_t> phase_by_tick;
+    std::map<std::uint64_t, std::uint32_t> max_chain_id_by_tick;
+    bool both_tables_in_one_tick = false;
+
+    for (std::uint64_t tick = 1; tick <= 40; ++tick) {
+        if (tick == 5 || tick == 25) {
+            sim.InjectMyBulletForTest("player_a", 0, -60000, 0, 0, 120, 0);
+            sim.InjectMyBulletForTest("player_b", 0, -60000, 0, 0, 120, 0);
+        }
+        const phk::battle::BossRaceSnapshot snapshot = sim.Tick();
+        phase_by_tick[tick] = snapshot.boss.phase;
+        std::set<std::string>& patterns = patterns_by_tick[tick];
+        for (const phk::battle::BossRaceBullet& bullet : snapshot.bullets) {
+            if (bullet.owner_player_id != "player_a") {
+                continue;
+            }
+            if (seen_bullet_ids.insert(bullet.bullet_id).second) {
+                patterns.insert(bullet.pattern_id);
+            }
+        }
+        for (const phk::battle::BossChainWire& chain : snapshot.chains) {
+            std::uint32_t& max_id = max_chain_id_by_tick[tick];
+            if (chain.chain_id > max_id) {
+                max_id = chain.chain_id;
+            }
+        }
+        if (patterns.count("chain:boss21_tna") > 0 && patterns.count("chain:boss21_tna_s20") > 0) {
+            both_tables_in_one_tick = true;
+        }
+    }
+
+    // 阶段确实从 0 走到 2。
+    Check(phase_by_tick[1] == 0, "rotation: phase 0 at tick 1");
+    Check(phase_by_tick[19] == 1, "rotation: phase 1 at tick 19");
+    Check(phase_by_tick[30] == 2, "rotation: phase 2 at tick 30");
+
+    // phase 0/1 → state 14 表。
+    Check(patterns_by_tick[1].count("chain:boss21_tna") == 1,
+          "rotation: tick 1 (phase 0) spawns bullets tagged chain:boss21_tna");
+    Check(patterns_by_tick[1].count("chain:boss21_tna_s20") == 0,
+          "rotation: tick 1 (phase 0) never spawns chain:boss21_tna_s20");
+    Check(patterns_by_tick[19].count("chain:boss21_tna") == 1,
+          "rotation: tick 19 (phase 1) still spawns chain:boss21_tna");
+    Check(patterns_by_tick[19].count("chain:boss21_tna_s20") == 0,
+          "rotation: tick 19 (phase 1) never spawns chain:boss21_tna_s20");
+
+    // phase 2 → state 20 表。
+    Check(patterns_by_tick[30].count("chain:boss21_tna_s20") == 1,
+          "rotation: tick 30 (phase 2) spawns bullets tagged chain:boss21_tna_s20");
+    Check(patterns_by_tick[30].count("chain:boss21_tna") == 0,
+          "rotation: tick 30 (phase 2) no longer spawns chain:boss21_tna");
+
+    // 两张表不得在同一 tick 同时为同一玩家发射（原版两段是顺序的，不是混播）。
+    Check(!both_tables_in_one_tick, "rotation: the two state tables never fire in the same tick");
+
+    // chains[] 是广播级视图，必须跟着该玩家实际用的表走：state 14 表 41 个节点、
+    // state 20 表 16 个节点 → 两个 tick 的 chain_id 上界各自落在自己那张表内。
+    const std::vector<const BossPhaseTable*> s14 = FindBossPhaseTables("boss21_tna");
+    const std::vector<const BossPhaseTable*> s20 = FindBossPhaseTables("boss21_tna_s20");
+    Check(!s14.empty() && !s20.empty(), "rotation: both state tables are registered");
+    if (!s14.empty() && !s20.empty()) {
+        const std::size_t s14_nodes = s14.front()->nodes.size();
+        const std::size_t s20_nodes = s20.front()->nodes.size();
+        Check(s20_nodes < s14_nodes, "rotation: the two tables are distinguishable by node count");
+        Check(max_chain_id_by_tick[1] + 1 <= s14_nodes,
+              "rotation: chains[] at tick 1 stays inside the state-14 table");
+        Check(max_chain_id_by_tick[30] + 1 <= s20_nodes,
+              "rotation: chains[] at tick 30 stays inside the state-20 table (broadcast view follows the resolved table)");
+    }
+}
+
+// 回归：没有段表的 boss（#11 抽样样板 boss21）与两条旧路径（mvp 合成弹幕、
+// 默认 ruleset）必须与改动**前**逐字节一致。
+//
+// golden hash 取自改动前的构建（commit aecaa7e 的 build-linux，静态库直连探针），
+// 配置与本函数完全一致：2 名玩家、310 tick、无输入。
+void TestNoSegmentRegression() {
+    struct Case {
+        const char* label;
+        const char* ruleset;
+        const char* boss_id;
+        const char* golden_hash;
+        const char* expected_pattern;  // nullptr = 该路径不该出现任何 chain: 弹幕
+    };
+    const Case cases[] = {
+        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "6b4cd99e2322ccb2", "chain:boss21"},
+        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "79450138a8f24027", "chain:boss21_tna"},
+        {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
+        {"regress default ruleset", "", "boss21_tna", "ae1e49473951ac83", nullptr},
+    };
+    for (const Case& c : cases) {
+        phk::battle::BossRaceConfig config;
+        config.match_id = "match_chain_regress_0001";
+        config.match_seed = 5150u;
+        config.boss_max_hp = 6000;
+        config.ruleset_version = c.ruleset;
+        config.boss_id = c.boss_id;
+        phk::battle::BossRaceSimulation sim(config);
+        sim.AddPlayer("player_a", 0, 60000);
+        sim.AddPlayer("player_b", 0, 60000);
+        std::set<std::string> patterns;
+        for (std::uint64_t tick = 1; tick <= 310; ++tick) {
+            for (const phk::battle::BossRaceBullet& bullet : sim.Tick().bullets) {
+                patterns.insert(bullet.pattern_id);
+            }
+        }
+        const std::string label = c.label;
+        const std::string actual_hash = sim.CanonicalStateHash();
+        Check(actual_hash == c.golden_hash,
+              label + ": state hash matches the pre-change build (" + actual_hash + " vs " +
+                  c.golden_hash + ")");
+        if (c.expected_pattern != nullptr) {
+            Check(patterns.size() == 1 && patterns.count(c.expected_pattern) == 1,
+                  label + ": every bullet keeps pattern_id " + c.expected_pattern);
+        } else {
+            bool any_chain = false;
+            for (const std::string& pattern : patterns) {
+                if (pattern.rfind("chain:", 0) == 0) {
+                    any_chain = true;
+                }
+            }
+            Check(!any_chain, label + ": this path never tags bullets with chain:");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -254,6 +448,10 @@ int main() {
     TestNodeMotionFunctions();
     TestSimulationEmits();
     TestState20Table();
+    TestBossStateSegments();
+    TestBossStateBossIdForPhase();
+    TestPhaseRotationEndToEnd();
+    TestNoSegmentRegression();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " tna cadence test(s) failed\n";
