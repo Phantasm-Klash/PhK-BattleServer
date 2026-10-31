@@ -218,6 +218,15 @@ void AppendHandJson(std::string& json, const std::vector<BossHandCardWire>& hand
     json += ']';
 }
 
+// JSON 浮点：与 PushDouble（ticket.initial_energy）同一精度 "%.17g"。
+// 不能用 std::to_string(double)：只有 6 位小数，手牌能量每 tick +0.0025 的
+// 累加值会被截断，客户端手牌栏读数就永远不动。
+void AppendJsonDouble(std::string& json, double value) {
+    char buffer[40];
+    std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+    json += buffer;
+}
+
 void AppendEventsJson(std::string& json, const std::vector<BossEventWire>& events) {
     json += '[';
     for (std::size_t i = 0; i < events.size(); ++i) {
@@ -231,6 +240,25 @@ void AppendEventsJson(std::string& json, const std::vector<BossEventWire>& event
         json += JsonEscape(event.player_id);
         json += "\",\"value\":";
         json += std::to_string(event.value);
+        // §2.3 卡牌事件附加字段：**只在有值时输出**，所以既有事件
+        // （player_hit / boss_damage / score_gain …）的 JSON 形状逐字节不变，
+        // 大厅/回放/测试都不受影响。客户端 codec 把除 tick/type/player_id 外的
+        // 键统统归进 `data`（battle_codec.ts parseEventList），因此
+        // battle_scene.ts 的 noteCardEvents 能在 data 里读到这三个字段。
+        if (!event.card_id.empty()) {
+            json += ",\"card_id\":\"";
+            json += JsonEscape(event.card_id);
+            json += '"';
+        }
+        if (event.slot >= 0) {
+            json += ",\"slot\":";
+            json += std::to_string(event.slot);
+        }
+        if (!event.reason.empty()) {
+            json += ",\"reason\":\"";
+            json += JsonEscape(event.reason);
+            json += '"';
+        }
         json += '}';
     }
     json += ']';
@@ -731,6 +759,12 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
         json += std::to_string(player.invulnerable_until_tick);
         json += ",\"graze\":";
         json += std::to_string(player.graze);
+        // §2.3 每玩家手牌（**权威**）。顶层 hand 只是单人兼容别名，多人局
+        // 只有这里能表达"谁的手牌"（快照是单份广播）。
+        json += ",\"hand\":";
+        AppendHandJson(json, player.hand);
+        json += ",\"energy\":";
+        AppendJsonDouble(json, player.energy);
         // 计分（§计分）：score 是 uint64，按十进制原样输出（一局分值远小于
         // JS 安全整数上限 2^53）。hit_count / spell_get / spell_total 为计数。
         json += ",\"score\":";
@@ -1245,6 +1279,22 @@ bool MatchServer::BindSession(
 
     if (!BindPlayerByRoster(session, input)) {
         return false;
+    }
+    // §2.3 票据发牌：把票据里的开局手牌 / 牌堆 / 能量 / 大厅种子灌进对局服。
+    //   * 只在 race 路径接（coop 是另一套实现，不在本次接线范围）；
+    //   * 只有票据**真的带了牌**才发牌 —— 旧票据（hand/deck 皆空）保持
+    //     "卡牌管线关闭"，出牌意图继续被静默丢弃，与接线前完全一致；
+    //   * 种子走 SeedHand 的 server_seed_decimal 形参（T7 H-2：bullet_purge
+    //     的选取种子只认票据，绝不用 config_.seed / DeriveMatchSeed）。
+    const bool ticket_carries_cards =
+        !ticket.ticket.hand_card_ids.empty() || !ticket.ticket.deck_card_ids.empty();
+    if (!coop_mode_ && ticket_carries_cards) {
+        simulation_.SeedHand(
+            ticket.ticket.player_id,
+            ticket.ticket.hand_card_ids,
+            ticket.ticket.deck_card_ids,
+            ticket.ticket.initial_energy,
+            ticket.ticket.server_seed_decimal);
     }
     consumed_ticket_ids_.insert(ticket_id);
     RecordTicketAudit(session.conv, input.player_id, ticket_id, "ok", false);

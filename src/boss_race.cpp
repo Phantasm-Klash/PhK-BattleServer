@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "phk/battle/danmaku/chain_node.hpp"
+#include "phk/battle/ticket.hpp"  // ParseDecimalInt64Text（票据种子，T7 H-2）
 
 namespace phk::battle {
 namespace {
@@ -304,6 +305,62 @@ bool BossRaceSimulation::SetPlayerConnected(const std::string& player_id, bool c
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// §2.3 局内手牌：票据发牌 + 查询
+// ---------------------------------------------------------------------------
+bool BossRaceSimulation::SeedHand(
+    const std::string& player_id,
+    const std::vector<std::string>& hand_card_ids,
+    const std::vector<std::string>& deck_card_ids,
+    double initial_energy,
+    const std::string& server_seed_decimal
+) {
+    const auto player_it = players_.find(player_id);
+    if (player_it == players_.end()) {
+        return false;
+    }
+    // 对局级大厅种子（T7 H-2）：首张含种子的票据设定；同场第二张票据携带
+    // 不同种子 = 大厅不变量违例 → 拒绝（与 BattleSimulation 同语义）。
+    if (!server_seed_decimal.empty()) {
+        std::int64_t seed = 0;
+        if (!ParseDecimalInt64Text(server_seed_decimal, seed)) {
+            return false;
+        }
+        if (card_purge_seed_set_ && seed != card_purge_seed_) {
+            return false;
+        }
+        card_purge_seed_ = seed;
+        card_purge_seed_set_ = true;
+    }
+    PlayerState& player = player_it->second;
+    player.hand.card_ids = hand_card_ids;
+    player.hand.energy = initial_energy;
+    // 补抽游标从大厅发牌游标续跑：hand = deck 前缀（TicketVerifier 的
+    // deck_hand_not_prefix 保不变量），故开局已消耗 hand_card_ids.size() 张。
+    // 未下发牌堆（空）时游标保持 0，DrawServerCard 即 no-op（旧票据行为）。
+    player.hand.deck = deck_card_ids;
+    player.hand.draw_cursor = deck_card_ids.empty() ? 0 : hand_card_ids.size();
+    player.hand.cooldowns.clear();
+    player.invulnerable_until_tick = 0;
+    player.card_seeded = true;
+    card_mechanics_active_ = true;
+    return true;
+}
+
+std::size_t BossRaceSimulation::HandSize(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    return player_it == players_.end() ? 0 : player_it->second.hand.card_ids.size();
+}
+
+double BossRaceSimulation::PlayerEnergy(const std::string& player_id) const {
+    const auto player_it = players_.find(player_id);
+    return player_it == players_.end() ? 0.0 : player_it->second.hand.energy;
+}
+
+std::int64_t BossRaceSimulation::LobbySeed() const {
+    return card_purge_seed_;
+}
+
 void BossRaceSimulation::PushEvent(CardCastEvent row) {
     if (events_.size() >= kCardCastEventRowLimit) {
         return;  // 宿主长期不上报时丢弃新行，防无界增长。
@@ -375,12 +432,23 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
         }
 
         BattleInput input = player.last_input;
+        // "真实输入" = 本 tick 自己的包（不是 held fallback）。出牌只认真实
+        // 输入（simulation.cpp:1171-1177），陈旧 slot 绝不重放。
+        bool real_input = false;
         if (tick_it != pending_inputs_by_tick_.end()) {
             const auto input_it = tick_it->second.find(player.player_id);
             if (input_it != tick_it->second.end()) {
                 input = input_it->second;
                 player.last_input = input;
+                real_input = true;
             }
+        }
+
+        // 手牌能量逐 tick 回复（§2.3，kCardEnergyPerTick）。**回复先于本 tick
+        // 的出牌扣费**——与大厅 applyInputLocked 的 accrue → 处理输入顺序、
+        // 以及 TS boss_race.ts:1244 一致。未发牌时不回复（默认路径零变化）。
+        if (player.card_seeded) {
+            player.hand.energy = std::min(kCardMaxEnergy, player.hand.energy + kCardEnergyPerTick);
         }
 
         // Movement: 8-direction bitmask (0=up,1=right,2=down,3=left), 3000 milli/tick.
@@ -450,9 +518,247 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
             // 真实路径：按住射击 → 按 loadout 表的冷却节奏发射自机弹实体。
             SpawnMyBulletsForPlayer(player, tick);
         }
+
+        // 卡牌意图（§2.3）：只消费**真实**输入 —— held fallback（沿用上一帧
+        // 输入）绝不重放出牌/抽卡，否则按住不动会每 tick 出一次牌
+        // （simulation.cpp:1171-1177 与 TS boss_race.ts:1205-1215 同语义）。
+        // 未发牌（card_seeded=false）整条管线关闭 → 默认路径零变化。
+        if (player.card_seeded && real_input) {
+            // 出牌槽位：card_slot（点槽位 / 键盘 1-4）优先，
+            // card_use + card_select（"使用"按钮）次之；同一 tick 两者都出现时
+            // **只算一次**（先 card_slot），避免双扣能量 / 双次效果。
+            int cast_slot = -1;
+            if (input.card_slot >= 0) {
+                cast_slot = input.card_slot;
+            } else if (input.card_use && input.card_select >= 0) {
+                cast_slot = input.card_select;
+            }
+            if (cast_slot >= 0) {
+                ExecuteCastCard(player, cast_slot, tick);
+            }
+            // 抽卡（"抽卡"按钮）：不消耗能量，但走同一套 tick 账本
+            // （DrawServerCard 维护 draw_cursor 与手牌）。
+            if (input.card_draw) {
+                ExecuteDrawCard(player, tick);
+            }
+            // card_select 单独出现（没有 card_use）= UI 选中态回显，服务端不维护
+            // 选中态（hand[].selected 恒 false），故**不改任何状态**。
+        }
     }
     if (tick_it != pending_inputs_by_tick_.end()) {
         pending_inputs_by_tick_.erase(tick_it);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// §2.3 出牌执行（语义照 BattleSimulation::ExecuteCastCard / RunCardEffect，
+// simulation.cpp:2395-2534；TS 镜像在 boss_race.ts:1322-1460）
+//
+// 差别只有一处：子弹落到本模块的 LiveBullet 模型（屏幕坐标 (320,480) 居中 +
+// BulletMotion），而不是 BattleSimulation 的 BulletState（居中 milli）。
+// 效果层（card_effects）产出的是**竞技场 px**（以 (0,0) 为中心），故：
+//   竞技场 px  --(+320,+480)-->  LiveBullet.motion 屏幕坐标
+//   竞技场 px  <--(-320,-480)--  LiveBullet.motion（BuildCardBulletSnapshots）
+// ---------------------------------------------------------------------------
+void BossRaceSimulation::PushCardRejected(
+    const PlayerState& player,
+    int slot,
+    const std::string& reason,
+    std::uint64_t tick
+) {
+    BossEventWire row;
+    row.tick = tick;
+    row.type = kCardRejectedEvent;
+    row.player_id = player.player_id;
+    row.slot = slot;
+    row.reason = reason;
+    tick_events_.push_back(std::move(row));
+}
+
+// 主动抽卡（BattleInput.card_draw）。语义 = Go drawServerCard（service.go:4229-
+// 4240）：手牌未满 kCardHandLimit 且牌堆非空时补抽一张，**不消耗能量**；
+// 抽不到时按原因记一条 card_rejected（reason 用 snake_case，与 cast_card_* 同风格）。
+void BossRaceSimulation::ExecuteDrawCard(PlayerState& player, std::uint64_t tick) {
+    const std::size_t hand_limit = static_cast<std::size_t>(kCardHandLimit);
+    if (player.hand.card_ids.size() >= hand_limit) {
+        PushCardRejected(player, -1, "card_draw_hand_full", tick);
+        return;
+    }
+    if (player.hand.deck.empty()) {
+        PushCardRejected(player, -1, "card_draw_deck_empty", tick);
+        return;
+    }
+    if (!DrawServerCard(player.hand)) {
+        // 牌堆非空但游标处的卡 id 是空串（DrawServerCard 跳过不入牌）。
+        PushCardRejected(player, -1, "card_draw_no_card", tick);
+        return;
+    }
+    BossEventWire row;
+    row.tick = tick;
+    row.type = kCardDrawnEvent;
+    row.player_id = player.player_id;
+    row.slot = static_cast<std::int32_t>(player.hand.card_ids.size() - 1);
+    row.card_id = player.hand.card_ids.back();
+    tick_events_.push_back(std::move(row));
+}
+
+void BossRaceSimulation::ExecuteCastCard(PlayerState& player, int slot, std::uint64_t tick) {
+    const std::int64_t tick_i = static_cast<std::int64_t>(tick);
+    // 校验 + 账本：扣能量 / 写冷却 / 移出手牌槽 / 补抽一张。拒绝与 -1 哨兵
+    // 都不改 HandState（card_hand.cpp ApplyCast）。
+    const CastValidationResult cast = ApplyCast(player.hand, slot, tick_i);
+    if (cast.plays_no_card) {
+        // slot == -1 哨兵（wire struct default）：不出牌、无事件、无状态变更。
+        return;
+    }
+    if (!cast.accepted || cast.definition == nullptr) {
+        PushCardRejected(player, slot, cast.reason, tick);
+        return;
+    }
+    const CardDefinition& definition = *cast.definition;
+
+    // boss 伤害（通用激活路径语义）：race 每玩家一份 Boss 副本，卡伤落到
+    // 自己的副本上（TS boss_race.ts:1355-1360 同口径），沿用既有
+    // ApplyBossDamage（击破奖励 / 符卡阶段 / boss_damage 聚合都在里面）。
+    if (definition.damage > 0 && player.boss_current_hp > 0) {
+        ApplyBossDamage(player, static_cast<std::uint64_t>(definition.damage), tick);
+    }
+
+    BossEventWire accepted;
+    accepted.tick = tick;
+    accepted.type = kCardAcceptedEvent;
+    accepted.player_id = player.player_id;
+    accepted.card_id = definition.card_id;
+    accepted.slot = slot;
+    accepted.value = static_cast<std::int64_t>(definition.damage);
+    tick_events_.push_back(std::move(accepted));
+
+    RunCardEffect(player, definition, tick);
+}
+
+void BossRaceSimulation::RunCardEffect(
+    PlayerState& player,
+    const CardDefinition& definition,
+    std::uint64_t tick
+) {
+    const std::int64_t tick_i = static_cast<std::int64_t>(tick);
+    const CardActivation activation = BuildCardActivation(definition, tick_i);
+    CardEffectResult effect;
+    if (activation.effect_kind == "opponent_pattern") {
+        std::vector<CardPlayerSnapshot> players;
+        players.reserve(players_.size());
+        for (const auto& item : players_) {  // std::map = sortedPlayerIds() 顺序
+            CardPlayerSnapshot snapshot;
+            snapshot.player_id = item.second.player_id;
+            snapshot.x = ToPixels(item.second.x_milli);
+            snapshot.y = ToPixels(item.second.y_milli);
+            players.push_back(std::move(snapshot));
+        }
+        effect = ApplyOpponentPattern(
+            players,
+            player.player_id,
+            activation,
+            tick_i,
+            config_.match_id,
+            next_bullet_id_,
+            live_bullets_.size());
+    } else if (activation.effect_kind == "bullet_purge") {
+        // ★ T7 H-2 铁律：选取种子 = 票据 server_seed_decimal（card_purge_seed_），
+        // 绝不用 DeriveMatchSeed / config_.match_seed（那是弹幕 RNG 的种子）。
+        CardPlayerSnapshot caster;
+        caster.player_id = player.player_id;
+        caster.x = ToPixels(player.x_milli);
+        caster.y = ToPixels(player.y_milli);
+        effect = ApplyBulletPurge(
+            BuildCardBulletSnapshots(), caster, activation, card_purge_seed_, tick_i);
+    } else if (activation.effect_kind == "invulnerable") {
+        effect = ApplyInvulnerable(activation, tick_i);
+        player.invulnerable_until_tick = effect.invulnerable_until > 0
+            ? static_cast<std::uint64_t>(effect.invulnerable_until)
+            : 0u;
+    } else if (activation.effect_kind == "finisher") {
+        effect = ApplyFinisher(BuildCardBulletSnapshots(), tick_i);
+    } else {
+        // self / pattern / economy（其余 12 张）：账本已变更但无子弹效果
+        // （Go applyCardEffectLocked 的 switch 同样不处理，不发 card_effect_applied）。
+        return;
+    }
+
+    ApplyCardBulletDeltas(effect.bullet_deltas, player.player_id);
+
+    BossEventWire applied;
+    applied.tick = tick;
+    applied.type = kCardEffectAppliedEvent;
+    applied.player_id = player.player_id;
+    applied.card_id = activation.card_id;
+    applied.value = effect.event_value;
+    tick_events_.push_back(std::move(applied));
+}
+
+// 全场活跃弹幕 → 效果层只读快照（对应 BattleSimulation::BuildBulletSnapshots，
+// simulation.cpp:2485-2502；TS 的 cardBulletSnapshots 同构）。
+std::vector<CardBulletSnapshot> BossRaceSimulation::BuildCardBulletSnapshots() const {
+    std::vector<CardBulletSnapshot> snapshots;
+    snapshots.reserve(live_bullets_.size());
+    for (const LiveBullet& live : live_bullets_) {
+        CardBulletSnapshot snapshot;
+        snapshot.bullet_id = live.bullet_id;
+        snapshot.pattern_id = live.pattern_id;
+        snapshot.spawn_tick = 0;
+        // 屏幕坐标 → 竞技场 px（以 (0,0) 为中心，与 CardPlayerSnapshot 同空间）。
+        snapshot.x = live.motion.x - kScreenCenterX;
+        snapshot.y = live.motion.y - kScreenCenterY;
+        snapshot.vx = live.motion.vx;
+        snapshot.vy = live.motion.vy;
+        snapshot.radius = live.motion.hit_dis;
+        snapshot.damage = 0;
+        snapshots.push_back(std::move(snapshot));
+    }
+    return snapshots;
+}
+
+// 效果层 bullet delta → LiveBullet（对应 BattleSimulation::ApplyBulletDeltas，
+// simulation.cpp:2536-2564）。bullet id 一律由本模块重新铸造（"b<N>"），丢弃
+// 效果层的 Go 风格 id，保证与 pattern 弹幕共用一条 id 序列。
+void BossRaceSimulation::ApplyCardBulletDeltas(
+    const std::vector<CardBulletDelta>& deltas,
+    const std::string& owner_player_id
+) {
+    for (const CardBulletDelta& delta : deltas) {
+        if (delta.op == "spawn") {
+            if (EmittedBulletsFor(owner_player_id) >= kBossRaceMaxBulletsPerPlayer) {
+                continue;  // 与 addBulletLocked 的封顶一致（效果层已按场数预判）
+            }
+            const std::uint64_t seq = next_bullet_id_++;
+            LiveBullet live;
+            live.bullet_id = "b" + std::to_string(seq);
+            live.owner_player_id = owner_player_id;
+            live.pattern_id = delta.pattern_id;
+            live.pattern_index = 0;  // 卡牌子弹不属于任何 boss pattern
+            live.chain_id = 0;
+            live.spawn_index = static_cast<std::uint32_t>(seq);
+            live.generation = 0;
+            danmaku::BulletMotion motion;
+            motion.x = kScreenCenterX + delta.x;
+            motion.y = kScreenCenterY + delta.y;
+            motion.angle = std::atan2(delta.vy, delta.vx) * 180.0 / kPi;
+            motion.angle_init = -1.0;
+            motion.speed = std::hypot(delta.vx, delta.vy);
+            motion.spd_init2 = motion.speed;
+            motion.bullet_func_no = 0;
+            motion.hit_dis = delta.radius;
+            motion.IntegrateVelocity();
+            live.motion = motion;
+            live_bullets_.push_back(std::move(live));
+        } else if (delta.op == "despawn") {
+            const auto it = std::find_if(
+                live_bullets_.begin(),
+                live_bullets_.end(),
+                [&](const LiveBullet& live) { return live.bullet_id == delta.bullet_id; });
+            if (it != live_bullets_.end()) {
+                live_bullets_.erase(it);
+            }
+        }
     }
 }
 
@@ -1400,7 +1706,12 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
             // 默认 ruleset：判定系统未启用，保持占位值（现有玩法零变化）。
             player.lives = item.second.alive ? kSnapshotDefaultLives : 0u;
             player.bombs = kSnapshotDefaultBombs;
-            player.invulnerable_until_tick = 0;
+            // 卡牌管线启用时 invulnerable 卡会真写 invulnerable_until_tick，
+            // 与 TS boss_race.ts:1986（danmakuMechanics || cardMechanics）同口径
+            // 下发真值；未发牌时仍是 0 → 既有 wire 逐字节不变。
+            player.invulnerable_until_tick = card_mechanics_active_
+                ? item.second.invulnerable_until_tick
+                : 0u;
             player.graze = 0;
         }
         // 计分：两种 ruleset 都填（默认 ruleset 只有击破 + 结算两项非零）。
@@ -1408,6 +1719,22 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         player.hit_count = item.second.hit_count;
         player.spell_get = item.second.spell_get;
         player.spell_total = item.second.spell_total;
+        // §2.3 每玩家手牌（**权威**）：每名玩家一份，slot = 自己手牌下标。
+        // 未发牌（card_seeded=false）时 hand 为空、energy 为 0 → 与接线前一致。
+        if (item.second.card_seeded) {
+            const std::vector<std::string>& card_ids = item.second.hand.card_ids;
+            const std::size_t hand_limit = static_cast<std::size_t>(kCardHandLimit);
+            const std::size_t hand_count = std::min(card_ids.size(), hand_limit);
+            player.hand.reserve(hand_count);
+            for (std::size_t i = 0; i < hand_count; ++i) {
+                BossHandCardWire card;
+                card.card_id = TrimCardId(card_ids[i]);
+                card.slot = static_cast<std::int32_t>(i);  // slot = 自己手牌下标
+                card.selected = false;                     // 服务端不维护选中态
+                player.hand.push_back(std::move(card));
+            }
+            player.energy = item.second.hand.energy;
+        }
         snapshot.players.push_back(player);
     }
     snapshot.bullets.reserve(live_bullets_.size());
@@ -1511,7 +1838,40 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
         }
     }
 
-    // hand/deck/draw_cooldown：对局内抽卡（P3）才产生，P1 保持空数组与 0 默认值。
+    // §2.3 顶层手牌 = **单人兼容别名**（权威在 players[].hand）。
+    //
+    // 快照是单份广播：MatchServer::BroadcastSnapshotPayload 把同一个 payload
+    // 发给所有会话，而顶层 hand[] 每项没有 player_id，多人局里无法表达"谁的
+    // 手牌"。所以只在 players_.size() == 1 时填，多人局留空数组 —— 宁可空，
+    // 也绝不能把 A 的牌广播给 B 当自己的牌（客户端会直接喂给手牌栏）。
+    // deck_remaining / draw_cooldown_ticks 同样是全局标量，多人局填 0。
+    if (players_.size() == 1 && !players_.empty()) {
+        const PlayerState& only = players_.begin()->second;
+        if (only.card_seeded) {
+            const std::vector<std::string>& card_ids = only.hand.card_ids;
+            const std::size_t hand_limit = static_cast<std::size_t>(kCardHandLimit);
+            const std::size_t hand_count = std::min(card_ids.size(), hand_limit);
+            snapshot.hand.reserve(hand_count);
+            for (std::size_t i = 0; i < hand_count; ++i) {
+                BossHandCardWire card;
+                card.card_id = TrimCardId(card_ids[i]);
+                card.slot = static_cast<std::int32_t>(i);
+                card.selected = false;
+                snapshot.hand.push_back(std::move(card));
+            }
+            // 牌堆剩余 = deck.size() - draw_cursor（线性口径，不回绕成负数；
+            // DrawServerCard 自身按取模轮转，但"剩余张数"按线性报）。
+            const std::size_t deck_size = only.hand.deck.size();
+            const std::size_t cursor = only.hand.draw_cursor;
+            snapshot.deck_remaining = deck_size > cursor
+                ? static_cast<std::uint32_t>(deck_size - cursor)
+                : 0u;
+            // 抽卡冷却：本实现没有独立的抽卡冷却（出牌后立即补抽一张，
+            // card_hand.cpp DrawServerCard），故恒 0 = 随时可抽。
+            snapshot.draw_cooldown_ticks = 0;
+        }
+    }
+    // 未发牌 / 多人局：保持空数组与 0 默认值 → 既有行为逐字节不变。
     // events：本 tick 的机制/判定事件（§2.4.6），event_cursor = 累计事件数。
     snapshot.events = tick_events_;
     snapshot.event_cursor = event_cursor_;

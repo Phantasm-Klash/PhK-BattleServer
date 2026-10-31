@@ -14,6 +14,7 @@
 #include "phk/battle/danmaku/pattern_timeline.hpp"
 #include "phk/battle/danmaku/player_loadout.hpp"
 #include "phk/battle/danmaku/score_table.hpp"
+#include "phk/battle/card_hand.hpp"   // HandState / ApplyCast / kCardHandLimit（§2.3 手牌）
 #include "phk/battle/protocol.hpp"
 #include "phk/battle/simulation.hpp"  // CardCastEvent（F3 事件收集器）
 
@@ -65,6 +66,15 @@ inline constexpr const char* kSpellCaptureEvent = "spell_capture";
 // 计分事件（§计分）：每次加分发一条，value = 本次增量（不是累计总分；总分看
 // players[].score）。擦弹/符卡/击破/结算各自独立成条，便于客户端逐项飘分。
 inline constexpr const char* kScoreGainEvent = "score_gain";
+
+// 卡牌事件（§2.3 / §2.8 events[]）。客户端 noteCardEvents 只认 `type` 以
+// "card" 开头的行（battle_scene.ts:744），其余字段由 codec 归进 `data`
+// （battle_codec.ts parseEventList：除 tick/type/player_id 外的所有键）。
+// 因此这里发三种事件，附加字段写进 BossEventWire 的 card_id / slot / reason。
+inline constexpr const char* kCardAcceptedEvent = "card_accepted";
+inline constexpr const char* kCardRejectedEvent = "card_rejected";
+inline constexpr const char* kCardEffectAppliedEvent = "card_effect_applied";
+inline constexpr const char* kCardDrawnEvent = "card_drawn";
 
 // 自机弹 vs Boss 判定（§2.4 第 1 条，只在 kRulesetDanmakuMechanics 下生效）。
 inline constexpr std::int32_t kBossHitRadiusMilli = 40000;  // r_boss ≈40px（P4 进 boss_catalog）
@@ -140,7 +150,8 @@ struct BossRaceConfig {
 //
 // P1 只保证「字段存在且可解析」，数值先填现有状态或合理占位：
 //   * effects 恒为空数组（铁拳/黑色帷幕状态机 P4 接线后才填）；
-//   * hand 恒为空、deck_remaining/draw_cooldown_ticks 恒为 0（对局内抽卡 P3）；
+//   * hand：权威在 players[].hand（每玩家一份，票据发牌后才有值）；顶层
+//     hand 只是单人兼容别名，多人局留空（见 BossRaceSnapshot 的注释）；
 //   * chains 由活跃弹幕聚合（chain_id = pattern_index，node_id = 0，rng_cursor = 0）；
 //   * events 恒为空、event_cursor 恒为 0（判定事件 P3 才产生）。
 // ---------------------------------------------------------------------------
@@ -191,6 +202,12 @@ struct BossEventWire {
     std::string type;
     std::string player_id;
     std::int64_t value = 0;
+    // 卡牌事件附加字段（§2.3）。只对 type 以 "card" 开头的行填值；其余事件
+    // 保持 card_id 空 / slot=-1 / reason 空 → 序列化时这三个键整段省略，
+    // 既有事件 JSON 形状逐字节不变（match_lifecycle.cpp AppendEventsJson）。
+    std::string card_id;
+    std::int32_t slot = -1;
+    std::string reason;
 };
 
 // boss 本体视角：race = 本地玩家自己的 Boss 副本（广播负载共享一份，hp 取各
@@ -252,6 +269,16 @@ struct BossRacePlayerSnapshot {
     std::uint32_t hit_count = 0;
     std::uint32_t spell_get = 0;
     std::uint32_t spell_total = 0;
+    // ---- §2.3 每玩家手牌（**权威**） ----------------------------------------
+    //
+    // 快照是**单份广播**（MatchServer::BroadcastSnapshotPayload 把同一个
+    // payload 发给所有会话），顶层 BossRaceSnapshot::hand 无法表达"谁的手牌"，
+    // 因此权威数据放在这里：players[].hand 每项 = {card_id, slot, selected}，
+    // slot = 该玩家自己手牌的下标。
+    std::vector<BossHandCardWire> hand;
+    // 手牌能量。wire 浮点，与 ticket.initial_energy 同一写出精度（%.17g），
+    // 不能用 std::to_string（只有 6 位小数，0.0025 累加会被截断）。
+    double energy = 0.0;
 };
 
 struct BossRaceSnapshot {
@@ -267,6 +294,19 @@ struct BossRaceSnapshot {
     // §2.8 增补。
     BossStateWire boss;
     std::vector<BossChainWire> chains;
+    // ---- 顶层手牌 = **单人兼容别名**，不是权威 -------------------------------
+    //
+    // 快照是单份广播（同一个 payload 发给所有会话），而顶层 hand[] 每项只有
+    // {card_id, slot, selected}、没有 player_id，所以它在多人局里无法表达
+    // "谁的手牌"。客户端（battle_codec.ts:562 / battle_scene.ts:1204）目前把
+    // 它当**本地玩家**的手牌直接喂手牌栏 —— 只有单人局语义成立。
+    //
+    // 因此：
+    //   * **权威数据在 players[].hand / players[].energy**（按玩家序列化）；
+    //   * 顶层 hand 仅在 players.size() == 1 时填该玩家的手牌，多人局留空
+    //     数组（宁可空，也不能把 A 的牌广播给 B 当自己的牌）；
+    //   * deck_remaining / draw_cooldown_ticks 同理：单人局填真值，多人局填 0
+    //     （这两个字段也是全局标量，后续要么进 players[]，要么删除）。
     std::vector<BossHandCardWire> hand;
     std::uint32_t deck_remaining = 0;
     std::uint32_t draw_cooldown_ticks = 0;
@@ -313,6 +353,31 @@ public:
 
     bool AddPlayer(const std::string& player_id, std::int32_t x_milli, std::int32_t y_milli);
     bool SetPlayerConnected(const std::string& player_id, bool connected);
+
+    // ---- §2.3 局内手牌（票据发牌 + 出牌执行） --------------------------------
+    //
+    // 票据发牌入口：把大厅下发的开局手牌 / 牌堆 / 能量 / 大厅种子灌进该玩家的
+    // HandState。口径与 BattleSimulation::SeedPlayerHand（simulation.cpp:2243-
+    // 2278）逐项一致：
+    //   * hand.card_ids = hand_card_ids（空 = 该玩家本局不出牌，安全 no-op）；
+    //   * hand.deck     = deck_card_ids；
+    //   * hand.draw_cursor = deck 为空 ? 0 : hand_card_ids.size()
+    //     （hand 必须是 deck 前缀，TicketVerifier 的 deck_hand_not_prefix 保证）；
+    //   * hand.energy   = initial_energy；
+    //   * server_seed_decimal → card_purge_seed_（T7 H-2：bullet_purge 的选取
+    //     种子只认票据，绝不回落 config_.match_seed）。
+    // 返回 false = 玩家不存在 / 种子非十进制 int64 / 同场种子冲突。
+    bool SeedHand(
+        const std::string& player_id,
+        const std::vector<std::string>& hand_card_ids,
+        const std::vector<std::string>& deck_card_ids,
+        double initial_energy,
+        const std::string& server_seed_decimal = ""
+    );
+    [[nodiscard]] std::size_t HandSize(const std::string& player_id) const;
+    [[nodiscard]] double PlayerEnergy(const std::string& player_id) const;
+    // 已采纳的大厅种子（未发牌 = 0）。测试用来钉住 T7 H-2「种子来自票据」。
+    [[nodiscard]] std::int64_t LobbySeed() const;
 
     // 测试/调试注入：绕过 pattern 库直接放入一颗带完整运动学的子弹。
     // 默认 10 个 pattern 均不使用 bulletFunc31，链式分裂路径无法经产品
@@ -386,6 +451,10 @@ private:
         // 当前符卡阶段内是否被打过（true = 该阶段无法「获取」，不给符卡分）。
         // 每次 spell_phase_start 复位；判定模式下受击置 true。
         bool phase_hit_taken = false;
+        // §2.3 局内手牌。card_seeded=false（未收到票据发牌）时整条卡牌管线
+        // 关闭：不回复能量、不执行 card_slot、快照 hand 不填 → 默认路径零变化。
+        HandState hand;
+        bool card_seeded = false;
         BattleInput last_input;
     };
 
@@ -426,6 +495,17 @@ private:
     void ResolveBossAndLoadouts();
     void StartIfReady();
     void ApplyPlayerTick(std::uint64_t tick);
+    // §2.3 出牌执行（语义照 BattleSimulation::ExecuteCastCard，simulation.cpp:
+    // 2395-2447；落账由 card_hand 的 ApplyCast 完成，效果落到本模块的
+    // LiveBullet / MyBullet 模型，不碰 BulletState）。
+    void ExecuteCastCard(PlayerState& player, int slot, std::uint64_t tick);
+    // §2.3 主动抽卡（BattleInput.card_draw）：手牌未满且牌堆非空时补抽一张，
+    // 不消耗能量（Go drawServerCard 也不扣费）；否则记 card_rejected。
+    void ExecuteDrawCard(PlayerState& player, std::uint64_t tick);
+    void PushCardRejected(const PlayerState& player, int slot, const std::string& reason, std::uint64_t tick);
+    void RunCardEffect(PlayerState& player, const CardDefinition& definition, std::uint64_t tick);
+    [[nodiscard]] std::vector<CardBulletSnapshot> BuildCardBulletSnapshots() const;
+    void ApplyCardBulletDeltas(const std::vector<CardBulletDelta>& deltas, const std::string& owner_player_id);
     void SpawnBulletsForTick(std::uint64_t tick);
     // ChainNode 表路径（tna-1.40-danmaku + 库内 boss_id）：EmitChainBossTickDetailed
     // 的产出取代 10 模式轮转；同时填 tick_chains_（快照 chains[] 真实值）。
@@ -489,6 +569,14 @@ private:
     // 非 ChainNode 路径恒空（chains[] 走 P1 按 pattern_index 聚合占位）。
     std::vector<BossChainWire> tick_chains_;
     std::uint64_t event_cursor_ = 0;
+    // 大厅种子（T7 H-2）：票据 server_seed_decimal 的解析值。bullet_purge 的
+    // 确定性选取只认它；config_.match_seed 是弹幕 RNG 的种子，语义不同，
+    // 严禁互相替代。
+    std::int64_t card_purge_seed_ = 0;
+    bool card_purge_seed_set_ = false;
+    // 至少一名玩家已发牌 → 卡牌管线启用（快照 invulnerable_until 的 wire
+    // 语义与 TS boss_race.ts:1986 对齐：danmakuMechanics || cardMechanics）。
+    bool card_mechanics_active_ = false;
 };
 
 }  // namespace phk::battle

@@ -190,6 +190,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     target_link_libraries(phk_card_cast_execution_tests PRIVATE phk_battle_core)
     add_test(NAME phk_card_cast_execution_tests COMMAND phk_card_cast_execution_tests)
 
+    add_executable(phk_boss_race_card_tests
+        tests/boss_race_card_tests.cpp
+    )
+    target_link_libraries(phk_boss_race_card_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_boss_race_card_tests COMMAND phk_boss_race_card_tests)
+
     add_executable(phk_chain_log_tests
         tests/chain_log_tests.cpp
     )
