@@ -718,8 +718,11 @@ def main() -> int:
         "ruleset_version_mismatch" not in result_impl
         or "reward_projection_json" not in result_impl
         or "LooksLikeSingleJsonObject" not in result_impl
+        or "ContainsDuplicateJsonObjectField" not in result_impl
         or "mode_result_json_invalid" not in result_impl
+        or "mode_result_json_duplicate_field" not in result_impl
         or "reward_projection_json_invalid" not in result_impl
+        or "reward_projection_json_duplicate_field" not in result_impl
         or "reward_projection_field_unknown" not in result_impl
         or "ContainsUnknownRewardProjectionField" not in result_impl
         or "result_hash_mismatch" not in result_impl
@@ -958,7 +961,9 @@ def main() -> int:
         or "match_seed_mismatch" not in tests_text
         or "mode_result_mutation_forbidden" not in tests_text
         or "mode_result_json_invalid" not in tests_text
+        or "mode_result_json_duplicate_field" not in tests_text
         or "reward_projection_json_invalid" not in tests_text
+        or "reward_projection_json_duplicate_field" not in tests_text
         or "tampered_fixture_seed" not in tests_text
         or "input_stream_hash_mismatch" not in tests_text
         or "event_stream_hash_mismatch" not in tests_text
