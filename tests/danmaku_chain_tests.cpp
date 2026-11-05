@@ -55,6 +55,8 @@ BulletMotion MakeSplitHost(double p1, double angle_deg = 0.0) {
 
 BossRaceConfig MakeConfig(std::uint64_t seed, std::uint64_t boss_hp = 1000000) {
     BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_chain_000001";
     config.match_seed = seed;
     config.boss_max_hp = boss_hp;

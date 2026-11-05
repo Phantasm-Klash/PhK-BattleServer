@@ -104,6 +104,8 @@ void TestInputCodecRoundTrip() {
 // §2.8 快照 JSON 新字段：键必须存在（客户端按名解析），占位值可解析。
 void TestSnapshotJsonCarriesP1WireFields() {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_wire_000001";
     config.match_seed = 20261024u;
     config.boss_max_hp = 1000000;
@@ -196,6 +198,8 @@ phk::battle::SignedBattleTicket MakeTicket(
 
 phk::battle::MatchLifecycleConfig MakeTicketConfig(phk::battle::MatchTicketRequirement mode) {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.port = 0;
     config.match_id = "match_ticket_000001";
     config.seed = 42u;
@@ -430,6 +434,8 @@ void TestCardInputFieldsCodec() {
 // ---------------------------------------------------------------------------
 phk::battle::MatchResultPayload RunRaceToResult(std::uint64_t seed, std::uint64_t boss_hp) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_result_000001";
     config.match_seed = seed;
     config.boss_max_hp = boss_hp;
@@ -559,6 +565,8 @@ private:
 
 void TestSocketSmokeRace() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.port = 0;
     config.match_id = "match_socket_smoke";
     config.seed = 987654321u;
@@ -620,6 +628,8 @@ void TestSocketSmokeRace() {
 // winner）→ 且广播快照负载首字节 = 12（10/11 被 battle.proto 占用）。
 void TestSocketSmokeCoop() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.port = 0;
     config.match_id = "match_socket_coop";
     config.seed = 424242u;
@@ -814,6 +824,8 @@ void TestHttpPostClient() {
 // ---------------------------------------------------------------------------
 void TestDemRecordingFromAppPath() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_dem_app_1";
     config.mode_id = "mvp_boss_race";
     config.seed = 424242;
@@ -874,6 +886,8 @@ void TestDemProducedWhenMatchFinishes() {
     setenv("PHK_DEM_UPLOAD", "0", 1);  // no lobby in the test environment
 
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_dem_finish_1";
     config.mode_id = "mvp_boss_race";
     config.seed = 777001;
@@ -954,6 +968,8 @@ void TestNoResultSubmitSkipsPostButUploadsDem() {
     Check(http.port() != 0, "no-result: dem upload listener is up");
 
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_no_result_submit_1";
     config.mode_id = "mvp_boss_race";
     config.seed = 777002;
@@ -1024,6 +1040,8 @@ void TestNoResultSubmitSkipsPostButUploadsDem() {
 // ---------------------------------------------------------------------------
 void TestEventsFlushAllPlayersDisconnected() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.port = 0;
     config.match_id = "match_events_000001";
     config.seed = 424242u;
@@ -1086,6 +1104,8 @@ void TestEventsFlushAllPlayersDisconnected() {
 // 失败路径：submitter 拒绝时行要放回、不丢，恢复后重发成功。
 void TestEventsFlushRetriesAfterFailure() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.port = 0;
     config.match_id = "match_events_000002";
     config.seed = 777u;

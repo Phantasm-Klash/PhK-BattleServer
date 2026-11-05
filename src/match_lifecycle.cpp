@@ -282,6 +282,10 @@ BossRaceConfig MakeBossRaceConfig(const MatchLifecycleConfig& config) {
         entry != nullptr) {
         boss.boss_max_hp = entry->boss_max_hp;
     }
+    // 全开总开关透传：MatchLifecycleConfig 默认 true → 生产 MatchServer 也默认
+    // 全开（与 BossRaceConfig 默认、客户端 TS 镜像一致）；lifecycle 集成测试
+    // 显式设 false 逐字节回退。只改此配置转换函数，不碰快照编码 / 任何 wire 字段。
+    boss.all_features_enabled = config.all_features_enabled;
     return boss;
 }
 

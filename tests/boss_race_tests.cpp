@@ -44,6 +44,8 @@ phk::battle::BattleInput MakeInput(
 
 phk::battle::BossRaceConfig MakeConfig(std::uint64_t seed, std::uint64_t boss_hp) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_mvp_000001";
     config.match_seed = seed;
     config.boss_max_hp = boss_hp;
@@ -314,6 +316,8 @@ void TestInputTickWindowOverflowGuard() {
 // tick>=10 起每 tick 射击；player_b 默认自机、从不射击。确定性保证双端一致。
 void WriteGoldenFixture(const std::string& path) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，黄金向量逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "golden_boss_race";
     config.match_seed = 987654321ull;
     config.boss_max_hp = 0;  // 目录 HP（tian = 20000）

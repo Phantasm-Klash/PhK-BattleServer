@@ -40,6 +40,8 @@ constexpr double kEps = 1e-9;
 
 phk::battle::BossRaceConfig MakeConfig(std::uint64_t match_seed = 424242u) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = kMatchId;
     config.match_seed = match_seed;
     config.boss_max_hp = 6000;

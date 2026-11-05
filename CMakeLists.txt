@@ -246,4 +246,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_aead_tests PRIVATE phk_battle_core)
     add_test(NAME phk_aead_tests COMMAND phk_aead_tests)
+
+    # 全开总开关接线（BossRaceConfig::all_features_enabled）：legacy 回退 /
+    # 默认 true 判定·擦弹·符卡 / 铁拳·帷幕命中生产路径 / 自机弹穿透产品路径。
+    add_executable(phk_boss_race_all_features_tests
+        tests/boss_race_all_features_tests.cpp
+    )
+    target_link_libraries(phk_boss_race_all_features_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_boss_race_all_features_tests COMMAND phk_boss_race_all_features_tests)
 endif()

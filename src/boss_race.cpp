@@ -160,18 +160,31 @@ BossRaceSimulation::BossRaceSimulation(BossRaceConfig config) : config_(std::mov
         config_.pattern_period_ticks = kBossRacePatternPeriodTicks;
     }
     ResolveBossAndLoadouts();
-    // 特殊机制：只有显式 ruleset 才启用（默认关闭 → 现有模式逐字节不变）。
+    // 全开总闸：all_features_enabled（默认 true）或显式 danmaku ruleset 都启用
+    // 全部弹幕机制。all_features_enabled=false 且非 danmaku ruleset 时逐字节回退
+    // 到改动前（mechanics_.enabled 保持 config_.special_mechanics.enabled，默认 false）。
+    // mechanics_.enabled 是唯一总闸：其余 14 处分支（ApplyPlayerTick 合成/自机弹、
+    // JudgePlayerContacts、符卡、计分、快照 lives/effects/phase 等）都读它、且天然
+    // 互斥（合成伤害 :494 与自机弹 :518 是 if/else if），全开后不会重复扣血 /
+    // 双重伤害 / 双重计分。
+    const bool danmaku_mechanics = config_.all_features_enabled ||
+        config_.ruleset_version == kRulesetDanmakuMechanics;
     mechanics_ = config_.special_mechanics;
-    if (config_.ruleset_version == kRulesetDanmakuMechanics) {
+    if (danmaku_mechanics) {
         mechanics_.enabled = true;
     }
-    // ChainNode 表路径：tna-1.40-danmaku + 库内 boss_id 时取代 10 模式轮转
-    // （默认 ruleset 与未知 boss_id 逐字节不变）。
-    chain_tables_active_ = danmaku::ChainTablesActive(config_.ruleset_version, config_.boss_id);
-    // 难度缩放：只在 kRulesetDanmakuMechanics 下生效；其余（含难度 1）恒等。
-    // 注意 DifficultyScaleFor(1) 全 1.0，且倍率 1.0 的乘法/llround 均 IEEE 精确，
-    // 故恒等缩放下所有发射参数逐字节不变。
-    difficulty_scale_ = config_.ruleset_version == kRulesetDanmakuMechanics
+    // ChainNode 表路径：全开时用 danmaku ruleset 语义判定（不编造 count=0 节点
+    // 数值）；关闭时仍按原 ruleset 判定 → 默认 ruleset 恒 false（逐字节不变）。
+    // 用 const char* 避免 std::string_view(std::string) 直接初始化的编译器差异。
+    const char* chain_ruleset = config_.ruleset_version.c_str();
+    if (danmaku_mechanics) {
+        chain_ruleset = kRulesetDanmakuMechanics;
+    }
+    chain_tables_active_ = danmaku::ChainTablesActive(chain_ruleset, config_.boss_id);
+    // 难度缩放：全开或 danmaku ruleset 生效；其余（含难度 1）恒等。
+    // DifficultyScaleFor(1) 全 1.0，倍率 1.0 的乘法/llround 均 IEEE 精确，
+    // 故恒等缩放下所有发射参数逐字节不变（与 DifficultyScale{} 等价）。
+    difficulty_scale_ = danmaku_mechanics
         ? danmaku::DifficultyScaleFor(config_.difficulty)
         : danmaku::DifficultyScale{};
     if (config_.boss_max_hp == 0) {
@@ -1229,7 +1242,11 @@ void BossRaceSimulation::SpawnMyBulletsForPlayer(PlayerState& player, std::uint6
         bullet.vx_milli = static_cast<std::int32_t>(std::llround(speed * kMilliPerPixel * std::cos(rad)));
         bullet.vy_milli = -static_cast<std::int32_t>(std::llround(speed * kMilliPerPixel * std::sin(rad)));
         bullet.damage = static_cast<std::uint64_t>(damage);
-        bullet.penetrate = 0;  // 自机射击表没有穿透列 → 默认单段（穿透留给测试注入验证）
+        // 产品路径穿透：全开时取 config_.my_bullet_penetrate（默认 1，命中后继续
+        // 判定一段）；关闭（legacy）时产品路径本就不走自机弹，这里显式给 0。
+        // JudgeMyBullets 对 penetrate>0 的弹递减后继续判定；InjectMyBulletForTest
+        // 注入路径仍可显式给任意 penetrate，不受本字段影响。
+        bullet.penetrate = config_.all_features_enabled ? config_.my_bullet_penetrate : 0;
         my_bullets_.push_back(std::move(bullet));
     }
 }
@@ -1516,6 +1533,30 @@ void BossRaceSimulation::AdvanceSpecialMechanics(std::uint64_t tick) {
             tick_events_.push_back(std::move(wire));
         }
     }
+
+    // §2.4 特殊机制命中接线（本轮补的洞）：状态机推进完毕后，用当前
+    // strike / sweep 几何对每个存活玩家判定一次。命中走与 JudgePlayerContacts
+    // 完全相同的 ApplyPlayerDamage（lives--、120 tick 无敌、player_hit /
+    // player_dead 事件）。只用 IronFistHitsPoint / BlackCurtainHitsPoint 的
+    // 整数 milli 判定，不引入浮点。
+    // 仅在全开（all_features_enabled=true）下接线：legacy 逐字节回退到改动前
+    // 的「只播动画不伤人」行为，保证既有 danmaku ruleset 测试不变。
+    // helper 的无敌帧幂等保证同 tick 铁拳+帷幕、或与普通弹判定叠加时只扣一次命。
+    if (config_.all_features_enabled) {
+        for (auto& item : players_) {
+            PlayerState& player = item.second;
+            if (!player.connected || !player.alive) {
+                continue;
+            }
+            const danmaku::PointMilli point{player.x_milli, player.y_milli};
+            if (danmaku::IronFistHitsPoint(iron_fist_, point, mechanics_.iron_fist)) {
+                ApplyPlayerDamage(player, tick, PlayerDamageCause::kIronFist);
+            }
+            if (danmaku::BlackCurtainHitsPoint(black_curtain_, point, mechanics_.curtain)) {
+                ApplyPlayerDamage(player, tick, PlayerDamageCause::kBlackCurtain);
+            }
+        }
+    }
 }
 
 // 玩家受击判定（§2.4 第 2 条）。只在 kRulesetDanmakuMechanics 下生效：
@@ -1525,6 +1566,41 @@ void BossRaceSimulation::AdvanceSpecialMechanics(std::uint64_t tick) {
 //     同一颗弹对同一玩家只计一次（LiveBullet::grazed 去重）；
 //   * 无敌帧内两者都不计。
 // 子弹按 owner_player_id 归属到「自己那份 Boss 副本」，故只判定该玩家自己的弹。
+
+// §2.4 受击结算共用 helper：普通弹（JudgePlayerContacts）/ 铁拳 / 黑色帷幕
+// （AdvanceSpecialMechanics）命中都走这里，语义与改动前 JudgePlayerContacts
+// 命中分支逐字节一致。无敌帧幂等保证同 tick 多来源只扣一次命、只发一次
+// player_hit（及可能的 player_dead）。cause 预留内部来源标记，wire 冻结期
+// 事件类型仍统一 kPlayerHitEvent / kPlayerDeadEvent。
+bool BossRaceSimulation::ApplyPlayerDamage(
+    PlayerState& player, std::uint64_t tick, PlayerDamageCause cause
+) {
+    (void)cause;
+    if (!player.alive || tick <= player.invulnerable_until_tick) {
+        return false;  // 已死亡 / 无敌帧内：不重复扣血、不发事件
+    }
+    if (player.lives > 0) {
+        --player.lives;
+    }
+    ++player.hit_count;
+    player.phase_hit_taken = true;
+    player.invulnerable_until_tick = tick + kDanmakuInvulnerableTicks;
+    BossEventWire hit;
+    hit.tick = tick;
+    hit.type = kPlayerHitEvent;
+    hit.player_id = player.player_id;
+    tick_events_.push_back(std::move(hit));
+    if (player.lives == 0) {
+        player.alive = false;
+        BossEventWire dead;
+        dead.tick = tick;
+        dead.type = kPlayerDeadEvent;
+        dead.player_id = player.player_id;
+        tick_events_.push_back(std::move(dead));
+    }
+    return true;
+}
+
 void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
     if (!mechanics_.enabled) {
         return;
@@ -1551,26 +1627,9 @@ void BossRaceSimulation::JudgePlayerContacts(std::uint64_t tick) {
             }
             const std::int64_t hit_radius = bullet_radius + kDanmakuHitRadiusMilli;
             if (distance_squared <= hit_radius * hit_radius) {
-                if (player.lives > 0) {
-                    --player.lives;
-                }
-                // 计分：受击次数 + 本阶段符卡作废（该阶段不给捕获分）。
-                ++player.hit_count;
-                player.phase_hit_taken = true;
-                player.invulnerable_until_tick = tick + kDanmakuInvulnerableTicks;
-                BossEventWire hit;
-                hit.tick = tick;
-                hit.type = kPlayerHitEvent;
-                hit.player_id = player.player_id;
-                tick_events_.push_back(std::move(hit));
-                if (player.lives == 0) {
-                    player.alive = false;
-                    BossEventWire dead;
-                    dead.tick = tick;
-                    dead.type = kPlayerDeadEvent;
-                    dead.player_id = player.player_id;
-                    tick_events_.push_back(std::move(dead));
-                }
+                // 与铁拳 / 黑色帷幕命中共用同一结算 helper（无敌帧幂等）。
+                // 外层 invulnerable 检查已保证本 tick 非无敌，故必定扣血并 break。
+                ApplyPlayerDamage(player, tick, PlayerDamageCause::kBullet);
                 break;  // 本 tick 已进入无敌帧，剩余子弹不再判定
             }
             const std::int64_t graze_radius = bullet_radius + kDanmakuGrazeRadiusMilli;

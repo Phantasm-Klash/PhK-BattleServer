@@ -35,6 +35,9 @@ void Check(bool condition, const std::string& message) {
 
 phk::battle::BossRaceConfig ChainConfig(std::int32_t difficulty = 1) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关（ruleset 仍是 danmaku，
+    // 机制照常启用，但穿透/特殊机制命中接线关闭），逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_chain_tests_000001";
     config.match_seed = 777u;
     config.boss_max_hp = 1000000;

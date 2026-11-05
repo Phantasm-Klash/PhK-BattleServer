@@ -35,6 +35,8 @@ void Check(bool condition, const std::string& message) {
 
 phk::battle::BossRaceConfig MakeConfig(const std::string& ruleset, std::int32_t difficulty) {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_difficulty_tests_000001";
     config.match_seed = 4242u;
     config.boss_max_hp = 1000000;

@@ -167,6 +167,8 @@ void TestNodeMotionFunctions() {
 // 端到端：tna ruleset + boss_id=boss21_tna → tick 1 每玩家 36 颗真实弹幕。
 void TestSimulationEmits() {
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_tna_cadence_0001";
     config.match_seed = 9001u;
     config.boss_max_hp = 6000;
@@ -298,6 +300,8 @@ void TestBossStateBossIdForPhase() {
 void TestPhaseRotationEndToEnd() {
     using namespace phk::battle::danmaku;
     phk::battle::BossRaceConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match_tna_phase_0001";
     config.match_seed = 20261031u;
     config.boss_max_hp = 300;  // 低 HP：一针就跨一个阈值
@@ -402,6 +406,8 @@ void TestNoSegmentRegression() {
     };
     for (const Case& c : cases) {
         phk::battle::BossRaceConfig config;
+        // 测的是 legacy 回退路径：显式关闭全开开关，state_hash 回归值逐字节复现改动前。
+        config.all_features_enabled = false;
         config.match_id = "match_chain_regress_0001";
         config.match_seed = 5150u;
         config.boss_max_hp = 6000;

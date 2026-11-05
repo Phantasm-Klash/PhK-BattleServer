@@ -335,6 +335,8 @@ phk::battle::BattleInput MakeInput(const std::string& match_id, const std::strin
 
 phk::battle::MatchLifecycleConfig MakeConfig() {
     phk::battle::MatchLifecycleConfig config;
+    // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
+    config.all_features_enabled = false;
     config.match_id = "match-1";
     config.mode_id = "mvp_boss_race";
     config.player_ids = {"p-1", "p-2"};

@@ -155,6 +155,9 @@ struct MatchLifecycleConfig {
     bool coop_mode = false;
     std::uint64_t seed = 0;
     std::string ruleset_version = "mvp-boss-race-s0";
+    // Master switch for all danmaku mechanics (default ON); MakeBossRaceConfig
+    // forwards it to BossRaceConfig::all_features_enabled for the live MatchServer.
+    bool all_features_enabled = true;
     std::vector<std::string> player_ids;
     std::string lobby_endpoint;  // "host:port"; empty disables submission
     std::string result_path = "/internal/battle/result";

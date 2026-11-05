@@ -140,6 +140,18 @@ struct BossRaceConfig {
     // + extra_time_per_second × ((max_ticks - finish_tick) / 64)。
     // 不改任何发射/判定行为（0 = 逐字节保持现状）。
     std::uint64_t max_ticks = 0;
+    // 全开总开关（默认 true）：true 时忽略 ruleset_version 限制，启用全部弹幕机制
+    // （受击/擦弹/无敌帧/残机/炸弹、自机弹 vs Boss 真实伤害、符卡 3 阶段、
+    //  铁拳/黑色帷幕命中、ChainNode 表、难度缩放、特殊机制命中接线）。
+    // false 时逐字节回退到改动前行为：机制只在 ruleset_version ==
+    // kRulesetDanmakuMechanics 时启用（保护 dem header / result / state_hash 契约）。
+    // 注意：不改 ruleset_version 默认字符串、不改 kRulesetDanmakuMechanics 常量值。
+    bool all_features_enabled = true;
+    // 自机弹穿透次数：产品路径 SpawnMyBulletsForPlayer 发射时写入
+    // MyBullet::penetrate（>0 命中 Boss 后继续判定并递减，见 JudgeMyBullets）。
+    // 全开时默认 1（命中后继续一段）；关闭（legacy）时产品路径不走自机弹 → 恒 0。
+    // InjectMyBulletForTest 仍可显式注入任意 penetrate（不受本字段影响）。
+    std::int32_t my_bullet_penetrate = 1;
     // 特殊机制排期（默认 disabled；ruleset_version == kRulesetDanmakuMechanics 时
     // 构造函数自动置 enabled）。
     BossSpecialMechanicsSchedule special_mechanics;
@@ -523,6 +535,13 @@ private:
     void AdvanceSpecialMechanics(std::uint64_t tick);
     // 玩家受击判定（§2.4 第 2 条）：boss 弹 vs 自机判定点/擦弹圈；disabled 时 no-op。
     void JudgePlayerContacts(std::uint64_t tick);
+    // 受击来源（内部语义；wire 事件类型统一为 kPlayerHitEvent，不进 wire）。
+    enum class PlayerDamageCause { kBullet, kIronFist, kBlackCurtain };
+    // §2.4 受击结算共用 helper：普通弹 / 铁拳 / 黑色帷幕命中都走这里。
+    // 无敌帧幂等（tick <= invulnerable_until_tick 时不扣血），保证同 tick 内
+    // 多来源/多次判定只扣一次命、不发重复事件。返回 true = 本次确实扣了命。
+    // cause 预留内部来源标记；wire 冻结期不新增字段，故事件类型仍统一 player_hit。
+    bool ApplyPlayerDamage(PlayerState& player, std::uint64_t tick, PlayerDamageCause cause);
     void CheckRaceWinner(std::uint64_t tick);
     // 计分（§计分）：加 delta 分并发一条 score_gain 事件（delta=0 时不发）。
     // 所有加分都必须走这里，保证 wire 上「增量之和 == players[].score」。

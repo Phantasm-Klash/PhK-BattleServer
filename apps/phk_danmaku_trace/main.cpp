@@ -8,11 +8,15 @@
 // 用法：
 //   phk_danmaku_trace --out trace.jsonl [--seed 12345] [--ticks 300]
 //                      [--ruleset tna-1.40-danmaku] [--boss-hp 6000]
-//                      [--boss-id tian] [--difficulty 1]
+//                      [--boss-id tian] [--difficulty 1] [--legacy]
 //
 // --difficulty：0/1/2/3 = easy/normal/hard/lunatic（默认 1），透传
 // BossRaceConfig.difficulty；只在 tna-1.40-danmaku 下由服务端权威缩放，
 // 默认 ruleset 只回显不缩放。
+//
+// --legacy：不带时 all_features_enabled=true（默认全开，用于与改动前 alloff
+// baseline 对比验证机制真的打开）；带 --legacy 时设 false，逐字节复现改动前
+// 行为。只切机制开关，不改 wire / 快照字段。
 //
 // 输入脚本（确定性，无随机）：两名玩家全程 shoot；p-alpha 走方形走位（每 32 tick
 // 换向）并在 tick 100 放一次 bomb；p-beta 每 64 tick 换向。移动/射击都服务端计算，
@@ -92,7 +96,8 @@ int main(int argc, char** argv) {
     std::string out_path;
     if (!ParseArg(argc, argv, "--out", &out_path) || out_path.empty()) {
         std::fprintf(stderr, "usage: phk_danmaku_trace --out <path> [--seed N] [--ticks N] "
-                             "[--ruleset v] [--boss-hp N] [--boss-id id] [--difficulty N]\n");
+                             "[--ruleset v] [--boss-hp N] [--boss-id id] [--difficulty N] "
+                             "[--legacy]\n");
         return 2;
     }
     std::string seed_text;
@@ -107,6 +112,13 @@ int main(int argc, char** argv) {
     ParseArg(argc, argv, "--boss-hp", &boss_hp_text);
     ParseArg(argc, argv, "--boss-id", &boss_id);
     ParseArg(argc, argv, "--difficulty", &difficulty_text);
+    // --legacy 是无值布尔 flag（ParseArg 只处理带值参数，这里单独扫描）。
+    bool legacy_mode = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--legacy") == 0) {
+            legacy_mode = true;
+        }
+    }
 
     const std::uint64_t seed = ParseU64(seed_text, 12345);
     const std::uint64_t ticks = ParseU64(ticks_text, 300);
@@ -115,6 +127,9 @@ int main(int argc, char** argv) {
     const std::int32_t difficulty = ParseI32(difficulty_text, 1);
 
     phk::battle::BossRaceConfig config;
+    // 默认全开（true）；仅 --legacy 时回退，供主控跑「全开 vs legacy」两份
+    // trace 对比 events/effects/state_hash 验证机制真的打开（只切机制开关，不改 wire）。
+    config.all_features_enabled = !legacy_mode;
     config.match_id = "match_trace_000001";
     config.match_seed = seed;
     config.boss_max_hp = boss_hp;
