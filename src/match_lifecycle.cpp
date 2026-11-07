@@ -383,7 +383,7 @@ void AppendGroupMotionJson(std::string& json, const std::vector<GroupMotionWire>
 // 调用，因此默认关闭的快照逐字节不变。
 void AppendDeltaWireJson(std::string& json, const BossRaceDeltaWire& delta) {
     // wire_cap 是字段级能力位：每一位对应一个本快照确实写出的 delta 数组字段。
-    // 骨架阶段 bullet_spawns / bullet_deviations / group_motion 三类字段恒写出
+    // §4 契约：bullet_spawns / bullet_deviations / group_motion 三类字段恒写出
     // （即使内容为空数组），故三个能力位全部置位 = 7；bullet_despawns 规格未
     // 分配位，字段同样写出但不占位。wire_cap 不虚报任何未写出的字段。
     const std::uint32_t cap =
@@ -957,7 +957,12 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
         json += std::to_string(player.spell_total);
         json += '}';
     }
-    json += "],\"bullets\":[";
+    json += ']';  // 关闭 players[]
+    // §10.2：delta != nullptr 时省略全量 bullets[]，只发事件流；delta == nullptr
+    // 时下方全量 bullets[] 编码逐字节保持改动前输出（回退铁律 §4.1）。
+    // 为最小化 diff，if 内语句刻意沿用原有 4 空格缩进，不整体重排。
+    if (delta == nullptr) {
+    json += ",\"bullets\":[";
     for (std::size_t i = 0; i < snapshot.bullets.size(); ++i) {
         const BossRaceBullet& bullet = snapshot.bullets[i];
         if (i != 0) json += ',';
@@ -991,7 +996,9 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
         json += JsonEscape(bullet.pattern_id);
         json += "\"}";
     }
-    json += "],\"chains\":";
+    json += ']';  // 关闭 bullets[]（仅 delta == nullptr 分支会走到）
+    }
+    json += ",\"chains\":";
     AppendChainsJson(json, snapshot.chains);
     json += ",\"hand\":";
     AppendHandJson(json, snapshot.hand);
@@ -1003,8 +1010,9 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
     AppendEventsJson(json, snapshot.events);
     json += ",\"event_cursor\":";
     json += std::to_string(snapshot.event_cursor);
-    // 骨架：delta == nullptr（默认关闭）时这段完全不执行，快照逐字节不变；
-    // 打开时在收尾 '}' 之前追加 §4 可选字段，全量 bullets[] 仍保留兜底。
+    // §10.2：delta != nullptr 时快照省略全量 bullets[]，仅在收尾 '}' 之前追加
+    // §4 可选字段（wire_cap + spawns/deviations/despawns/group_motion）；
+    // delta == nullptr 时全量路径逐字节不变（回退铁律 §4.1）。
     if (delta != nullptr) {
         AppendDeltaWireJson(json, *delta);
     }
@@ -1326,9 +1334,29 @@ void MatchServer::AdvanceTick() {
     } else {
         const BossRaceSnapshot snapshot = simulation_.Tick();
         if (config_.delta_wire_enabled) {
-            // 骨架阶段没有真实 spawn/deviation/despawn 事件流，四个数组留空；
-            // 仅声明 §4 能力位并保留全量 bullets[] 兜底（去掉它需 §7 全量回归）。
+            // §10.2：从本 tick 权威事件流组装 delta 并省略全量 bullets[]。
+            // 稳态 Δ≡0 → bullet_deviations 恒空；G_g ≡ I → group_motion 恒等
+            // （留空数组，不编造编队变换，见规格 §8）。
             BossRaceDeltaWire delta;
+            delta.spawns.reserve(snapshot.tick_spawns.size());
+            for (const BossRaceSpawnEvent& event : snapshot.tick_spawns) {
+                BulletSpawnWire spawn;
+                spawn.bullet_id = event.bullet_id;
+                spawn.owner_player_id = event.owner_player_id;
+                spawn.t0 = event.t0;
+                spawn.p = event.p;
+                spawn.q = event.q;
+                spawn.group_id = event.group_id;
+                spawn.tmpl = event.tmpl;
+                delta.spawns.push_back(std::move(spawn));
+            }
+            delta.despawns.reserve(snapshot.tick_despawns.size());
+            for (const BossRaceDespawnEvent& event : snapshot.tick_despawns) {
+                BulletDespawnWire despawn;
+                despawn.bullet_id = event.bullet_id;
+                despawn.reason = event.reason;
+                delta.despawns.push_back(std::move(despawn));
+            }
             BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot, &delta));
         } else {
             BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));

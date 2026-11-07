@@ -258,6 +258,28 @@ struct BossRaceBullet {
     std::uint64_t vanish_tick = 0;
 };
 
+// ---- §10.2 本 tick 弹幕事件（spawn / despawn）--------------------------------
+//
+// 逐字段镜像 match_lifecycle.hpp 的 BulletSpawnWire / BulletDespawnWire；因
+// match_lifecycle.hpp 已 include 本头文件，反向引用会造成循环依赖，故在此独立
+// 定义，由 MatchServer::AdvanceTick / phk_danmaku_trace 转换成 BossRaceDeltaWire。
+// spawn.tmpl = 出生时刻的完整 LiveBullet::motion（danmaku::BulletMotion），
+// 客户端重建器以此为递推起点（见 docs/danmaku-delta-wire.md §10.3）。
+struct BossRaceSpawnEvent {
+    std::string bullet_id;
+    std::string owner_player_id;
+    std::uint64_t t0 = 0;
+    std::uint32_t p = 0;   // pattern_index
+    std::uint32_t q = 0;   // spawn_index
+    std::uint32_t group_id = 0;
+    danmaku::BulletMotion tmpl;
+};
+
+struct BossRaceDespawnEvent {
+    std::string bullet_id;
+    std::string reason;
+};
+
 struct BossRacePlayerSnapshot {
     std::string player_id;
     std::int32_t x_milli = 0;
@@ -324,6 +346,10 @@ struct BossRaceSnapshot {
     std::uint32_t draw_cooldown_ticks = 0;
     std::vector<BossEventWire> events;
     std::uint64_t event_cursor = 0;
+    // §10.2 本 tick 真实弹幕事件流（delta_wire_enabled 时由编码器消费；
+    // 默认关闭路径不读这两个数组，行为逐字节不变）。
+    std::vector<BossRaceSpawnEvent> tick_spawns;
+    std::vector<BossRaceDespawnEvent> tick_despawns;
 };
 
 // Returns the ten pattern ids, in scheduler order (real tna-1.40 patterns).
@@ -517,7 +543,11 @@ private:
     void PushCardRejected(const PlayerState& player, int slot, const std::string& reason, std::uint64_t tick);
     void RunCardEffect(PlayerState& player, const CardDefinition& definition, std::uint64_t tick);
     [[nodiscard]] std::vector<CardBulletSnapshot> BuildCardBulletSnapshots() const;
-    void ApplyCardBulletDeltas(const std::vector<CardBulletDelta>& deltas, const std::string& owner_player_id);
+    void ApplyCardBulletDeltas(const std::vector<CardBulletDelta>& deltas, const std::string& owner_player_id, std::uint64_t tick);
+    // §10.2 事件登记 helper：5 个 spawn 点 / 3 个 despawn 点共用，保证模板与
+    // 四元组逐字段一致、reason 统一。
+    void RecordBulletSpawn(const LiveBullet& live, std::uint64_t tick);
+    void RecordBulletDespawn(const std::string& bullet_id, const char* reason);
     void SpawnBulletsForTick(std::uint64_t tick);
     // ChainNode 表路径（tna-1.40-danmaku + 库内 boss_id）：EmitChainBossTickDetailed
     // 的产出取代 10 模式轮转；同时填 tick_chains_（快照 chains[] 真实值）。
@@ -587,6 +617,10 @@ private:
     // 本 tick 触发的链节点（ChainNode 路径；每 Tick 清空，快照 chains[] 真实值）。
     // 非 ChainNode 路径恒空（chains[] 走 P1 按 pattern_index 聚合占位）。
     std::vector<BossChainWire> tick_chains_;
+    // §10.2 本 tick 新生/消失弹（每 Tick 开头与 tick_events_ 一起清空，
+    // Snapshot() 带出）。稳态 Δ≡0，故无 deviations 容器。
+    std::vector<BossRaceSpawnEvent> tick_spawns_;
+    std::vector<BossRaceDespawnEvent> tick_despawns_;
     std::uint64_t event_cursor_ = 0;
     // 大厅种子（T7 H-2）：票据 server_seed_decimal 的解析值。bullet_purge 的
     // 确定性选取只认它；config_.match_seed 是弹幕 RNG 的种子，语义不同，

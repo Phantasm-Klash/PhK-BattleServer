@@ -698,7 +698,7 @@ void BossRaceSimulation::RunCardEffect(
         return;
     }
 
-    ApplyCardBulletDeltas(effect.bullet_deltas, player.player_id);
+    ApplyCardBulletDeltas(effect.bullet_deltas, player.player_id, tick);
 
     BossEventWire applied;
     applied.tick = tick;
@@ -734,9 +734,32 @@ std::vector<CardBulletSnapshot> BossRaceSimulation::BuildCardBulletSnapshots() c
 // 效果层 bullet delta → LiveBullet（对应 BattleSimulation::ApplyBulletDeltas，
 // simulation.cpp:2536-2564）。bullet id 一律由本模块重新铸造（"b<N>"），丢弃
 // 效果层的 Go 风格 id，保证与 pattern 弹幕共用一条 id 序列。
+// §10.2 事件登记 helper：spawn 逐字段拷贝出生时刻的完整 BulletMotion 模板 +
+// (p,q) 四元组；despawn 只记 id + reason。所有 5 个 spawn / 3 个 despawn 点
+// 共用，避免各点手写漏字段。
+void BossRaceSimulation::RecordBulletSpawn(const LiveBullet& live, std::uint64_t tick) {
+    BossRaceSpawnEvent event;
+    event.bullet_id = live.bullet_id;
+    event.owner_player_id = live.owner_player_id;
+    event.t0 = tick;
+    event.p = live.pattern_index;
+    event.q = live.spawn_index;
+    event.group_id = 0;
+    event.tmpl = live.motion;
+    tick_spawns_.push_back(std::move(event));
+}
+
+void BossRaceSimulation::RecordBulletDespawn(const std::string& bullet_id, const char* reason) {
+    BossRaceDespawnEvent event;
+    event.bullet_id = bullet_id;
+    event.reason = reason;
+    tick_despawns_.push_back(std::move(event));
+}
+
 void BossRaceSimulation::ApplyCardBulletDeltas(
     const std::vector<CardBulletDelta>& deltas,
-    const std::string& owner_player_id
+    const std::string& owner_player_id,
+    std::uint64_t tick
 ) {
     for (const CardBulletDelta& delta : deltas) {
         if (delta.op == "spawn") {
@@ -763,6 +786,7 @@ void BossRaceSimulation::ApplyCardBulletDeltas(
             motion.hit_dis = delta.radius;
             motion.IntegrateVelocity();
             live.motion = motion;
+            RecordBulletSpawn(live, tick);
             live_bullets_.push_back(std::move(live));
         } else if (delta.op == "despawn") {
             const auto it = std::find_if(
@@ -770,6 +794,7 @@ void BossRaceSimulation::ApplyCardBulletDeltas(
                 live_bullets_.end(),
                 [&](const LiveBullet& live) { return live.bullet_id == delta.bullet_id; });
             if (it != live_bullets_.end()) {
+                RecordBulletDespawn(it->bullet_id, "card_purge");
                 live_bullets_.erase(it);
             }
         }
@@ -880,6 +905,7 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
                 live.chain_id = emission.chain_id;
                 live.spawn_index = spawn_index++;
                 live.motion = motion;
+                RecordBulletSpawn(live, tick);
                 live_bullets_.push_back(std::move(live));
             }
         }
@@ -943,6 +969,7 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
             live.chain_id = static_cast<std::uint32_t>(pattern_index);  // P1 占位语义（逐字节不变）
             live.spawn_index = spawn_index++;
             live.motion = motion;
+            RecordBulletSpawn(live, tick);
             live_bullets_.push_back(std::move(live));
         }
     }
@@ -994,6 +1021,7 @@ void BossRaceSimulation::SpawnSyntheticBulletsForTick(std::uint64_t tick) {
             motion.hit_dis = ToPixels(static_cast<std::int32_t>(radius_milli));
             motion.IntegrateVelocity();
             live.motion = motion;
+            RecordBulletSpawn(live, tick);
             live_bullets_.push_back(std::move(live));
         };
 
@@ -1087,6 +1115,13 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
     std::map<std::string, std::uint32_t> host_budget;  // 每玩家本 tick 分裂宿主预算
 
     // 阶段切换清屏的子弹：上一 tick 已广播 vanish_tick，本 tick 正式移除。
+    // §10.2 在真正 erase 的这一 tick 登记 despawn（reason=spell_clear），
+    // 与「vanish_tick 标记不提前登记」一致；谓词与下方 remove_if 逐字一致。
+    for (const LiveBullet& live : live_bullets_) {
+        if (live.vanish_tick != 0 && live.vanish_tick < tick) {
+            RecordBulletDespawn(live.bullet_id, "spell_clear");
+        }
+    }
     live_bullets_.erase(
         std::remove_if(
             live_bullets_.begin(),
@@ -1157,12 +1192,24 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
     // 钳制链：每玩家总量 kBossRaceMaxBulletsPerPlayer 决定 max_children
     // （超限时后请求的宿主少生或不生，截断顺序确定）。
     for (const AdvanceSplitRequest& request : requests) {
-        const LiveBullet& host = live_bullets_[request.index];
+        // ★ 循环内 live_bullets_.push_back 会触发 vector 重分配，使任何指向
+        // live_bullets_ 元素的引用/迭代器悬空；后续 child 迭代再读 host 字段
+        // 就是 use-after-free（曾致 std::bad_alloc）。故在 push_back 之前把
+        // 循环内需要的 host 字段按值拷出，并让 host 引用立即离开作用域；
+        // 循环内只读这两个副本，不再触碰 live_bullets_（也不改用循环内索引
+        // 访问：重分配后下标仍指向同一逻辑元素，但反复取元素同样易错）。
+        std::string host_pattern_id;
+        danmaku::BulletMotion host_motion;
+        {
+            const LiveBullet& host = live_bullets_[request.index];
+            host_pattern_id = host.pattern_id;
+            host_motion = host.motion;
+        }
         const std::size_t room = kBossRaceMaxBulletsPerPlayer - EmittedBulletsFor(request.owner_player_id);
         const int max_children = static_cast<int>(
             std::min<std::size_t>(room, static_cast<std::size_t>(danmaku::kChainSplitChildrenPerHost)));
         const std::vector<danmaku::ChainSplitChild> children = danmaku::ComputeChainSplitChildren(
-            host.motion,
+            host_motion,
             config_.match_seed,
             tick,
             request.pattern_index,
@@ -1176,17 +1223,25 @@ void BossRaceSimulation::AdvanceBullets(std::uint64_t tick) {
             LiveBullet live;
             live.bullet_id = "b" + std::to_string(next_bullet_id_++);
             live.owner_player_id = request.owner_player_id;
-            live.pattern_id = host.pattern_id;
+            live.pattern_id = host_pattern_id;
             live.pattern_index = request.pattern_index;
             live.chain_id = request.pattern_index;  // P1 占位语义（逐字节不变）
-            live.spawn_index = child.spawn_index;
+            live.spawn_index = child.spawn_index;  // = host + 0x10000 + i（如实登记）
             live.generation = request.generation + 1;
-            live.motion = danmaku::MakeChainSplitChildMotion(host.motion, child);
+            live.motion = danmaku::MakeChainSplitChildMotion(host_motion, child);
+            RecordBulletSpawn(live, tick);
             live_bullets_.push_back(std::move(live));
         }
     }
 
     // 第三趟：出界移除（与链式分裂落地前完全相同的谓词）。
+    // §10.2 登记 despawn（reason=out_of_bounds），谓词与下方 remove_if 逐字一致。
+    for (const LiveBullet& live : live_bullets_) {
+        if (live.motion.x < -20.0 || live.motion.x > kScreenW + 20.0 ||
+            live.motion.y < -20.0 || live.motion.y > kScreenH + 20.0) {
+            RecordBulletDespawn(live.bullet_id, "out_of_bounds");
+        }
+    }
     live_bullets_.erase(
         std::remove_if(
             live_bullets_.begin(),
@@ -1674,6 +1729,8 @@ BossRaceSnapshot BossRaceSimulation::Tick() {
     const std::uint64_t tick_to_apply = current_tick_ + 1;
     tick_events_.clear();
     tick_chains_.clear();
+    tick_spawns_.clear();
+    tick_despawns_.clear();
     StartIfReady();
     if (state_ == BossRaceState::Running) {
         // 计时分（实测 @0x562200）：每 10 tick 每玩家 +110。原版在 update 开头按
@@ -1946,6 +2003,9 @@ BossRaceSnapshot BossRaceSimulation::Snapshot() const {
     // events：本 tick 的机制/判定事件（§2.4.6），event_cursor = 累计事件数。
     snapshot.events = tick_events_;
     snapshot.event_cursor = event_cursor_;
+    // §10.2 本 tick 真实弹幕事件流（delta_wire_enabled 时由编码器消费）。
+    snapshot.tick_spawns = tick_spawns_;
+    snapshot.tick_despawns = tick_despawns_;
     snapshot.state_hash = CanonicalStateHash();
     return snapshot;
 }

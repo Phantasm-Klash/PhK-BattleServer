@@ -102,7 +102,8 @@ struct BossRaceDeltaWire {
 };
 
 // delta == nullptr（默认）时输出与改动前逐字节一致的全量 bullets[] 快照；
-// delta != nullptr 时在末尾追加 §4 的可选字段（仍保留全量 bullets[] 兜底）。
+// delta != nullptr（§10.2）时省略全量 bullets[]，只发 §4 可选字段
+// （wire_cap + spawns/deviations/despawns/group_motion）。
 [[nodiscard]] std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
     const BossRaceSnapshot& snapshot,
     const BossRaceDeltaWire* delta = nullptr);
