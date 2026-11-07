@@ -227,6 +227,179 @@ void AppendJsonDouble(std::string& json, double value) {
     json += buffer;
 }
 
+// ---- 弹幕差量 wire（docs/danmaku-delta-wire.md §4，骨架阶段）----------------
+//
+// spawn.template 是 danmaku::BulletMotion 的逐字段镜像（= LiveBullet::motion）。
+// 整数用 std::to_string，浮点沿用 AppendJsonDouble 的 "%.17g"（双端同精度），
+// 字段名严格照 §4，不做任何编队/运动变换的编造。
+
+void AppendBulletMotionTemplateJson(std::string& json, const danmaku::BulletMotion& m) {
+    json += "{\"x\":";
+    AppendJsonDouble(json, m.x);
+    json += ",\"y\":";
+    AppendJsonDouble(json, m.y);
+    json += ",\"vx\":";
+    AppendJsonDouble(json, m.vx);
+    json += ",\"vy\":";
+    AppendJsonDouble(json, m.vy);
+    json += ",\"angle\":";
+    AppendJsonDouble(json, m.angle);
+    json += ",\"speed\":";
+    AppendJsonDouble(json, m.speed);
+    json += ",\"accel\":";
+    AppendJsonDouble(json, m.accel);
+    json += ",\"t\":";
+    AppendJsonDouble(json, m.t);
+    json += ",\"life\":";
+    json += std::to_string(m.life);
+    json += ",\"angle_spd\":";
+    AppendJsonDouble(json, m.angle_spd);
+    json += ",\"angle_acc\":";
+    AppendJsonDouble(json, m.angle_acc);
+    json += ",\"f56c\":";
+    AppendJsonDouble(json, m.f56c);
+    json += ",\"speed_cap\":";
+    AppendJsonDouble(json, m.speed_cap);
+    json += ",\"angle_init\":";
+    AppendJsonDouble(json, m.angle_init);
+    json += ",\"speed_init\":";
+    AppendJsonDouble(json, m.speed_init);
+    json += ",\"f598\":";
+    AppendJsonDouble(json, m.f598);
+    json += ",\"prev_angle\":";
+    AppendJsonDouble(json, m.prev_angle);
+    json += ",\"spd_init2\":";
+    AppendJsonDouble(json, m.spd_init2);
+    json += ",\"xacc\":";
+    AppendJsonDouble(json, m.xacc);
+    json += ",\"xacc_cap\":";
+    AppendJsonDouble(json, m.xacc_cap);
+    json += ",\"pf1\":";
+    AppendJsonDouble(json, m.pf1);
+    json += ",\"pf2\":";
+    AppendJsonDouble(json, m.pf2);
+    json += ",\"bullet_kind\":";
+    json += std::to_string(m.bullet_kind);
+    json += ",\"rotate_flg\":";
+    json += std::to_string(m.rotate_flg);
+    json += ",\"bullet_life\":";
+    json += std::to_string(m.bullet_life);
+    json += ",\"bullet_loop\":";
+    json += std::to_string(m.bullet_loop);
+    json += ",\"delay\":";
+    json += std::to_string(m.delay);
+    json += ",\"vanish_delay\":";
+    json += std::to_string(m.vanish_delay);
+    json += ",\"p1\":";
+    json += std::to_string(m.p1);
+    json += ",\"p2\":";
+    json += std::to_string(m.p2);
+    json += ",\"bullet_func_no\":";
+    json += std::to_string(m.bullet_func_no);
+    json += ",\"hit_dis\":";
+    AppendJsonDouble(json, m.hit_dis);
+    json += ",\"hit_hantei\":";
+    json += m.hit_hantei ? "true" : "false";
+    json += '}';
+}
+
+void AppendBulletSpawnsJson(std::string& json, const std::vector<BulletSpawnWire>& spawns) {
+    json += '[';
+    for (std::size_t i = 0; i < spawns.size(); ++i) {
+        const BulletSpawnWire& spawn = spawns[i];
+        if (i != 0) json += ',';
+        json += "{\"bullet_id\":\"";
+        json += JsonEscape(spawn.bullet_id);
+        json += "\",\"owner_player_id\":\"";
+        json += JsonEscape(spawn.owner_player_id);
+        json += "\",\"t0\":";
+        json += std::to_string(spawn.t0);
+        json += ",\"p\":";
+        json += std::to_string(spawn.p);
+        json += ",\"q\":";
+        json += std::to_string(spawn.q);
+        json += ",\"group_id\":";
+        json += std::to_string(spawn.group_id);
+        json += ",\"template\":";
+        AppendBulletMotionTemplateJson(json, spawn.tmpl);
+        json += '}';
+    }
+    json += ']';
+}
+
+void AppendBulletDeviationsJson(std::string& json, const std::vector<BulletDeviationWire>& deviations) {
+    json += '[';
+    for (std::size_t i = 0; i < deviations.size(); ++i) {
+        const BulletDeviationWire& deviation = deviations[i];
+        if (i != 0) json += ',';
+        json += "{\"bullet_id\":\"";
+        json += JsonEscape(deviation.bullet_id);
+        json += "\",\"dx\":";
+        json += std::to_string(deviation.dx);
+        json += ",\"dy\":";
+        json += std::to_string(deviation.dy);
+        json += ",\"dvx\":";
+        json += std::to_string(deviation.dvx);
+        json += ",\"dvy\":";
+        json += std::to_string(deviation.dvy);
+        json += '}';
+    }
+    json += ']';
+}
+
+void AppendBulletDespawnsJson(std::string& json, const std::vector<BulletDespawnWire>& despawns) {
+    json += '[';
+    for (std::size_t i = 0; i < despawns.size(); ++i) {
+        const BulletDespawnWire& despawn = despawns[i];
+        if (i != 0) json += ',';
+        json += "{\"bullet_id\":\"";
+        json += JsonEscape(despawn.bullet_id);
+        json += "\",\"reason\":\"";
+        json += JsonEscape(despawn.reason);
+        json += "\"}";
+    }
+    json += ']';
+}
+
+void AppendGroupMotionJson(std::string& json, const std::vector<GroupMotionWire>& groups) {
+    json += '[';
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        const GroupMotionWire& group = groups[i];
+        if (i != 0) json += ',';
+        json += "{\"group_id\":";
+        json += std::to_string(group.group_id);
+        json += ",\"tx\":";
+        json += std::to_string(group.tx);
+        json += ",\"ty\":";
+        json += std::to_string(group.ty);
+        json += ",\"phi\":";
+        json += std::to_string(group.phi);
+        json += '}';
+    }
+    json += ']';
+}
+
+// 在快照 JSON 收尾 '}' 之前追加 §4 可选字段。delta == nullptr 时本函数不会被
+// 调用，因此默认关闭的快照逐字节不变。
+void AppendDeltaWireJson(std::string& json, const BossRaceDeltaWire& delta) {
+    // wire_cap 是字段级能力位：每一位对应一个本快照确实写出的 delta 数组字段。
+    // 骨架阶段 bullet_spawns / bullet_deviations / group_motion 三类字段恒写出
+    // （即使内容为空数组），故三个能力位全部置位 = 7；bullet_despawns 规格未
+    // 分配位，字段同样写出但不占位。wire_cap 不虚报任何未写出的字段。
+    const std::uint32_t cap =
+        kDeltaWireCapSpawn | kDeltaWireCapDeviation | kDeltaWireCapGroup;
+    json += ",\"wire_cap\":";
+    json += std::to_string(cap);
+    json += ",\"bullet_spawns\":";
+    AppendBulletSpawnsJson(json, delta.spawns);
+    json += ",\"bullet_deviations\":";
+    AppendBulletDeviationsJson(json, delta.deviations);
+    json += ",\"bullet_despawns\":";
+    AppendBulletDespawnsJson(json, delta.despawns);
+    json += ",\"group_motion\":";
+    AppendGroupMotionJson(json, delta.group_motion);
+}
+
 void AppendEventsJson(std::string& json, const std::vector<BossEventWire>& events) {
     json += '[';
     for (std::size_t i = 0; i < events.size(); ++i) {
@@ -716,7 +889,10 @@ bool DecodeBattleInputTicketPayload(const std::vector<std::uint8_t>& payload, Si
     return true;
 }
 
-std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& snapshot) {
+std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
+    const BossRaceSnapshot& snapshot,
+    const BossRaceDeltaWire* delta
+) {
     std::string json;
     json.reserve(256 + snapshot.bullets.size() * 64);
     json += "{\"tick\":";
@@ -827,6 +1003,11 @@ std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& 
     AppendEventsJson(json, snapshot.events);
     json += ",\"event_cursor\":";
     json += std::to_string(snapshot.event_cursor);
+    // 骨架：delta == nullptr（默认关闭）时这段完全不执行，快照逐字节不变；
+    // 打开时在收尾 '}' 之前追加 §4 可选字段，全量 bullets[] 仍保留兜底。
+    if (delta != nullptr) {
+        AppendDeltaWireJson(json, *delta);
+    }
     json += '}';
 
     std::vector<std::uint8_t> out;
@@ -1144,7 +1325,14 @@ void MatchServer::AdvanceTick() {
         BroadcastSnapshotPayload(EncodeCoopBossSnapshotPayload(snapshot));
     } else {
         const BossRaceSnapshot snapshot = simulation_.Tick();
-        BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+        if (config_.delta_wire_enabled) {
+            // 骨架阶段没有真实 spawn/deviation/despawn 事件流，四个数组留空；
+            // 仅声明 §4 能力位并保留全量 bullets[] 兜底（去掉它需 §7 全量回归）。
+            BossRaceDeltaWire delta;
+            BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot, &delta));
+        } else {
+            BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+        }
     }
     DetectAllPlayersDisconnected();
     FlushEventsIfNeeded(false);

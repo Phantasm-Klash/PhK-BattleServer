@@ -254,4 +254,12 @@ if(PHK_BATTLE_BUILD_TESTS)
     )
     target_link_libraries(phk_boss_race_all_features_tests PRIVATE phk_battle_core)
     add_test(NAME phk_boss_race_all_features_tests COMMAND phk_boss_race_all_features_tests)
+
+    # 弹幕差量 wire 骨架（docs/danmaku-delta-wire.md §4）：默认关闭逐字节不变 /
+    # 打开时 §4 字段出现且全量 bullets[] 仍完整 / spawn 模板镜像 BulletMotion。
+    add_executable(phk_danmaku_delta_tests
+        tests/danmaku_delta_tests.cpp
+    )
+    target_link_libraries(phk_danmaku_delta_tests PRIVATE phk_battle_core)
+    add_test(NAME phk_danmaku_delta_tests COMMAND phk_danmaku_delta_tests)
 endif()

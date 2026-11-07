@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "phk/battle/boss_race.hpp"
+#include "phk/battle/danmaku/bullet_motion.hpp"
 #include "phk/battle/coop_boss.hpp"
 #include "phk/battle/card_events_report.hpp"
 #include "phk/battle/dem.hpp"
@@ -49,7 +50,62 @@ namespace phk::battle {
     const std::vector<std::uint8_t>& payload,
     SignedBattleTicket* out
 );
-[[nodiscard]] std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(const BossRaceSnapshot& snapshot);
+// ---------------------------------------------------------------------------
+// 弹幕差量 wire（docs/danmaku-delta-wire.md §4，骨架阶段）
+// ---------------------------------------------------------------------------
+// wire_cap 位：仅三类数组字段有对应能力位；bullet_despawns 规格未分配位。
+inline constexpr std::uint32_t kDeltaWireCapSpawn = 1u;
+inline constexpr std::uint32_t kDeltaWireCapDeviation = 2u;
+inline constexpr std::uint32_t kDeltaWireCapGroup = 4u;
+
+// spawn.template 直接镜像 danmaku::BulletMotion（= BossRaceSimulation::LiveBullet::motion
+// 的类型），双端共享的静态参数模板逐字段照抄，不另造一套字段。
+struct BulletSpawnWire {
+    std::string bullet_id;
+    std::string owner_player_id;
+    std::uint64_t t0 = 0;
+    std::uint32_t p = 0;  // pattern_index
+    std::uint32_t q = 0;  // spawn_index
+    std::uint32_t group_id = 0;
+    danmaku::BulletMotion tmpl;
+};
+
+// Δ 一律 milli 整数（与现网 bullets[] 同坐标系）。
+struct BulletDeviationWire {
+    std::string bullet_id;
+    std::int32_t dx = 0;
+    std::int32_t dy = 0;
+    std::int32_t dvx = 0;
+    std::int32_t dvy = 0;
+};
+
+struct BulletDespawnWire {
+    std::string bullet_id;
+    std::string reason;
+};
+
+// G_g(t) ≡ I：本版只留恒等值，tx/ty/phi 均为 0（不编造编队机制）。
+struct GroupMotionWire {
+    std::uint32_t group_id = 0;
+    std::int32_t tx = 0;
+    std::int32_t ty = 0;
+    std::int32_t phi = 0;
+};
+
+// 一次快照携带的差量字段集合。四个数组恒可为空（骨架）；编码时由
+// EncodeBossRaceSnapshotPayload 的 delta 指针是否为 nullptr 决定是否写进 JSON。
+struct BossRaceDeltaWire {
+    std::vector<BulletSpawnWire> spawns;
+    std::vector<BulletDeviationWire> deviations;
+    std::vector<BulletDespawnWire> despawns;
+    std::vector<GroupMotionWire> group_motion;
+};
+
+// delta == nullptr（默认）时输出与改动前逐字节一致的全量 bullets[] 快照；
+// delta != nullptr 时在末尾追加 §4 的可选字段（仍保留全量 bullets[] 兜底）。
+[[nodiscard]] std::vector<std::uint8_t> EncodeBossRaceSnapshotPayload(
+    const BossRaceSnapshot& snapshot,
+    const BossRaceDeltaWire* delta = nullptr);
 
 // ---------------------------------------------------------------------------
 // Result payload + deterministic JSON
@@ -196,6 +252,10 @@ struct MatchLifecycleConfig {
     std::map<std::string, std::vector<std::uint8_t>> session_keys_by_player;
     // Fixed clock for tests; 0 means "use the wall clock".
     std::int64_t now_ms = 0;
+    // 弹幕差量 wire 总开关（docs/danmaku-delta-wire.md §4/§7）：默认关闭，
+    // 关闭时快照 JSON 逐字节不变。打开仅追加 §4 可选字段并保留全量 bullets[]
+    // 兜底；去掉全量 bullets[] 需先通过 §7 的 golden/parity 全量回归。
+    bool delta_wire_enabled = false;
 };
 
 // F3 事件 flush 冷却（tick）：60Hz 下 10 tick ≈ 6 次/秒，低于大厅 30 次/秒限额。
