@@ -126,8 +126,269 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     return node;
 }
 
+// ---------------------------------------------------------------------------
+// state 14 实测波次（2026-11-08，rev-nodes 程序化提取）
+//
+// 来源：docs/apk-reverse-notes/patterns/boss21_nodes_full.csv（146 个 new 点）
+//       + boss21_state14_waves.csv（192 行展开清单，含每波 offset 角与 f40 区间）。
+// 真值：4 个门 / 36+36+48+72 个波次，每波 count=1、bullet_type=28
+//       （bullet_modeid_map.json ranges 27..35 -> func 45 / kind 180）。
+//
+// ★ 两处是**近似**，因为原版是运行期随机、静态不可解（rev-nodes 已确认）：
+//   1) base_angle：原版每个节点独立 `270 + random(-10,10)`（21 个可能值），
+//      这里把确定的 offset 角叠加到 270 上当作发射角 —— 保住「环形形状」，
+//      丢掉逐节点的 ±10° 抖动（否则只能全用 270，36 颗会完全重叠）。
+//   2) radial_speed：原版 `0.1*U(0,6)+a` / `0.1*U(0,8)+a` / `0.1*U(0,10)+a`
+//      按门不同，这里取各自区间中值。
+//     spawn_x/y 用「跟随发射者」哨兵（原版是环上偏移，需要 boss 坐标运行期算）。
+// ---------------------------------------------------------------------------
+struct Tna21State14Wave {
+    std::uint32_t period;
+    float offset_angle_deg;
+    float radial_speed;
+};
+
+// 生成期自检：P=10:120, P=20:36, P=30:36，合计 192
+inline constexpr Tna21State14Wave kTna21State14Waves[] = {
+    {30, 6.0f, 0.8f},
+    {30, -6.0f, 0.8f},
+    {30, -18.0f, 0.8f},
+    {30, -30.0f, 0.8f},
+    {30, -42.0f, 0.8f},
+    {30, -54.0f, 0.8f},
+    {30, -66.0f, 0.8f},
+    {30, -78.0f, 0.8f},
+    {30, -90.0f, 0.8f},
+    {30, -6.0f, 0.8f},
+    {30, 6.0f, 0.8f},
+    {30, 18.0f, 0.8f},
+    {30, 30.0f, 0.8f},
+    {30, 42.0f, 0.8f},
+    {30, 54.0f, 0.8f},
+    {30, 66.0f, 0.8f},
+    {30, 78.0f, 0.8f},
+    {30, 90.0f, 0.8f},
+    {30, 174.0f, 0.8f},
+    {30, 186.0f, 0.8f},
+    {30, 198.0f, 0.8f},
+    {30, 210.0f, 0.8f},
+    {30, 222.0f, 0.8f},
+    {30, 234.0f, 0.8f},
+    {30, 246.0f, 0.8f},
+    {30, 258.0f, 0.8f},
+    {30, 270.0f, 0.8f},
+    {30, 186.0f, 0.8f},
+    {30, 174.0f, 0.8f},
+    {30, 162.0f, 0.8f},
+    {30, 150.0f, 0.8f},
+    {30, 138.0f, 0.8f},
+    {30, 126.0f, 0.8f},
+    {30, 114.0f, 0.8f},
+    {30, 102.0f, 0.8f},
+    {30, 90.0f, 0.8f},
+    {20, 6.0f, 1.1f},
+    {20, -6.0f, 1.1f},
+    {20, -18.0f, 1.1f},
+    {20, -30.0f, 1.1f},
+    {20, -42.0f, 1.1f},
+    {20, -54.0f, 1.1f},
+    {20, -66.0f, 1.1f},
+    {20, -78.0f, 1.1f},
+    {20, -90.0f, 1.1f},
+    {20, -6.0f, 1.1f},
+    {20, 6.0f, 1.1f},
+    {20, 18.0f, 1.1f},
+    {20, 30.0f, 1.1f},
+    {20, 42.0f, 1.1f},
+    {20, 54.0f, 1.1f},
+    {20, 66.0f, 1.1f},
+    {20, 78.0f, 1.1f},
+    {20, 90.0f, 1.1f},
+    {20, 174.0f, 1.1f},
+    {20, 186.0f, 1.1f},
+    {20, 198.0f, 1.1f},
+    {20, 210.0f, 1.1f},
+    {20, 222.0f, 1.1f},
+    {20, 234.0f, 1.1f},
+    {20, 246.0f, 1.1f},
+    {20, 258.0f, 1.1f},
+    {20, 270.0f, 1.1f},
+    {20, 186.0f, 1.1f},
+    {20, 174.0f, 1.1f},
+    {20, 162.0f, 1.1f},
+    {20, 150.0f, 1.1f},
+    {20, 138.0f, 1.1f},
+    {20, 126.0f, 1.1f},
+    {20, 114.0f, 1.1f},
+    {20, 102.0f, 1.1f},
+    {20, 90.0f, 1.1f},
+    {10, 4.5f, 1.6f},
+    {10, -4.5f, 1.6f},
+    {10, -13.5f, 1.6f},
+    {10, -22.5f, 1.6f},
+    {10, -31.5f, 1.6f},
+    {10, -40.5f, 1.6f},
+    {10, -49.5f, 1.6f},
+    {10, -58.5f, 1.6f},
+    {10, -67.5f, 1.6f},
+    {10, -76.5f, 1.6f},
+    {10, -85.5f, 1.6f},
+    {10, -94.5f, 1.6f},
+    {10, 4.5f, 1.6f},
+    {10, 13.5f, 1.6f},
+    {10, 22.5f, 1.6f},
+    {10, 31.5f, 1.6f},
+    {10, 40.5f, 1.6f},
+    {10, 49.5f, 1.6f},
+    {10, 58.5f, 1.6f},
+    {10, 67.5f, 1.6f},
+    {10, 76.5f, 1.6f},
+    {10, 85.5f, 1.6f},
+    {10, 94.5f, 1.6f},
+    {10, 103.5f, 1.6f},
+    {10, 184.5f, 1.6f},
+    {10, 193.5f, 1.6f},
+    {10, 202.5f, 1.6f},
+    {10, 211.5f, 1.6f},
+    {10, 220.5f, 1.6f},
+    {10, 229.5f, 1.6f},
+    {10, 238.5f, 1.6f},
+    {10, 247.5f, 1.6f},
+    {10, 256.5f, 1.6f},
+    {10, 265.5f, 1.6f},
+    {10, 274.5f, 1.6f},
+    {10, 283.5f, 1.6f},
+    {10, 184.5f, 1.6f},
+    {10, 175.5f, 1.6f},
+    {10, 166.5f, 1.6f},
+    {10, 157.5f, 1.6f},
+    {10, 148.5f, 1.6f},
+    {10, 139.5f, 1.6f},
+    {10, 130.5f, 1.6f},
+    {10, 121.5f, 1.6f},
+    {10, 112.5f, 1.6f},
+    {10, 103.5f, 1.6f},
+    {10, 94.5f, 1.6f},
+    {10, 85.5f, 1.6f},
+    {10, 3.0f, 2.0f},
+    {10, -3.0f, 2.0f},
+    {10, -9.0f, 2.0f},
+    {10, -15.0f, 2.0f},
+    {10, -21.0f, 2.0f},
+    {10, -27.0f, 2.0f},
+    {10, -33.0f, 2.0f},
+    {10, -39.0f, 2.0f},
+    {10, -45.0f, 2.0f},
+    {10, -51.0f, 2.0f},
+    {10, -57.0f, 2.0f},
+    {10, -63.0f, 2.0f},
+    {10, -69.0f, 2.0f},
+    {10, -75.0f, 2.0f},
+    {10, -81.0f, 2.0f},
+    {10, -87.0f, 2.0f},
+    {10, -93.0f, 2.0f},
+    {10, -99.0f, 2.0f},
+    {10, -3.0f, 2.0f},
+    {10, 3.0f, 2.0f},
+    {10, 9.0f, 2.0f},
+    {10, 15.0f, 2.0f},
+    {10, 21.0f, 2.0f},
+    {10, 27.0f, 2.0f},
+    {10, 33.0f, 2.0f},
+    {10, 39.0f, 2.0f},
+    {10, 45.0f, 2.0f},
+    {10, 51.0f, 2.0f},
+    {10, 57.0f, 2.0f},
+    {10, 63.0f, 2.0f},
+    {10, 69.0f, 2.0f},
+    {10, 75.0f, 2.0f},
+    {10, 81.0f, 2.0f},
+    {10, 87.0f, 2.0f},
+    {10, 93.0f, 2.0f},
+    {10, 99.0f, 2.0f},
+    {10, 177.0f, 2.0f},
+    {10, 183.0f, 2.0f},
+    {10, 189.0f, 2.0f},
+    {10, 195.0f, 2.0f},
+    {10, 201.0f, 2.0f},
+    {10, 207.0f, 2.0f},
+    {10, 213.0f, 2.0f},
+    {10, 219.0f, 2.0f},
+    {10, 225.0f, 2.0f},
+    {10, 231.0f, 2.0f},
+    {10, 237.0f, 2.0f},
+    {10, 243.0f, 2.0f},
+    {10, 249.0f, 2.0f},
+    {10, 255.0f, 2.0f},
+    {10, 261.0f, 2.0f},
+    {10, 267.0f, 2.0f},
+    {10, 273.0f, 2.0f},
+    {10, 279.0f, 2.0f},
+    {10, 183.0f, 2.0f},
+    {10, 177.0f, 2.0f},
+    {10, 171.0f, 2.0f},
+    {10, 165.0f, 2.0f},
+    {10, 159.0f, 2.0f},
+    {10, 153.0f, 2.0f},
+    {10, 147.0f, 2.0f},
+    {10, 141.0f, 2.0f},
+    {10, 135.0f, 2.0f},
+    {10, 129.0f, 2.0f},
+    {10, 123.0f, 2.0f},
+    {10, 117.0f, 2.0f},
+    {10, 111.0f, 2.0f},
+    {10, 105.0f, 2.0f},
+    {10, 99.0f, 2.0f},
+    {10, 93.0f, 2.0f},
+    {10, 87.0f, 2.0f},
+    {10, 81.0f, 2.0f},
+};
+
+inline constexpr std::size_t kTna21State14WaveCount =
+    sizeof(kTna21State14Waves) / sizeof(kTna21State14Waves[0]);
+
+// 把波次表展开成 ChainNode：每波 1 发，角度 = 270 + offset。
+std::vector<ChainNode> MakeState14Nodes() {
+    std::vector<ChainNode> nodes;
+    nodes.reserve(kTna21State14WaveCount);
+    for (const Tna21State14Wave& wave : kTna21State14Waves) {
+        ChainNode node;
+        node.trigger_period = wave.period;
+        node.trigger_tick = 0;
+        node.spawn_command.bullet_type = 28;   // 实测：state 14 全部波次
+        node.spawn_command.count = 1;          // 实测
+        node.spawn_command.spread_or_speed = 0.0f;      // 单发，无环形均分
+        node.spawn_command.base_angle_deg = 270.0f + wave.offset_angle_deg;
+        node.spawn_command.spawn_x = -1.0f;    // 跟随发射者
+        node.spawn_command.spawn_y = -1.0f;
+        node.motion_override.bullet_func_no = 45;   // type 28 -> (45,180)
+        node.motion_override.bullet_kind = 180;
+        node.motion_override.speed = wave.radial_speed;
+        node.provenance = "boss21_nodes_full.csv state14 [实测]；"
+                          "base_angle 由 offset 近似、speed 取 f40 中值";
+        nodes.push_back(std::move(node));
+    }
+    return nodes;
+}
+
 std::vector<BossPhaseTable> BuildLibrary() {
     std::vector<BossPhaseTable> library;
+
+    // #11 样板结构（2026-11-08 拆出来）：此前它挂在 boss21 名下，但那些节点
+    // 的周期/门控取自 #11 而非 #21，是「布局样板」不是 #21 的真实数据。
+    // 现在 boss21 换成 state 14 实测波次，样板单独注册一个 id，
+    // `chain_table_tests` 继续钉结构（3 节点块 A + 4 触发项块 B）。
+    BossPhaseTable sample;
+    sample.boss_id = "boss11_sample";
+    sample.phase_id = 0;
+    sample.node_size_bytes = 0x40;
+    sample.source_node_count = 146;
+    sample.nodes.push_back(MakeBlockAHeadNode());
+    sample.nodes.push_back(MakeBlockAPayloadNode());
+    for (std::uint32_t offset : kBlockBOffsets) {
+        sample.nodes.push_back(MakeBlockBNode(offset));
+    }
+    library.push_back(std::move(sample));
 
     BossPhaseTable table;
     table.boss_id = "boss21";       // 对应原版 Enemy::setBossBullet21
@@ -135,13 +396,10 @@ std::vector<BossPhaseTable> BuildLibrary() {
     table.node_size_bytes = 0x40;   // 任务书指定假定（#11 实测布局）
     table.source_node_count = 146;  // #21 节点总数 [实测统计]
 
-    // 触发块 A（§4.2）：2 个节点（头 + 载荷）。
-    table.nodes.push_back(MakeBlockAHeadNode());
-    table.nodes.push_back(MakeBlockAPayloadNode());
-    // 触发块 B（§4.3）：4 个触发项（字段未转写）。
-    for (std::uint32_t offset : kBlockBOffsets) {
-        table.nodes.push_back(MakeBlockBNode(offset));
-    }
+    // ★ 2026-11-08：改用 state 14 的实测波次（192 个），替换此前基于 #11 样板的
+    //   6 个推测节点（那批节点的周期/门控都是 #11 的值，不是 #21 的）。
+    //   证据：docs/apk-reverse-notes/patterns/boss21_nodes_full.csv + state14_waves.csv
+    table.nodes = MakeState14Nodes();
 
     library.push_back(std::move(table));
 

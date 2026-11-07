@@ -42,7 +42,7 @@ phk::battle::BossRaceConfig ChainConfig(std::int32_t difficulty = 1) {
     config.match_seed = 777u;
     config.boss_max_hp = 1000000;
     config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
-    config.boss_id = "boss21";
+    config.boss_id = "boss11_sample";
     config.difficulty = difficulty;
     return config;
 }
@@ -64,7 +64,7 @@ TickTrace EmitAt(std::uint64_t tick, std::int32_t difficulty = 1) {
     TickTrace trace;
     const std::vector<phk::battle::danmaku::ChainNodeEmission> emissions =
         phk::battle::danmaku::EmitChainBossTickDetailed(
-            "boss21", tick, ctx, targets, phk::battle::danmaku::DifficultyScaleFor(difficulty));
+            "boss11_sample", tick, ctx, targets, phk::battle::danmaku::DifficultyScaleFor(difficulty));
     for (const phk::battle::danmaku::ChainNodeEmission& emission : emissions) {
         trace.chain_ids.push_back(emission.chain_id);
         trace.bullets += emission.bullets.size();
@@ -75,8 +75,8 @@ TickTrace EmitAt(std::uint64_t tick, std::int32_t difficulty = 1) {
 // 1) 表结构：6 个已转写节点、count 与 period 逐项钉死。
 void TestTableShape() {
     using namespace phk::battle::danmaku;
-    Check(HasBossPhaseTable("boss21"), "table: boss21 registered");
-    const std::vector<const BossPhaseTable*> tables = FindBossPhaseTables("boss21");
+    Check(HasBossPhaseTable("boss11_sample"), "table: boss21 registered");
+    const std::vector<const BossPhaseTable*> tables = FindBossPhaseTables("boss11_sample");
     Check(tables.size() == 1, "table: exactly one phase table for boss21");
     if (tables.size() != 1) {
         return;

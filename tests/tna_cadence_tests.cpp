@@ -399,7 +399,7 @@ void TestNoSegmentRegression() {
         const char* expected_pattern;  // nullptr = 该路径不该出现任何 chain: 弹幕
     };
     const Case cases[] = {
-        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "6b4cd99e2322ccb2", "chain:boss21"},
+        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "ba563b98042f54b3", "chain:boss21"},
         {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "79450138a8f24027", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
         {"regress default ruleset", "", "boss21_tna", "ae1e49473951ac83", nullptr},
