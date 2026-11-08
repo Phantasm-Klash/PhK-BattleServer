@@ -291,9 +291,8 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
             emu.wr_f(F["angle"], ang)
         # func6/8 在 update 里是内联副本，入口带 `cmp life,#1; b.lt` 的守卫
         # （0x50b6a8 / 0x50bc30）。独立函数体没有这个守卫，这里补上以对齐实机。
-        if func_addr in (FUNC_ADDR.get(6), FUNC_ADDR.get(8)) and emu.rd_i(F["life"]) < 1:
-            rows.append(snapshot(emu, init["funcNo"], tick))
-            continue
+        skip_call = (func_addr in (FUNC_ADDR.get(6), FUNC_ADDR.get(8))
+                     and emu.rd_i(F["life"]) < 1)
         for r in (UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
                   UC_ARM64_REG_X4, UC_ARM64_REG_X5):
             uc.reg_write(r, 0)
@@ -311,7 +310,8 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
         uc.reg_write(UC_ARM64_REG_X30, EXIT)
         uc.reg_write(UC_ARM64_REG_PC, func_addr)
         try:
-            uc.emu_start(func_addr, EXIT, count=200000)
+            if not skip_call:
+                uc.emu_start(func_addr, EXIT, count=200000)
         except Exception as exc:  # noqa: BLE001
             rows.append({"func": init["funcNo"], "tick": tick, "error": str(exc)})
             break

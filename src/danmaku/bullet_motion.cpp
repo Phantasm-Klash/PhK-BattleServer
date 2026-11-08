@@ -24,12 +24,14 @@ constexpr double kNeg1 = -1.0;
 // func36 的 alpha 要按 1/128 取整，double 与 float 的 1ULP 差异正好会跨过截断边界
 // （基准里实测到 opacity 差 1），所以这里显式用 float 复刻原版。
 inline float SinDegF(float deg) {
+    // 原版 MyMathUtil::sin 是 sinf(deg * π / 180)：先乘 π 再除 180，两步都是 float。
+    // 写成 deg*(π/180) 会差 1ULP，在 func36 的 ×128 截断处放大成 opacity 差 1。
     constexpr float kPiF = 3.14159265358979323846f;
-    return std::sin(deg * (kPiF / 180.0f));
+    return std::sin(deg * kPiF / 180.0f);
 }
 inline float CosDegF(float deg) {
     constexpr float kPiF = 3.14159265358979323846f;
-    return std::cos(deg * (kPiF / 180.0f));
+    return std::cos(deg * kPiF / 180.0f);
 }
 
 double AngleToMyShip(const BulletMotion& b, const MotionTargets& tg) {
