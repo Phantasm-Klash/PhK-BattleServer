@@ -290,6 +290,8 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
             uc.reg_write(r, 0)
         uc.reg_write(UC_ARM64_REG_X0, OBJ)      # this
         uc.reg_write(UC_ARM64_REG_X8, SCRATCH + 0x200)   # 结构体出参缓冲
+        # func24 之类以 Vec2* 为入参（x1），实机传的就是子弹当前位置
+        uc.reg_write(UC_ARM64_REG_X1, SCRATCH + 0x200)
         # func6/8/11 以 (x, y) 为浮点入参，并用 x8 指向的位置缓冲做「进/出参」
         uc.mem_write(SCRATCH + 0x200,
                      struct.pack("<ff", EXTRA["x"], EXTRA["y"]))

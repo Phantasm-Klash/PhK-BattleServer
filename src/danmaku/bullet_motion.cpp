@@ -591,11 +591,21 @@ void Func16(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc24 @0x50e100 —— 接近自机 → 重置角/上限。[推断阈值]
 void Func24(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (DistSqToMyShip(b, tg) < b.xacc && b.p2 == 0) {
-        b.angle = b.angle_init;
-        b.p2 = 1;
-        b.speed_cap = b.xacc_cap;
+    // 0x50e100: 十字带触发 —— |dx|² < life² 或 |dy|² < life²（不是距离平方）
+    //           p2==0 时 a=A0、{angleAcc,f56c}={f598,prevAngle}、vc=XC、p2=1
+    const double lim = static_cast<double>(b.life) * static_cast<double>(b.life);
+    const double dx = b.x - tg.my_ship_x;
+    const double dy = b.y - tg.my_ship_y;
+    const bool hit = (dx * dx < lim) || (dy * dy < lim);
+    if (!hit || b.p2 != 0) {
+        return;
     }
+    b.angle = b.angle_init;
+    b.angle_acc = b.f598;
+    b.f56c = b.prev_angle;
+    b.speed = b.spd_init2;      // 0x50e160 段：同时把 V1 写回 speed
+    b.speed_cap = b.xacc_cap;
+    b.p2 = 1;
 }
 
 // bulletFunc34 @0x50eaa4 —— 全局状态==7 → 悬停。[实测]
@@ -688,13 +698,27 @@ void Func45(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc53 @0x50fa34 —— 两阶段接近触发。[推断：常量存疑]
 void Func53(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (b.p1 == 0 && DistSqToMyShip(b, tg) <= static_cast<double>(b.life)) {
+    // 0x50fa34: 第一段判 **pos.y < ship.y**（不是距离）；p1=1 后
+    //           第二段 p2==life → a=A0、{angleAcc,f56c}={f598,prevAngle} 拷贝、vc=XC
+    if (b.p1 == 0) {
+        if (!(b.y < tg.my_ship_y)) {
+            return;
+        }
         b.p1 = 1;
+    } else if (b.p1 != 1) {
+        return;
     }
-    if (b.p1 == 1 && b.p2 == b.life) {
-        b.angle = b.angle_init;
-        b.speed_cap = b.xacc_cap;
+    if (b.p2 == 0) {
+        return;
     }
+    if (b.p2 != b.life) {
+        return;
+    }
+    b.angle = b.angle_init;
+    b.angle_acc = b.f598;
+    b.f56c = b.prev_angle;
+    b.speed = b.spd_init2;
+    b.speed_cap = b.xacc_cap;
 }
 
 // bulletFunc60 @0x50fea8 —— 接近敌机 → 反向角加速。[实测]

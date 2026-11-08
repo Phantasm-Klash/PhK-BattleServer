@@ -19,13 +19,13 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 17,1,0,0,,,0.000171,MATCH
 18,1,0,0,0,"angle,vx,vy,x,y",307.979338,MISMATCH
 19,1,0,0,,,0.0,MATCH
-20,1,0,0,0,"angle,life,vx,vy,x,y",12753.374023,MISMATCH
+20,1,0,0,0,"angle,life,vx,vy,x,y",360.0,MISMATCH
 21,1,0,0,,,0.0,MATCH
 22,1,0,0,,,0.0,MATCH
 23,1,0,0,,,0.0,MATCH
-24,1,0,0,0,"angle,speed,vx,vy,x,y",359.986267,MISMATCH
+24,1,0,0,,,0.000324,MATCH
 25,1,0,0,,,0.0,MATCH
-26,1,0,0,,,0.0,MATCH
+26,1,0,0,0,"x,y",587.0,MISMATCH
 27,1,0,0,,,0.0,MATCH
 28,1,0,0,,,0.0,MATCH
 29,1,0,0,,,0.000324,MATCH
@@ -70,7 +70,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 68,0,0,0,,,0.0,UNKNOWN_REF
 69,0,0,0,,,0.0,UNKNOWN_REF
 70,1,0,1,1,"angle,kind,life,vx,vy,x,y",6182354523.432096,RNG_DIFF
-71,1,0,1,0,"x,y",587.0,RNG_DIFF
+71,1,0,1,,,0.0,MATCH
 72,1,0,0,,,0.0,MATCH
 73,1,0,0,,,0.0,MATCH
 74,1,0,0,0,opacity,255.0,MISMATCH
