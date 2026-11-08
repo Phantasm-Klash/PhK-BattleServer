@@ -83,7 +83,9 @@ int main(int argc, char** argv) {
     if (out == nullptr) { std::perror("open"); return 1; }
 
     for (int func = 0; func <= 85; ++func) {
+      for (const int life0 : {4, 1, 0}) {
         BulletMotion b = MakeInitial(func);
+        b.life = life0;
         for (int tick = 0; tick < ticks; ++tick) {
             DeterministicRng rng(seed, static_cast<std::uint64_t>(tick),
                                  static_cast<std::uint32_t>(func), 0);
@@ -95,13 +97,14 @@ int main(int argc, char** argv) {
             // 与 hit_dis（命中半径）不是一回事。生产没有这两个字段，这里如实输出
             // 初始值，避免把 hit_dis 的合法变化误报成「大小不一致」。
             std::fprintf(out,
-                "{\"func\":%d,\"tick\":%d,\"x\":%.6f,\"y\":%.6f,"
+                "{\"func\":%d,\"tick\":%d,\"life0\":%d,\"x\":%.6f,\"y\":%.6f,"
                 "\"vx\":%.6f,\"vy\":%.6f,\"angle\":%.6f,\"speed\":%.6f,"
                 "\"hit_dis\":%.6f,\"half_w\":%.6f,\"half_h\":%.6f,"
                 "\"kind\":%d,\"life\":%d,\"t\":%.1f,\"opacity\":%d,\"scale\":%.6f}\n",
-                func, tick, b.x, b.y, b.vx, b.vy, b.angle, b.speed,
+                func, tick, life0, b.x, b.y, b.vx, b.vy, b.angle, b.speed,
                 b.hit_dis, b.half_w, b.half_h, b.bullet_kind, b.life, b.t, b.opacity, b.scale);
         }
+      }
     }
     std::fclose(out);
     std::printf("wrote %s (86 funcs x %d ticks, seed=%llu)\n",

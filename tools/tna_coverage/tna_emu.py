@@ -235,7 +235,8 @@ def f32(v):
 
 
 def snapshot(emu, func, tick):
-    return {"func": func, "tick": tick, "x": EXTRA["x"], "y": EXTRA["y"],
+    return {"func": func, "tick": tick, "life0": EXTRA.get("life0", 4),
+            "x": EXTRA["x"], "y": EXTRA["y"],
             "vx": emu.rd_f(F["vx"]), "vy": emu.rd_f(F["vy"]),
             "angle": emu.rd_f(F["angle"]), "speed": emu.rd_f(F["speed"]),
             "hit_dis": emu.rd_f(F["hitDis"]), "half_w": emu.rd_f(F["halfW"]),
@@ -257,7 +258,7 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
                 uc.mem_write(OBJ + F[k], struct.pack("<i", int(v)))
             else:
                 uc.mem_write(OBJ + F[k], struct.pack("<f", float(v)))
-    EXTRA.update({"opacity": 255, "scale": 1.0,
+    EXTRA.update({"opacity": 255, "scale": 1.0, "life0": init.get("life", 4),
                   "x": float(init.get("x", 320.0)), "y": float(init.get("y", 480.0))})
     rows = []
     for tick in range(ticks):
@@ -384,8 +385,13 @@ def main():
             if fn in (28, 36, 79):
                 init["p1"] = 2
                 init["p2"] = 8
-            for row in run_func(emu, FUNC_ADDR[fn], FUNC_SIZE[fn], args.ticks, init):
-                fh.write(json.dumps(row) + "\n")
+            for life0 in (4, 1, 0):
+                init2 = dict(init)
+                init2["life"] = life0
+                for row in run_func(emu, FUNC_ADDR[fn], FUNC_SIZE[fn],
+                                    args.ticks, init2):
+                    row["life0"] = life0
+                    fh.write(json.dumps(row) + "\n")
     print("wrote", args.out)
 
 

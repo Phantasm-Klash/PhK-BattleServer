@@ -40,7 +40,7 @@ def load_jsonl(path: Path) -> dict[tuple[int, int], dict]:
         if not line:
             continue
         row = json.loads(line)
-        out[(int(row["func"]), int(row["tick"]))] = row
+        out[(int(row["func"]), int(row.get("life0", 4)), int(row["tick"]))] = row
     return out
 
 
@@ -79,8 +79,8 @@ def compare(reference: dict, replica: dict, ref_impl, rng_funcs, prod_noop,
         first_bad = None
         bad_fields: set[str] = set()
         max_delta = 0.0
-        for func_id, tick in sorted(pairs):
-            a, b = reference[(func_id, tick)], replica[(func_id, tick)]
+        for func_id, life0, tick in sorted(pairs):
+            a, b = reference[(func_id, life0, tick)], replica[(func_id, life0, tick)]
             for f in FIELDS:
                 av, bv = float(a[f]), float(b[f])
                 delta = abs(av - bv)

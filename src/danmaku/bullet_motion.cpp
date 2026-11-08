@@ -148,22 +148,31 @@ void Func5(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc35 @0x50ec24 —— 接近自机 → 指数减速 + 朝自机。[实测/推断阈值]
 void Func35(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (b.p2 != 1) {
+    // 0x50ec24: p2==0 → 距离平方 <= life 则 p2=1（不加 1，直接置位）；
+    //           p2==1 → vc=0、spdAcc = speed×(-0.1)、p2=2；
+    //           p2==p1（且 >=2）→ v=V1、spdAcc=X、vc=XC，若 A0>1 再瞄准；p2++
+    const int p2 = b.p2;
+    if (p2 == 0) {
         if (DistSqToMyShip(b, tg) <= static_cast<double>(b.life)) {
             b.p2 = 1;
         }
+        return;
     }
-    if (b.p2 == 1) {
+    if (p2 == 1) {
         b.speed_cap = 0.0;
         b.accel = b.speed * (-0.1);
+        b.p2 = 2;
+        return;
     }
-    if (static_cast<int>(b.t) == b.p1) {
+    if (p2 == b.p1) {
+        b.speed = b.spd_init2;
+        b.accel = b.xacc;
+        b.speed_cap = b.xacc_cap;
         if (b.angle_init > 1.0) {
             b.angle = AngleToMyShip(b, tg);
         }
-        b.speed = b.spd_init2;
-        b.speed_cap = b.xacc_cap;
     }
+    b.p2 = p2 + 1;
 }
 
 // bulletFunc39 @0x50ef00 —— 状态机：线性减速 va = -v/L。[实测]
