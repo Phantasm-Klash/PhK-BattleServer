@@ -950,9 +950,15 @@ void Func33(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc66 @0x511ab4 —— 参数方程。[推断]
 void Func66(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double c = CosDeg(b.angle_init * static_cast<double>(b.p2) + b.f598);
-    const double s = SinDeg(b.xacc * static_cast<double>(b.p2) + b.speed_cap);
-    b.angle = kDeg360 - (c + s) + 90.0;
+    // 0x511ab4: 绝对坐标（setPosition）
+    //   u = A0 * p2；a = X*p2 + vc
+    //   x = PA  + u*cos(F98) + V1*cos(a)
+    //   y = XC  + u*sin(F98) + V1*sin(a)
+    const double u = b.angle_init * static_cast<double>(b.p2);
+    const double a = b.xacc * static_cast<double>(b.p2) + b.speed_cap;
+    b.x = b.prev_angle + u * CosDeg(b.f598) + b.spd_init2 * CosDeg(a);
+    b.y = b.xacc_cap + u * SinDeg(b.f598) + b.spd_init2 * SinDeg(a);
+    b.p2 += 1;          // 0x511bf0 附近：末尾 p2++
 }
 
 // bulletFunc75 @0x511c08 —— 双正弦参数轨迹。[推断]

@@ -65,7 +65,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 63,1,0,0,,,1e-05,MATCH
 64,1,0,0,,,2e-06,MATCH
 65,1,0,0,,,0.0,MATCH
-66,1,0,0,0,"angle,vx,vy,x,y",749.958878,MISMATCH
+66,1,0,0,,,0.0,MATCH
 67,1,0,0,1,"angle,kind,life,speed,vx,x",534.0,MISMATCH
 68,0,0,0,,,0.0,UNKNOWN_REF
 69,0,0,0,,,0.0,UNKNOWN_REF
