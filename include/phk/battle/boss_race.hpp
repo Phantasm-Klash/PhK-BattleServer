@@ -34,6 +34,13 @@ inline constexpr const char* kMvpBossRaceModeId = "mvp_boss_race";
 // 「每帧」常量（速度、角度增量、周期 tick 数）数值原样保留，直接当每 tick 用；
 // 禁止任何 ×60/64 换算，也禁止引入 FramesToTicks 之类的缩放工具。
 inline constexpr std::uint32_t kBossRaceTickRateHz = 64;
+// boss_race 的玩家活动区（居中 milli）。战场是 640x960（kScreenW/kScreenH），
+// 取 ±300 / ±440 px —— 左右各留 20 px、上下各留 40 px 边距。
+// ★ 2026-11-08 新增：此前 boss_race 直接复用 `simulation.hpp` 的 ±120 / ±90 px，
+//   那只占画面的 1/5，实机表现为「人一走到中间就顶住」，与可见战场范围不符。
+//   `pvp_duel`（BattleSimulation）布局不同，仍用 simulation.hpp 的原值。
+inline constexpr std::int32_t kBossRaceArenaHalfWidthMilli = 300000;
+inline constexpr std::int32_t kBossRaceArenaHalfHeightMilli = 440000;
 inline constexpr std::uint64_t kBossRaceDefaultBossHp = 6000;
 inline constexpr std::uint64_t kBossRaceDamagePerShotTick = 10;
 inline constexpr std::uint32_t kBossRacePatternPeriodTicks = 45;

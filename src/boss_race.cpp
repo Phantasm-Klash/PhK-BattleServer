@@ -17,7 +17,7 @@ namespace phk::battle {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
-// 场地常量 kArenaHalfWidthMilli / kArenaHalfHeightMilli 复用 simulation.hpp
+// 场地常量 kBossRaceArenaHalfWidthMilli / kBossRaceArenaHalfHeightMilli 复用 simulation.hpp
 // 的 phk::battle 定义（值相同）；此处不得重复定义，否则产生二义性。
 constexpr std::int32_t kBossOriginXMilli = 0;
 constexpr std::int32_t kBossOriginYMilli = -60000;
@@ -296,8 +296,8 @@ bool BossRaceSimulation::AddPlayer(const std::string& player_id, std::int32_t x_
 
     PlayerState player;
     player.player_id = player_id;
-    player.x_milli = ClampMilli(x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
-    player.y_milli = ClampMilli(y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+    player.x_milli = ClampMilli(x_milli, -kBossRaceArenaHalfWidthMilli, kBossRaceArenaHalfWidthMilli);
+    player.y_milli = ClampMilli(y_milli, -kBossRaceArenaHalfHeightMilli, kBossRaceArenaHalfHeightMilli);
     player.boss_current_hp = config_.boss_max_hp;
     player.last_input.match_id = config_.match_id;
     player.last_input.player_id = player_id;
@@ -477,8 +477,8 @@ void BossRaceSimulation::ApplyPlayerTick(std::uint64_t tick) {
         player.vy_milli = vy;
         player.x_milli += vx;
         player.y_milli += vy;
-        player.x_milli = ClampMilli(player.x_milli, -kArenaHalfWidthMilli, kArenaHalfWidthMilli);
-        player.y_milli = ClampMilli(player.y_milli, -kArenaHalfHeightMilli, kArenaHalfHeightMilli);
+        player.x_milli = ClampMilli(player.x_milli, -kBossRaceArenaHalfWidthMilli, kBossRaceArenaHalfWidthMilli);
+        player.y_milli = ClampMilli(player.y_milli, -kBossRaceArenaHalfHeightMilli, kBossRaceArenaHalfHeightMilli);
 
         // 炸弹（只在 kRulesetDanmakuMechanics 下消耗残弹并给无敌帧；默认 ruleset
         // 保持现状：只按自机表加伤害，不消耗炸弹、不加无敌帧）。
@@ -1320,8 +1320,8 @@ void BossRaceSimulation::AdvanceMyBullets(std::uint64_t tick) {
             my_bullets_.begin(),
             my_bullets_.end(),
             [](const MyBullet& bullet) {
-                return bullet.x_milli < -kArenaHalfWidthMilli || bullet.x_milli > kArenaHalfWidthMilli ||
-                    bullet.y_milli < -kArenaHalfHeightMilli || bullet.y_milli > kArenaHalfHeightMilli;
+                return bullet.x_milli < -kBossRaceArenaHalfWidthMilli || bullet.x_milli > kBossRaceArenaHalfWidthMilli ||
+                    bullet.y_milli < -kBossRaceArenaHalfHeightMilli || bullet.y_milli > kBossRaceArenaHalfHeightMilli;
             }
         ),
         my_bullets_.end()
