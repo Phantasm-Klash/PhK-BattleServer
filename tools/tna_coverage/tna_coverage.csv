@@ -5,9 +5,9 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 3,1,0,0,,,0.0,MATCH
 4,1,0,0,,,0.0,MATCH
 5,1,0,0,,,0.0,MATCH
-6,1,0,0,28,"life,x",189.0,MISMATCH
+6,1,0,0,22,x,204.0,MISMATCH
 7,1,0,1,1,life,1.0,RNG_DIFF
-8,1,0,0,3,"life,x",252.0,MISMATCH
+8,1,0,0,3,x,261.0,MISMATCH
 9,0,0,0,,,0.0,UNKNOWN_REF
 10,0,0,0,,,0.0,UNKNOWN_REF
 11,1,0,0,,,0.0,MATCH

@@ -275,6 +275,11 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
             if f56 < 0.0 and ang < lim:
                 ang = lim
             emu.wr_f(F["angle"], ang)
+        # func6/8 在 update 里是内联副本，入口带 `cmp life,#1; b.lt` 的守卫
+        # （0x50b6a8 / 0x50bc30）。独立函数体没有这个守卫，这里补上以对齐实机。
+        if func_addr in (FUNC_ADDR.get(6), FUNC_ADDR.get(8)) and emu.rd_i(F["life"]) < 1:
+            rows.append(snapshot(emu, init["funcNo"], tick))
+            continue
         for r in (UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
                   UC_ARM64_REG_X4, UC_ARM64_REG_X5):
             uc.reg_write(r, 0)

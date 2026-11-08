@@ -15,9 +15,9 @@
 | func | 判定 | 首个不一致 tick | 不一致字段 | 最大绝对差 |
 |---:|---|---:|---|---:|
 | 1 | MISMATCH | 0 | angle,life,speed,vx,x | 180.0 |
-| 6 | MISMATCH | 28 | life,x | 189.0 |
+| 6 | MISMATCH | 22 | x | 204.0 |
 | 7 | RNG_DIFF | 1 | life | 1.0 |
-| 8 | MISMATCH | 3 | life,x | 252.0 |
+| 8 | MISMATCH | 3 | x | 261.0 |
 | 13 | MISMATCH | 0 | angle,vx,vy,x,y | 270.0 |
 | 17 | MISMATCH | 5 | angle,vx,vy,x,y | 368.889556 |
 | 18 | MISMATCH | 4 | angle,vx,vy,x,y | 277.186039 |
