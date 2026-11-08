@@ -74,7 +74,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 72,1,0,0,,,0.0,MATCH
 73,1,0,0,,,0.0,MATCH
 74,1,0,0,0,opacity,255.0,MISMATCH
-75,1,0,0,0,"angle,vx,vy,x,y",749.942861,MISMATCH
+75,1,0,0,,,0.0,MATCH
 76,1,0,1,,,0.0,MATCH
 77,1,0,0,,,0.0,MATCH
 78,1,0,0,,,0.0,MATCH

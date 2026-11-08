@@ -963,9 +963,15 @@ void Func66(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc75 @0x511c08 —— 双正弦参数轨迹。[推断]
 void Func75(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double c = CosDeg(b.angle_init + b.f598 * static_cast<double>(b.p2));
-    const double s = SinDeg(b.spd_init2 + b.xacc * static_cast<double>(b.p2));
-    b.angle = kDeg360 - (c + s) + 90.0;
+    // 0x511c08: 极坐标（绝对定位）
+    //   r = V1 + X*p2；a = A0 + F98*p2
+    //   x = PA + r*cos(a)；y = XC + r*sin(a)；末尾 p2++
+    const double p2 = static_cast<double>(b.p2);
+    const double r = b.spd_init2 + b.xacc * p2;
+    const double a = b.angle_init + b.f598 * p2;
+    b.x = b.prev_angle + r * CosDeg(a);
+    b.y = b.xacc_cap + r * SinDeg(a);
+    b.p2 += 1;
 }
 
 // bulletFunc82 @0x511e48 —— 敌机/自机参数方程。[推断]
