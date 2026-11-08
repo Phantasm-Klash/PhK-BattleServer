@@ -58,7 +58,8 @@ EXTRA = {"opacity": 255, "scale": 1.0, "x": 320.0, "y": 480.0}
 
 # 虚表槽（已用 .rela 解出）
 SLOT = {
-    0x80: "setScale", 0xb0: "getPosition", 0x168: "getContentSize",
+    0x80: "setScale", 0x98: "setPosition", 0xb0: "getPosition",
+    0x168: "getContentSize",
     0x490: "setOpacity", 0x4c0: "setColor", 0x6d0: "getHitDis", 0x6d8: "setHitDis",
 }
 SLOT_IDX = {v: k // 8 for k, v in SLOT.items()}
@@ -171,6 +172,14 @@ class Emu:
             v = struct.unpack("<f", struct.pack("<I",
                               uc.reg_read(UC_ARM64_REG_S0) & 0xFFFFFFFF))[0]
             self.wr_f(F["hitDis"], v)
+        elif name == "setPosition":
+            # Sprite::setPosition(const Vec2&)：参数是指针（x1）
+            ptr = uc.reg_read(UC_ARM64_REG_X1)
+            try:
+                px, py = struct.unpack("<ff", uc.mem_read(ptr, 8))
+                EXTRA["x"], EXTRA["y"] = px, py
+            except Exception:
+                pass
         elif name == "setColor":
             EXTRA["color"] = uc.reg_read(UC_ARM64_REG_X1)
         uc.reg_write(UC_ARM64_REG_PC, lr)
@@ -290,11 +299,13 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
             uc.reg_write(r, 0)
         uc.reg_write(UC_ARM64_REG_X0, OBJ)      # this
         uc.reg_write(UC_ARM64_REG_X8, SCRATCH + 0x200)   # 结构体出参缓冲
-        # func24 之类以 Vec2* 为入参（x1），实机传的就是子弹当前位置
-        uc.reg_write(UC_ARM64_REG_X1, SCRATCH + 0x200)
+        # func24 之类以 Vec2* 为入参（x1），实机传的就是子弹当前位置；
+        # 与 x8 的「出参缓冲」分开，避免互相覆盖
+        uc.mem_write(SCRATCH + 0x240, struct.pack("<ff", EXTRA["x"], EXTRA["y"]))
+        uc.reg_write(UC_ARM64_REG_X1, SCRATCH + 0x240)
         # func6/8/11 以 (x, y) 为浮点入参，并用 x8 指向的位置缓冲做「进/出参」
-        uc.mem_write(SCRATCH + 0x200,
-                     struct.pack("<ff", EXTRA["x"], EXTRA["y"]))
+        nan = float("nan")
+        uc.mem_write(SCRATCH + 0x200, struct.pack("<ff", nan, nan))
         set_s(uc, EXTRA["x"])
         uc.reg_write(UC_ARM64_REG_S1, struct.unpack("<I", struct.pack("<f", EXTRA["y"]))[0])
         uc.reg_write(UC_ARM64_REG_X30, EXIT)
@@ -307,7 +318,7 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
         # 回读位置缓冲（原版把位置交给 func 改写后再积分）
         px, py = struct.unpack("<ff", uc.mem_read(SCRATCH + 0x200, 8))
         if math.isfinite(px) and math.isfinite(py):
-            EXTRA["x"], EXTRA["y"] = px, py
+            EXTRA["x"], EXTRA["y"] = px, py   # func6/8 写了位置缓冲才采信
         # update 默认尾段：vx/vy 由 (angle,speed) 合成
         ang = emu.rd_f(F["angle"])
         spd = emu.rd_f(F["speed"])

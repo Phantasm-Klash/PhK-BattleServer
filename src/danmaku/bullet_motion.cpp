@@ -228,10 +228,15 @@ void Func73(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc81 @0x511d48 —— pf1 = A0 + F98·sin(PA·P2)；v = V1 + XC·s。[实测]
 void Func81(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double s = SinDeg(b.prev_angle * static_cast<double>(b.p2));
-    b.pf1 = b.angle_init + b.f598 * s;
-    b.speed = b.spd_init2 + b.xacc_cap * s;
-    b.hit_dis = b.pf2 * b.pf1;
+    // 0x511d48: pf1 = A0 + F98·sin(PA·p2)；位置 (V1 + XC·p2·cos(pf1), X + XC·p2·sin(pf1))
+    //   是**绝对值**，直接 setPosition（vtable+0x98）覆盖当前位置；不写 speed/hitDis。
+    //   末尾 setRotation(270-pf1)、p2++。
+    const double p2 = static_cast<double>(b.p2);
+    b.pf1 = b.angle_init + b.f598 * SinDeg(b.prev_angle * p2);
+    const double r = b.xacc_cap * p2;
+    b.x = b.spd_init2 + r * CosDeg(b.pf1);
+    b.y = b.xacc + r * SinDeg(b.pf1);
+    b.p2 += 1;
 }
 
 // ===========================================================================
@@ -698,10 +703,10 @@ void Func45(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc53 @0x50fa34 —— 两阶段接近触发。[推断：常量存疑]
 void Func53(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    // 0x50fa34: p1==0 时判 pos.y < ship.y → p1=1 后直接返回（不走 p2 逻辑）；
-    //           p1==1 && p2==0 → bulletType=210、blend=1、spdAcc=-0.1、vc=0、p2=1；
-    //           p2==life → a=A0，16B 拷贝 {f598,prevAngle,V1,X} → {angleAcc,f56c,speed,spdAcc}，
-    //           vc=XC
+    // 0x50fa34: p1==0 → 若 pos.y < ship.y 则 p1=1 并**直接返回**（不碰 p2）；
+    //           p1==1 后：p2==0 → 换皮 210 / spdAcc=-0.1 / vc=0；
+    //                     p2==life → a=A0，16B 拷贝 {f598,prevAngle,V1,X} → {angleAcc,f56c,speed,spdAcc}，vc=XC；
+    //           最后**无论走哪支都要 p2++**（0x50fae0 是公共尾）。
     if (b.p1 == 0) {
         if (!(b.y < tg.my_ship_y)) {
             return;
@@ -716,18 +721,15 @@ void Func53(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
         b.bullet_kind = 210;          // 常量 @0xb09fc0: {210, 1}
         b.accel = -0.1;               // 常量 @0xb09fc8: {-0.1f, 0}
         b.speed_cap = 0.0;
-        b.p2 = 1;
-        return;
+    } else if (b.p2 == b.life) {
+        b.angle = b.angle_init;
+        b.angle_acc = b.f598;
+        b.f56c = b.prev_angle;
+        b.speed = b.spd_init2;
+        b.accel = b.xacc;
+        b.speed_cap = b.xacc_cap;
     }
-    if (b.p2 != b.life) {
-        return;
-    }
-    b.angle = b.angle_init;
-    b.angle_acc = b.f598;
-    b.f56c = b.prev_angle;
-    b.speed = b.spd_init2;
-    b.accel = b.xacc;
-    b.speed_cap = b.xacc_cap;
+    b.p2 += 1;
 }
 
 // bulletFunc60 @0x50fea8 —— 接近敌机 → 反向角加速。[实测]
@@ -853,11 +855,40 @@ void Func30(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc54 @0x50faf4 —— 按 life 阶段换皮。[实测：贴图交宿主]
 void Func54(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) != 0) {
+    // 0x50faf4: 节拍门 t1 % p1；然后按 life 分档换贴图：
+    //   life==0 → p2:0→0x94, 1→0xcc(+setColor)，其它不变；
+    //   life==1 → 类型取 p2%7 的字节表 @0xb0a9c7（index0 → 0xa3）；
+    //   life==2 → p2:0→0x4a, 1→0x26, 2→0x95，且这三支才写 v=V1、vc=XC；
+    //   末尾统一 p2++。
+    const int t = static_cast<int>(b.t);
+    const int rem = (b.p1 != 0) ? (t % b.p1) : t;
+    if (rem != 0) {
         return;
     }
-    b.speed = b.spd_init2;
-    b.speed_cap = b.xacc_cap;
+    if (b.life == 0) {
+        if (b.p2 == 0) {
+            b.bullet_kind = 0x94;
+        } else if (b.p2 == 1) {
+            b.bullet_kind = 0xcc;
+        }
+    } else if (b.life == 1) {
+        static constexpr int kTypeByP2Mod7[7] = {0xa3, 0xa2, 0xa1, 0xa0, 0x9f, 0x9e, 0x9d};
+        b.bullet_kind = kTypeByP2Mod7[((b.p2 % 7) + 7) % 7];
+    } else if (b.life == 2) {
+        if (b.p2 == 0) {
+            b.bullet_kind = 0x4a;
+        } else if (b.p2 == 1) {
+            b.bullet_kind = 0x26;
+        } else if (b.p2 == 2) {
+            b.bullet_kind = 0x95;
+        } else {
+            b.p2 += 1;
+            return;
+        }
+        b.speed = b.spd_init2;
+        b.speed_cap = b.xacc_cap;
+    }
+    b.p2 += 1;
 }
 
 // bulletFunc65 @0x510498 —— 按 life/P2 换皮。[实测：贴图交宿主]
@@ -1143,22 +1174,25 @@ void Func52(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
 
 // bulletFunc61 @0x50ff78 —— 四方向（0/90/180/270）。[实测]
 void Func61(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (static_cast<int>(b.t) != 0) {
+    // 0x50ff78: 门 = (t1-life) >= 0 且 (t1-life)%p1 == 0；
+    //   p2 偶 → X 轴：x<ship.x ? 0° : 180°；p2 奇 → Y 轴：y<ship.y ? 90° : 270°；
+    //   随后 v=V1、vc=XC、p2++（setRotation 只影响贴图朝向，不参与运动）
+    const int d = static_cast<int>(b.t) - b.life;
+    if (d < 0) {
         return;
     }
-    const double dx = tg.has_my_ship ? (b.x - tg.my_ship_x) : 0.0;
-    const double dy = tg.has_my_ship ? (b.y - tg.my_ship_y) : 0.0;
-    if (dx < 0.0 && dy < 0.0) {
-        b.angle = 90.0;
-    } else if (dx < 0.0 && dy >= 0.0) {
-        b.angle = 180.0;
-    } else if (dx >= 0.0 && dy >= 0.0) {
-        b.angle = 270.0;
+    const int rem = (b.p1 != 0) ? (d % b.p1) : d;
+    if (rem != 0) {
+        return;
+    }
+    if ((b.p2 & 1) == 0) {
+        b.angle = (b.x < tg.my_ship_x) ? 0.0 : 180.0;
     } else {
-        b.angle = 0.0;
+        b.angle = (b.y < tg.my_ship_y) ? 90.0 : 270.0;
     }
     b.speed = b.spd_init2;
     b.speed_cap = b.xacc_cap;
+    b.p2 += 1;
 }
 
 // bulletFunc63 @0x510394 —— a=A0; aa=-F98。[实测]
