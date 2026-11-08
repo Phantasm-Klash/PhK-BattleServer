@@ -276,12 +276,13 @@ void Func17(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
         return;
     }
     if (static_cast<int>(b.t) > b.life) {
+        // 0x50dc10: d = aim - prevAngle；d > lim → prev+lim；否则 **d < 0** → prev-lim
+        // （第二个分支的门是 d<0，不是 d<-lim）
         double t = target;
         const double d = t - b.prev_angle;
         if (d > b.angle_init) {
             t = b.prev_angle + b.angle_init;
-        }
-        if (d < -b.angle_init) {
+        } else if (d < 0.0) {
             t = b.prev_angle - b.angle_init;
         }
         b.angle = t;

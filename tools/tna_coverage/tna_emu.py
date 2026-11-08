@@ -184,8 +184,10 @@ def set_s(uc, val):
     uc.reg_write(UC_ARM64_REG_S0, struct.unpack("<I", struct.pack("<f", float(val)))[0])
 
 
-MY_SHIP = (200.0, 300.0)
-ENEMY = (300.0, 100.0)
+# 必须与 apps/phk_tna_replica/main.cpp 的 kShipX/kShipY/kEnemyX/kEnemyY 一致，
+# 否则所有带瞄准的函数都会因宿主坐标不同而假失败。
+MY_SHIP = (320.0, 600.0)
+ENEMY = (320.0, 420.0)
 
 
 def ang_to(x, y, px, py):

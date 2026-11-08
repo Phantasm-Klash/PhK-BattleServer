@@ -19,22 +19,22 @@
 | 7 | RNG_DIFF | 1 | life | 1.0 |
 | 8 | MISMATCH | 0 | x | 270.0 |
 | 13 | MISMATCH | 0 | angle,vx,vy,x,y | 270.0 |
-| 17 | MISMATCH | 1 | angle,vx,vy,x,y | 406.661649 |
-| 18 | MISMATCH | 0 | angle,vx,vy,x,y | 285.582942 |
+| 18 | MISMATCH | 0 | angle,vx,vy,x,y | 307.979338 |
 | 20 | MISMATCH | 0 | angle,life,vx,vy,x,y | 12753.374023 |
+| 24 | MISMATCH | 0 | angle,speed,vx,vy,x,y | 359.986267 |
 | 30 | MISMATCH | 0 | hit_dis | 16.0 |
 | 31 | MISMATCH | 0 | hit_dis | 39.0 |
 | 36 | MISMATCH | 60 | opacity | 1.0 |
 | 37 | MISMATCH | 0 | angle,opacity,vx,vy,x,y | 340.712386 |
 | 38 | MISMATCH | 0 | angle,vx,vy,x,y | 275.939236 |
 | 39 | MISMATCH | 0 | angle,speed,vx,vy,x,y | 534.0 |
-| 48 | MISMATCH | 0 | angle,kind,speed,vx,vy,x,y | 220.076946 |
+| 48 | MISMATCH | 0 | angle,kind,speed,vx,vy,x,y | 330.0 |
 | 50 | MISMATCH | 13 | angle,life,speed,vx,vy,x,y | 187.992829 |
+| 53 | MISMATCH | 1 | angle,kind,speed,vx,vy,x,y | 351.986573 |
 | 54 | MISMATCH | 0 | kind,speed,vx,x | 360.0 |
 | 58 | MISMATCH | 0 | angle,vx,vy,x,y | 451.0 |
 | 61 | MISMATCH | 0 | angle,speed,vx,x | 188.0 |
 | 62 | MISMATCH | 0 | angle,kind,life,speed,vx,vy,x,y | 2144638022.0 |
-| 64 | MISMATCH | 0 | angle,vx,vy,x,y | 164.883991 |
 | 66 | MISMATCH | 0 | angle,vx,vy,x,y | 449.0 |
 | 67 | MISMATCH | 1 | angle,kind,life,speed,vx,x | 534.0 |
 | 70 | RNG_DIFF | 1 | angle,kind,life,vx,vy,x,y | 6182354523.432096 |
@@ -47,4 +47,4 @@
 
 ## 完全一致
 
-0, 2, 3, 4, 5, 11, 12, 14, 15, 16, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 32, 33, 34, 35, 40, 41, 42, 43, 44, 45, 46, 47, 51, 52, 53, 55, 57, 60, 63, 65, 72, 73, 76, 77, 78, 79, 80, 84, 85
+0, 2, 3, 4, 5, 11, 12, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 32, 33, 34, 35, 40, 41, 42, 43, 44, 45, 46, 47, 51, 52, 55, 57, 60, 63, 64, 65, 72, 73, 76, 77, 78, 79, 80, 84, 85
