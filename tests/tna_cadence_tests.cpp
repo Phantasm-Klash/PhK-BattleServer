@@ -271,8 +271,13 @@ void TestBossStateSegments() {
                   "segments: " + std::string(segment.boss_id) + " is registered in the library");
         }
     }
-    // 其它 boss（含 #11 抽样样板）没有段表 → 空。
-    Check(BossStateSegments("boss21").empty(), "segments: boss21 has no segment table");
+    // 2026-11-08：默认 boss 现在也有三段表（每关弹幕不再共用一张表）。
+    const std::vector<BossStateSegment>& boss21_segments = BossStateSegments("boss21");
+    Check(boss21_segments.size() == 3, "segments: boss21 has three phase segments");
+    for (const BossStateSegment& segment : boss21_segments) {
+        Check(HasBossPhaseTable(segment.boss_id),
+              "segments: " + std::string(segment.boss_id) + " is registered in the library");
+    }
     Check(BossStateSegments("boss21_tna_s20").empty(), "segments: the segment target has no segment table itself");
     Check(BossStateSegments("unknown").empty(), "segments: unknown boss has no segment table");
     Check(BossStateSegments("").empty(), "segments: empty boss id has no segment table");
@@ -286,8 +291,10 @@ void TestBossStateBossIdForPhase() {
     // 越过最后一段仍取最大的匹配段（不会掉回第一段）。
     Check(BossStateBossIdForPhase("boss21_tna", 3) == "boss21_tna_s20",
           "phase map: a phase beyond the table stays on the last segment");
-    // 无段表 → 原样返回（旧调用点 / 未知 boss 逐字节不变）。
-    Check(BossStateBossIdForPhase("boss21", 2) == "boss21", "phase map: boss21 is returned as-is");
+    // 默认 boss 的三段：phase 0 state14 / phase 1 cadence / phase 2 state20。
+    Check(BossStateBossIdForPhase("boss21", 0) == "boss21", "phase map: default boss phase 0 -> state14");
+    Check(BossStateBossIdForPhase("boss21", 1) == "boss21_tna", "phase map: default boss phase 1 -> cadence");
+    Check(BossStateBossIdForPhase("boss21", 2) == "boss21_tna_s20", "phase map: default boss phase 2 -> state20");
     Check(BossStateBossIdForPhase("unknown", 2) == "unknown", "phase map: unknown boss is returned as-is");
     Check(BossStateBossIdForPhase("", 2) == "", "phase map: empty boss id stays empty");
 }
@@ -399,7 +406,7 @@ void TestNoSegmentRegression() {
         const char* expected_pattern;  // nullptr = 该路径不该出现任何 chain: 弹幕
     };
     const Case cases[] = {
-        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "ba563b98042f54b3", "chain:boss21"},
+        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "a7c9e3ee688e4bf0", "chain:boss21"},
         {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "79450138a8f24027", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
         {"regress default ruleset", "", "boss21_tna", "ae1e49473951ac83", nullptr},

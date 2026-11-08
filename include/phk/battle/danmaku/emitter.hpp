@@ -21,6 +21,10 @@ namespace phk::battle::danmaku {
 struct EmitContext {
     double emitter_x = 0.0;
     double emitter_y = 0.0;
+    // 原版节点里有运行期随机（角度抖动、径向速度抽样、环上 spawn 偏移的波次
+    // 计数）。链节点展开用 (match_seed, tick, rng_salt) 构造 DeterministicRng，
+    // 保证服务端与回放/重建器可复现。默认 0 = 旧调用点逐字节不变。
+    std::uint64_t match_seed = 0;
 };
 
 // 运动学模板：spawn 时写入子弹的快照字段（A0/V0/F98/PA/V1/X/XC）。

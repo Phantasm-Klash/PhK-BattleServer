@@ -867,6 +867,9 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
         danmaku::EmitContext ctx;
         ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
         ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli + boss_offset_y);
+        // 原版节点的角度抖动/速度抽样需要确定性随机源（见 ChainRuntimeSlot）。
+        // 10 模式路径不读它，赋值无副作用。
+        ctx.match_seed = config_.match_seed;
 
         danmaku::MotionTargets targets;
         targets.has_my_ship = true;
@@ -942,6 +945,9 @@ void BossRaceSimulation::SpawnRealBulletsForTick(std::uint64_t tick) {
         danmaku::EmitContext ctx;
         ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);
         ctx.emitter_y = kScreenCenterY + ToPixels(kBossOriginYMilli + boss_offset_y);
+        // 原版节点的角度抖动/速度抽样需要确定性随机源（见 ChainRuntimeSlot）。
+        // 10 模式路径不读它，赋值无副作用。
+        ctx.match_seed = config_.match_seed;
 
         danmaku::MotionTargets targets;
         targets.has_my_ship = true;

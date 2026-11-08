@@ -49,6 +49,30 @@ struct ChainSplitRule {
 // ---------------------------------------------------------------------------
 // ChainNode：一个触发节点的完整数据
 // ---------------------------------------------------------------------------
+struct ChainRuntimeSlot {
+    bool enabled = false;
+    // base_angle = nominal + RandomInt(-jitter, jitter)
+    // 原版 state14：`random(-10,10) + 270` → 270 名义角、±10° 逐节点抖动。
+    double angle_nominal_deg = 0.0;
+    int angle_jitter_deg = 0;
+    // speed = base + step * RandomInt(0, rand_max)
+    // 原版 state14：`0.1 * random(0,6) + 0.5` 等四门各自的分布。
+    double speed_base = 0.0;
+    double speed_step = 0.0;
+    int speed_rand_max = 0;
+    // spawn 环上偏移（原版 node+0x18/+0x1c）：
+    //   x = emitter_x + cos(offset)*(rx_base + step*wave)
+    //   y = emitter_y + sin(offset)*(ry_base + step*wave)
+    //   wave = tick / trigger_period（[x19,#0x68c] 波次计数的近似，
+    //   原版 20c+80 / 20c+100，角度不 normalize，直接进 sin/cos）。
+    double spawn_offset_angle_deg = 0.0;
+    double spawn_radius_x_base = 0.0;
+    double spawn_radius_y_base = 0.0;
+    double spawn_radius_step = 0.0;
+    // 节点序号作 RNG 盐，保证同一 tick 内不同节点取样互不撞车。
+    std::uint32_t rng_salt = 0;
+};
+
 struct ChainNode {
     // 触发条件：tick % trigger_period == trigger_tick 时本节点触发。
     // 原版语义 = 全局帧计数器 this->[0x6f4] 的取模（64 tick 真实加速下 frame 原样当 tick 用，
@@ -62,6 +86,9 @@ struct ChainNode {
     BulletTemplate motion_override;
     // 瞄准（覆盖 spawn_command.base_angle_deg）；原版 getAngleToMyShip 块的落地口。
     AimMode aim = AimMode::None;
+    // 原版运行期语义（角度抖动 / 速度抽样 / 环上 spawn 偏移）。默认关闭 = 静态
+    // 节点逐字节不变；展开时由 ExpandChainNode 用确定性 RNG 取样。
+    ChainRuntimeSlot runtime;
 
     // 分裂规则 + 子代数据（递归）。子代的运行期生成由 chain_split.hpp 执行；
     // children 目前承载数据格式（已解码的分裂子节点），运行时激活属后续工作。

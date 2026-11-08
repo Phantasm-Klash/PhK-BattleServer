@@ -219,6 +219,11 @@ void TestSpellCaptureAcrossThreePhases() {
 void TestTimerScore() {
     auto config = MakeConfig(9331u, 1000000);
     config.ruleset_version = phk::battle::kRulesetDanmakuMechanics;
+    // 计时分断言要求前 20 tick 只有 +110/+220 的纯计时加分。默认 boss_id 为空
+    // 现在会归一到 boss21 节点链，高密弹幕会在 tick 10 前打中/擦到玩家而改变
+    // 分数。这里单独用非节点链 id 隔离，其余计分用例仍保持空 boss_id 的
+    // 「默认序号 11」捕获分语义。
+    config.boss_id = "legacy_10mode";
     phk::battle::BossRaceSimulation sim(config);
     sim.AddPlayer("player_a", 0, 60000);
     sim.AddPlayer("player_b", 0, 60000);

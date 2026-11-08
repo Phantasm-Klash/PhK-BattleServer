@@ -58,6 +58,10 @@ phk::battle::BossRaceConfig MakeAllOnConfig(std::uint64_t seed, std::uint64_t bo
     config.match_seed = seed;
     config.boss_max_hp = boss_hp;
     config.pattern_period_ticks = 1000000;
+    // pattern_period_ticks 只抑制 10 模式；节点链路径有自己的周期，不受它管。
+    // 本文件测的是铁拳/黑幕等机制的受击去重，必须保持「无外来弹幕」的环境，
+    // 否则高密弹幕会先打中玩家，去重断言必挂。
+    config.boss_id = "legacy_10mode";
     return config;
 }
 
