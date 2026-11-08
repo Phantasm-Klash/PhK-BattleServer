@@ -1244,13 +1244,17 @@ void Func64(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc37 @0x51172c —— 正弦角 a = 75·sin(L + X·T − 90) + 180。[推断]
 void Func37(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    // 0x51172c: a = 75*sin(X*t1 + life + 320) + 180
-    //           x = A0 + XC*sin(X*t1 + life)；y = F98 + V1*t1（setPosition 绝对坐标）
+    // 0x51172c: 第一段不是角度而是 **setOpacity**：alpha = (int)(75*sin(X*t1+life-90) + 180)
+    //   （常量 s8 在 0xac5380 = -90.0；adrp 是 ac5000 不是 ace000）
+    //   随后 x = A0 + XC*sin(X*t1+life)、y = F98 + V1*t1（setPosition 绝对坐标）
+    //   末尾用同一个 sin 的符号写 hitHantei(0x548) 与 bombNoVanish(0x550)。
     const double t = b.t;
     const double arg = b.xacc * t + static_cast<double>(b.life);
-    b.angle = 75.0 * SinDeg(arg + 320.0) + 180.0;
+    const double s = SinDeg(arg - 90.0);
+    b.opacity = static_cast<int>(75.0 * s + 180.0);
     b.x = b.angle_init + b.xacc_cap * SinDeg(arg);
     b.y = b.f598 + b.spd_init2 * t;
+    b.hit_hantei = (s >= 0.0);
 }
 
 }  // namespace
