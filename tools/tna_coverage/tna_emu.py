@@ -208,6 +208,8 @@ def _arc4(emu_, uc):
 
 HOOKS = {
     0x2e67c0: _arc4,                                                  # arc4random@plt
+    # EnemyBullet::setBulletType(kEnemyBullet)@plt：只关心写入的类型值
+    0x2e8d90: lambda e, uc: e.wr_i(F["bulletType"], uc.reg_read(UC_ARM64_REG_X1)),
     0x2ec170: lambda e, uc: uc.reg_write(UC_ARM64_REG_X0, LAYER),          # getGameLayer
     0x2fb7d0: lambda e, uc: set_s(uc, ang_to(                      # getAngleToMyShip
         struct.unpack("<f", struct.pack("<I", uc.reg_read(UC_ARM64_REG_S0) & 0xFFFFFFFF))[0],

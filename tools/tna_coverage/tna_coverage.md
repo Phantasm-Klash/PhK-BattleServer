@@ -4,9 +4,9 @@
 
 | 判定 | 数量 | 含义 |
 |---|---:|---|
-| MATCH | 48 | 逐 tick 位置/方向/大小/类型完全一致 |
+| MATCH | 49 | 逐 tick 位置/方向/大小/类型完全一致 |
 | MISSING | 0 | 原版有实现、生产挂 FuncNoop |
-| MISMATCH | 28 | 两边都有实现但数值不一致（**待修**） |
+| MISMATCH | 27 | 两边都有实现但数值不一致（**待修**） |
 | RNG_DIFF | 3 | 差异来自 std::rand() vs DeterministicRng，需单独对齐 |
 | UNKNOWN_REF | 7 | 原版本身未解码，不要求生产实现 |
 
@@ -28,17 +28,16 @@
 | 37 | MISMATCH | 0 | angle,opacity,vx,vy,x,y | 340.712386 |
 | 38 | MISMATCH | 0 | angle,vx,vy,x,y | 275.939236 |
 | 39 | MISMATCH | 0 | angle,speed,vx,vy,x,y | 534.0 |
-| 48 | MISMATCH | 0 | angle,speed,vx,vy,x,y | 220.076946 |
+| 48 | MISMATCH | 0 | angle,kind,speed,vx,vy,x,y | 220.076946 |
 | 50 | MISMATCH | 13 | angle,life,speed,vx,vy,x,y | 187.992829 |
-| 54 | MISMATCH | 0 | speed,vx,x | 360.0 |
+| 54 | MISMATCH | 0 | kind,speed,vx,x | 360.0 |
 | 58 | MISMATCH | 0 | angle,vx,vy,x,y | 451.0 |
 | 61 | MISMATCH | 0 | angle,speed,vx,x | 188.0 |
-| 62 | MISMATCH | 0 | angle,life,speed,vx,vy,x,y | 2144638022.0 |
+| 62 | MISMATCH | 0 | angle,kind,life,speed,vx,vy,x,y | 2144638022.0 |
 | 64 | MISMATCH | 0 | angle,vx,vy,x,y | 164.883991 |
-| 65 | MISMATCH | 0 | kind | 10.0 |
 | 66 | MISMATCH | 0 | angle,vx,vy,x,y | 449.0 |
-| 67 | MISMATCH | 1 | angle,life,speed,vx,x | 534.0 |
-| 70 | RNG_DIFF | 1 | angle,life,vx,vy,x,y | 13168869284.567904 |
+| 67 | MISMATCH | 1 | angle,kind,life,speed,vx,x | 534.0 |
+| 70 | RNG_DIFF | 1 | angle,kind,life,vx,vy,x,y | 6182354523.432096 |
 | 71 | RNG_DIFF | 0 | x,y | 587.0 |
 | 74 | MISMATCH | 0 | opacity | 255.0 |
 | 75 | MISMATCH | 0 | angle,vx,vy,x,y | 449.017605 |
@@ -48,4 +47,4 @@
 
 ## 完全一致
 
-0, 2, 3, 4, 5, 11, 12, 14, 15, 16, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 32, 33, 34, 35, 40, 41, 42, 43, 44, 45, 46, 47, 51, 52, 53, 55, 57, 60, 63, 72, 73, 76, 77, 78, 79, 80, 84, 85
+0, 2, 3, 4, 5, 11, 12, 14, 15, 16, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 32, 33, 34, 35, 40, 41, 42, 43, 44, 45, 46, 47, 51, 52, 53, 55, 57, 60, 63, 65, 72, 73, 76, 77, 78, 79, 80, 84, 85
