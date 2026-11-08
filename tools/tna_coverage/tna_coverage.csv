@@ -52,7 +52,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 50,1,0,0,13,"angle,life,speed,vx,vy,x,y",187.992829,MISMATCH
 51,1,0,0,,,0.0,MATCH
 52,1,0,1,,,0.0,MATCH
-53,1,0,0,1,"angle,kind,speed,vx,vy,x,y",351.986573,MISMATCH
+53,1,0,0,5,"angle,speed,vx,vy,x,y",339.98703,MISMATCH
 54,1,0,0,0,"kind,speed,vx,x",360.0,MISMATCH
 55,1,0,0,,,0.0,MATCH
 56,0,0,0,,,0.0,UNKNOWN_REF

@@ -698,17 +698,25 @@ void Func45(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc53 @0x50fa34 —— 两阶段接近触发。[推断：常量存疑]
 void Func53(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    // 0x50fa34: 第一段判 **pos.y < ship.y**（不是距离）；p1=1 后
-    //           第二段 p2==life → a=A0、{angleAcc,f56c}={f598,prevAngle} 拷贝、vc=XC
+    // 0x50fa34: p1==0 时判 pos.y < ship.y → p1=1 后直接返回（不走 p2 逻辑）；
+    //           p1==1 && p2==0 → bulletType=210、blend=1、spdAcc=-0.1、vc=0、p2=1；
+    //           p2==life → a=A0，16B 拷贝 {f598,prevAngle,V1,X} → {angleAcc,f56c,speed,spdAcc}，
+    //           vc=XC
     if (b.p1 == 0) {
         if (!(b.y < tg.my_ship_y)) {
             return;
         }
         b.p1 = 1;
-    } else if (b.p1 != 1) {
+        return;
+    }
+    if (b.p1 != 1) {
         return;
     }
     if (b.p2 == 0) {
+        b.bullet_kind = 210;          // 常量 @0xb09fc0: {210, 1}
+        b.accel = -0.1;               // 常量 @0xb09fc8: {-0.1f, 0}
+        b.speed_cap = 0.0;
+        b.p2 = 1;
         return;
     }
     if (b.p2 != b.life) {
@@ -718,6 +726,7 @@ void Func53(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     b.angle_acc = b.f598;
     b.f56c = b.prev_angle;
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
 }
 
