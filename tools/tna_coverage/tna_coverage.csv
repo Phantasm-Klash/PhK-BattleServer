@@ -25,7 +25,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 23,1,0,0,,,0.0,MATCH
 24,1,0,0,,,2e-06,MATCH
 25,1,0,0,,,0.0,MATCH
-26,1,0,0,0,"x,y",587.0,MISMATCH
+26,1,0,0,,,0.0,MATCH
 27,1,0,0,,,0.0,MATCH
 28,1,0,0,,,0.0,MATCH
 29,1,0,0,,,2e-06,MATCH
@@ -36,7 +36,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 34,1,0,0,,,0.0,MATCH
 35,1,0,0,,,0.0,MATCH
 36,1,0,0,30,opacity,1.0,MISMATCH
-37,1,0,0,0,"angle,opacity,vx,vy,x,y",829.799973,MISMATCH
+37,1,0,0,0,"angle,opacity,vx,vy,x,y",150.0,MISMATCH
 38,1,0,0,0,"angle,vx,vy,x,y",275.939236,MISMATCH
 39,1,0,0,0,"angle,speed,vx,vy,x,y",534.0,MISMATCH
 40,1,0,0,,,0.0,MATCH

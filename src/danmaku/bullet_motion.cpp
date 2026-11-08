@@ -928,8 +928,14 @@ void Func65(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc26 @0x511524 —— vx/vy = speed·(cos/sin)(angle + XC·sin(XC + X·L))。[推断]
 void Func26(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double a = b.angle + b.xacc_cap * SinDeg(b.xacc_cap + b.xacc * static_cast<double>(b.life));
-    b.angle = a;
+    // 0x511524: 参数方程（绝对坐标，走 setPosition）：
+    //   r = p2 * sin(X*t1 + XC)；a = angle + speed*t1
+    //   x = life + r*cos(a)；y = p1 + r*sin(a)
+    const double t = b.t;
+    const double r = static_cast<double>(b.p2) * SinDeg(b.xacc * t + b.xacc_cap);
+    const double a = b.angle + b.speed * t;
+    b.x = static_cast<double>(b.life) + r * CosDeg(a);
+    b.y = static_cast<double>(b.p1) + r * SinDeg(a);
 }
 
 // bulletFunc33 @0x51160c —— 双正弦参数轨迹。[推断]
@@ -1238,7 +1244,13 @@ void Func64(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc37 @0x51172c —— 正弦角 a = 75·sin(L + X·T − 90) + 180。[推断]
 void Func37(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    b.angle = 75.0 * SinDeg(static_cast<double>(b.life) + b.xacc * b.t - 90.0) + 180.0;
+    // 0x51172c: a = 75*sin(X*t1 + life + 320) + 180
+    //           x = A0 + XC*sin(X*t1 + life)；y = F98 + V1*t1（setPosition 绝对坐标）
+    const double t = b.t;
+    const double arg = b.xacc * t + static_cast<double>(b.life);
+    b.angle = 75.0 * SinDeg(arg + 320.0) + 180.0;
+    b.x = b.angle_init + b.xacc_cap * SinDeg(arg);
+    b.y = b.f598 + b.spd_init2 * t;
 }
 
 }  // namespace
