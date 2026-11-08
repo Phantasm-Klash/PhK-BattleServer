@@ -770,11 +770,14 @@ void Func54(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc65 @0x510498 —— 按 life/P2 换皮。[实测：贴图交宿主]
 void Func65(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // ★ 与原版 bulletFunc65 @0x510f18 对齐：首帧只做贴图切换（原版 reimpl 里
+    //   setBulletType 是未转写的注释占位），**不改 speed / speed_cap**。
+    //   旧实现写 `b.speed = b.spd_init2`，而 spd_init2 默认 -1，会让子弹倒着飞；
+    //   tna_coverage 基准在 func65 上测出 360 的位置差。
+    //   贴图切换待 bullet_kind 映射解码后在此补，不影响运动学基准。
     if (static_cast<int>(b.t) != 0) {
         return;
     }
-    b.speed = b.spd_init2;
-    b.speed_cap = b.xacc_cap;
 }
 
 // ===========================================================================

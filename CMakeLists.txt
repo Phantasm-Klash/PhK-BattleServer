@@ -128,6 +128,12 @@ add_executable(phk_motion_diff
 )
 target_link_libraries(phk_motion_diff PRIVATE phk_battle_core)
 
+# 原版 TNA 基准（gateway tna_reference_runner）→ 生产复刻的逐弹差分入口。
+add_executable(phk_tna_replica
+    apps/phk_tna_replica/main.cpp
+)
+target_link_libraries(phk_tna_replica PRIVATE phk_battle_core)
+
 include(CTest)
 if(PHK_BATTLE_BUILD_TESTS)
     add_executable(phk_battle_tests
