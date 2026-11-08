@@ -180,11 +180,15 @@ void Func39(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc43 @0x50f500 —— v = V1 + X·sin(XC·T)；hitDis = pf2·v。[实测]
 void Func43(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // 0x50f500: 若 p2>=life：v = V1 + X*sin(XC*(p2-life))；setScale(v)；hitDis = pf2*v
+    //           末尾无条件 p2++
     if (b.p2 >= b.life) {
-        const double s = b.spd_init2 + b.xacc * SinDeg(b.xacc_cap * b.t);
-        b.speed = s;
-        b.hit_dis = b.pf2 * s;
+        const double v = b.spd_init2 + b.xacc *
+            SinDeg(b.xacc_cap * static_cast<double>(b.p2 - b.life));
+        b.scale = v;
+        b.hit_dis = static_cast<float>(b.pf2 * v);
     }
+    b.p2 += 1;
 }
 
 // ===========================================================================
@@ -334,26 +338,26 @@ void Func13(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc14 @0x50d950 —— pf1 随 life 线性变化；hitDis = pf2·pf1。[实测]
 void Func14(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    constexpr double kK = 0.1;
-    if (static_cast<int>(b.t) >= 1 && b.p2 != 0) {
-        const double d = static_cast<double>(b.life) * kK / static_cast<double>(b.p1);
-        b.pf1 = (b.pf1 + d) * kK;
+    // 0x50d950: t1==0 → pf1 = p1*0.1；否则（p2!=0）pf1 += (p2-life)*0.1/p1（double 链）
+    //           随后把 pf1 双向夹到 p2*0.1；setScale(pf1)；hitDis = pf2*pf1
+    const int t = static_cast<int>(b.t);
+    if (t == 0) {
+        b.pf1 = static_cast<float>(static_cast<double>(b.life) * 0.1);   // 0x50d9b0 用 life 不是 p1
+    } else if (t >= 1 && b.p2 != 0) {
+        b.pf1 = static_cast<float>(static_cast<double>(b.pf1) +
+               (static_cast<double>(b.p2 - b.life) * 0.1) / static_cast<double>(b.p1));
     }
     if (b.p2 != 0) {
-        if (b.life < b.p2) {
-            const double n = b.pf1 * kK;
-            if (n < b.pf1) {
-                b.pf1 = n;
-            }
+        const double target = static_cast<double>(b.p2) * 0.1;
+        if (b.life < b.p2 && target < b.pf1) {
+            b.pf1 = static_cast<float>(target);
         }
-        if (b.life > b.p2) {
-            const double n = b.pf1 * kK;
-            if (n > b.pf1) {
-                b.pf1 = n;
-            }
+        if (b.life > b.p2 && target > b.pf1) {
+            b.pf1 = static_cast<float>(target);
         }
     }
-    b.hit_dis = b.pf2 * b.pf1;
+    b.scale = b.pf1;                                  // 0x50da48: setScale(pf1)
+    b.hit_dis = static_cast<float>(b.pf2 * b.pf1);
 }
 
 // bulletFunc70 @0x51079c —— 出屏 → 瞄准 + 随机角 + 换皮。[实测/推断]
@@ -690,6 +694,10 @@ void Func60(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc74 @0x510c3c —— LP 状态机。[推断]
 void Func74(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
+    // 0x510c64: LP==0 && t1==11 → setOpacity(life)
+    if (b.bullet_loop == 0 && static_cast<int>(b.t) == 11) {
+        b.opacity = b.life;
+    }
     if (static_cast<int>(b.t) == 0xb) {
         b.bullet_loop = 1;
     }
