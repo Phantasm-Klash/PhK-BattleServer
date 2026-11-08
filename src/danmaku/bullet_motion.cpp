@@ -445,17 +445,23 @@ void Func20(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc32 @0x50ea08 —— 按 P1 奇偶镜像角。[实测]
 void Func32(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) != 0) {
+    // 0x50ea08: 节拍门 t1 % life == 0；v=V1, spdAcc=X, vc=XC；
+    //           angle = (p1&1) ? A0+p2 : p2-A0；随后 setRotation(270-angle)；p1++
+    const int t = static_cast<int>(b.t);
+    if (t < 0) {
         return;
     }
+    const int rem = (b.life != 0) ? (t % b.life) : t;
+    if (rem != 0) {
+        return;
+    }
+    const double s = static_cast<double>(b.p2);
     const double a0 = b.angle_init;
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
-    if ((b.p1 & 1) != 0) {
-        b.angle = kDeg360 - (a0 - b.p2) + 90.0;
-    } else {
-        b.angle = a0 - b.p2;
-    }
+    b.angle = (b.p1 & 1) ? (a0 + s) : (s - a0);
+    b.p1 += 1;
 }
 
 // bulletFunc38 @0x50edcc —— 条件单次反弹；a = A0 + a。[推断]
@@ -1068,13 +1074,20 @@ void Func27(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc46 @0x50f654 —— 每 N 帧把角 ±90。[实测]
 void Func46(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) == 0) {
+    // 0x50f654: t1==0 时先把 bulletLife 置为 p1 再比；命中则
+    //           angle += (life==0 ? +90 : -90)；LP++；bulletLife = p2*LP + p1 + t1
+    const int t = static_cast<int>(b.t);
+    if (t == 0) {
+        b.bullet_life = b.p1;
+        if (t != b.p1) {
+            return;
+        }
+    } else if (t != b.bullet_life) {
         return;
     }
-    if (static_cast<int>(b.t) == b.bullet_life) {
-        b.angle += (b.life == 0) ? 90.0 : -90.0;
-        b.bullet_life = static_cast<int>(b.t);
-    }
+    b.angle += (b.life == 0) ? 90.0 : -90.0;
+    b.bullet_loop += 1;
+    b.bullet_life = b.p2 * b.bullet_loop + (b.p1 + t);
 }
 
 // bulletFunc52 @0x50f9e4 —— 随机角。[实测]
