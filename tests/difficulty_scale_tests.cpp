@@ -42,6 +42,11 @@ phk::battle::BossRaceConfig MakeConfig(const std::string& ruleset, std::int32_t 
     config.boss_max_hp = 1000000;
     config.ruleset_version = ruleset;
     config.difficulty = difficulty;
+    // 2026-11-08：默认 boss_id 为空已改为跑 boss21 节点链（30/20/10 tick 网格）。
+    // 本文件测的是「无目录、无节点链」时的旧 10 模式轮转（45 tick 波网格）与
+    // 难度缩放，故用一个既不在 boss_catalog 也不在 BossPhaseLibrary 的哨兵 id：
+    // 不能选 tian/hui —— 它们自带 5 段 Phases，每波数量本来就不同。
+    config.boss_id = "legacy_10mode";
     return config;
 }
 

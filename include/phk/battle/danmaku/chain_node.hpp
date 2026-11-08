@@ -128,9 +128,18 @@ struct BossStateSegment {
 // 保证未知 boss / 旧调用点的行为逐字节不变。
 [[nodiscard]] std::string_view BossStateBossIdForPhase(std::string_view base_boss_id, std::uint32_t spell_phase);
 
+// 默认节点链 boss（2026-11-08）：房间的 `boss_id` 为空时用这张表。
+// 之前「空 boss_id → ChainTablesActive=false → 落回 10 模式轮转」，实机看到的
+// 就是合成的 ring/homing，而不是原版 setBossBullet21 的节点链。
+// 显式选择 tian/hui 时 `boss_id` 非空，仍走各自目录的 10 模式，不受影响。
+inline constexpr std::string_view kDefaultChainBossId = "boss21";
+
+// 把「配置里的 boss_id」解析成「查表用的 boss_id」：空串 → 默认节点链。
+[[nodiscard]] std::string_view EffectiveChainBossId(std::string_view boss_id);
+
 // ChainNode 路径启用判定（硬约束）：
 //   ruleset_version == kRulesetDanmakuMechanics（"tna-1.40-danmaku"）
-//   && boss_id 非空 && 库内有该 boss 的表。
+//   && EffectiveChainBossId(boss_id) 在库内有表。
 // 实现见 chain_node.cpp（kRulesetDanmakuMechanics 常量权威定义在 boss_race.hpp，
 // 为避免循环依赖在 .cpp 内 include）。
 [[nodiscard]] bool ChainTablesActive(std::string_view ruleset_version, std::string_view boss_id);

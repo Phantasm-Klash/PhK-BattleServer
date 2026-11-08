@@ -857,9 +857,12 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
 
         // 符卡阶段 → 原版 state 段：每玩家的 Boss 副本各自推进 spell_phase，
         // 同一 tick 两个玩家可能处在不同阶段、用不同的表，故解析必须在本循环内做
-        // （不能用全局 config_.boss_id）。无段表的 boss → 原样返回 config_.boss_id。
-        const std::string_view boss_id =
-            danmaku::BossStateBossIdForPhase(config_.boss_id, player.spell_phase);
+        // （不能用全局 config_.boss_id）。无段表的 boss → 原样返回查表用的 boss_id。
+        // ★ `config_.boss_id` 为空表示「默认节点链」（kDefaultChainBossId），
+        //   必须先归一，否则 BossStateBossIdForPhase 把空串原样返回 → 查不到表 →
+        //   整场一发不出（实机会看到空战场）。
+        const std::string_view boss_id = danmaku::BossStateBossIdForPhase(
+            danmaku::EffectiveChainBossId(config_.boss_id), player.spell_phase);
 
         danmaku::EmitContext ctx;
         ctx.emitter_x = kScreenCenterX + ToPixels(kBossOriginXMilli + boss_offset_x);

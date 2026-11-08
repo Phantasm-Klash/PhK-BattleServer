@@ -522,14 +522,17 @@ std::string_view BossStateBossIdForPhase(std::string_view base_boss_id, std::uin
     return resolved;
 }
 
+std::string_view EffectiveChainBossId(std::string_view boss_id) {
+    return boss_id.empty() ? kDefaultChainBossId : boss_id;
+}
+
 bool ChainTablesActive(std::string_view ruleset_version, std::string_view boss_id) {
     if (ruleset_version != kRulesetDanmakuMechanics) {
         return false;
     }
-    if (boss_id.empty()) {
-        return false;
-    }
-    return HasBossPhaseTable(boss_id);
+    // 空 boss_id 现在是「默认节点链」，不再直接 false。显式 tian/hui 因库内
+    // 没有对应的 ChainNode 表，仍会返回 false → 保留目录里的 10 模式轮转。
+    return HasBossPhaseTable(EffectiveChainBossId(boss_id));
 }
 
 namespace {
