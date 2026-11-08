@@ -30,7 +30,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 FIELDS = ["x", "y", "vx", "vy", "angle", "speed",
-          "hit_dis", "half_w", "half_h", "kind", "life", "opacity"]
+          "hit_dis", "half_w", "half_h", "kind", "life", "opacity", "scale"]
 
 
 def load_jsonl(path: Path) -> dict[tuple[int, int], dict]:
@@ -66,7 +66,8 @@ def close(a: float, b: float) -> bool:
     return abs(a - b) <= 1e-3 + 1e-4 * max(abs(a), abs(b))
 
 
-def compare(reference: dict, replica: dict, ref_impl, rng_funcs, prod_noop):
+def compare(reference: dict, replica: dict, ref_impl, rng_funcs, prod_noop,
+            oracle="emu"):
     keys = sorted(set(reference) & set(replica))
     by_func: dict[int, list] = defaultdict(list)
     for k in keys:
@@ -89,7 +90,8 @@ def compare(reference: dict, replica: dict, ref_impl, rng_funcs, prod_noop):
                     if first_bad is None:
                         first_bad = tick
 
-        ref_yes = func in ref_impl
+        # oracle=emu：参考数据直接来自模拟执行原版 .so，凡有数据即可比对
+        ref_yes = (bool(pairs) if oracle == "emu" else func in ref_impl)
         noop = func in prod_noop
         rng = func in rng_funcs
         if not ref_yes:
@@ -122,6 +124,7 @@ def main() -> None:
     ap.add_argument("--reimpl", required=True)
     ap.add_argument("--prod", required=True)
     ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--oracle", choices=("emu", "reimpl"), default="emu")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -129,7 +132,8 @@ def main() -> None:
     reference = load_jsonl(Path(args.reference))
     replica = load_jsonl(Path(args.replica))
     ref_impl, rng_funcs, prod_noop = source_sets(Path(args.reimpl), Path(args.prod))
-    rows = compare(reference, replica, ref_impl, rng_funcs, prod_noop)
+    rows = compare(reference, replica, ref_impl, rng_funcs, prod_noop,
+                   oracle=args.oracle)
 
     csv_path = out_dir / "tna_coverage.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as f:

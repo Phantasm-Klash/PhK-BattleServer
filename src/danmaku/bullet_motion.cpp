@@ -92,6 +92,7 @@ void Func0(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 // bulletFunc4 @0x50d238 —— v = V1（速度重置）。[实测]
 void Func4(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     b.speed = b.spd_init2;
+    b.life -= 1;      // 0x50d244: 末尾无条件 life--
 }
 
 // bulletFunc29 @0x511384 —— 分段重置 + 合成 vx/vy。[实测]
@@ -127,9 +128,6 @@ void Func47(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 // bulletFunc5 @0x50d250 —— v += X，夹到 XC。[实测]
 void Func5(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     const double a = b.xacc;
-    if (a == 0.0) {
-        return;
-    }
     if (a > 0.0) {
         if (b.speed < b.xacc_cap) {
             b.speed += a;
@@ -137,7 +135,7 @@ void Func5(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
                 b.speed = b.xacc_cap;
             }
         }
-    } else {
+    } else if (a < 0.0) {
         if (b.speed > b.xacc_cap) {
             b.speed += a;
             if (b.speed < b.xacc_cap) {
@@ -145,6 +143,7 @@ void Func5(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
             }
         }
     }
+    b.life -= 1;      // 0x50d2d8: 无条件（含 a==0 的早退路径）
 }
 
 // bulletFunc35 @0x50ec24 —— 接近自机 → 指数减速 + 朝自机。[实测/推断阈值]
@@ -210,6 +209,7 @@ void Func40(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 void Func73(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     const double arg = b.spd_init2 + b.prev_angle * static_cast<double>(b.p2);
     b.pf1 = b.angle_init + b.f598 * SinDeg(arg);
+    b.scale = b.pf1;              // 0x510c00: 随后 setScale(pf1)
     b.hit_dis = b.pf2 * b.pf1;
 }
 
@@ -252,6 +252,7 @@ void Func2(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
         return;
     }
     RateLimitedTurn(b, AngleToMyShip(b, tg), b.angle_acc);
+    b.life -= 1;      // 0x50d234 之后的公共尾段
 }
 
 // bulletFunc17 @0x50db94 —— 限速追踪（单帧 ≤ A0）。[实测]
@@ -632,20 +633,37 @@ void Func42(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 }
 
 // bulletFunc44 @0x50f580 —— L==1 且 dist≤P1 → 重置。[实测]
-void Func44(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (b.p2 == 0 && b.life == 1 && DistSqToMyShip(b, tg) <= static_cast<double>(b.p1)) {
-        b.angle = b.angle_init;
-        b.speed_cap = b.xacc_cap;
-        b.p2 = 1;
+void Func44(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    if (b.p2 != 0) {
+        return;
     }
+    if (b.life != 1) {
+        return;
+    }
+    // 原版比较的是 getPosition().y < p1（不是与自机的距离）
+    if (!(b.y < static_cast<double>(b.p1))) {
+        return;
+    }
+    b.angle = b.angle_init;
+    // 一条 16B 拷贝：{+0x598 f598, +0x59c prevAngle, +0x5a0 spdInit2, +0x5a4 xacc}
+    //              → {+0x568 angleAcc, +0x56c f56c, +0x570 speed, +0x574 spdAcc}
+    b.angle_acc = b.f598;
+    b.f56c = b.prev_angle;
+    b.speed = b.spd_init2;
+    b.accel = b.xacc;
+    b.speed_cap = b.xacc_cap;
+    b.p2 += 1;
 }
 
-// bulletFunc45 @0x50f600 —— 触发重置。[推断：调用语义未知]
+// bulletFunc45 @0x50f600 —— 首帧 setOpacity(life)+setScale(V1)。[实测]
 void Func45(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (b.p2 == 0) {
-        b.speed = b.spd_init2;
-        b.p2 = 1;
+    if (b.p2 != 0) {
+        return;
     }
+    // setOpacity(life) + Sprite::setScale(spdInit2)（vtable+0x490 / +0x80）
+    b.opacity = b.life;
+    b.scale = b.spd_init2;
+    b.p2 = 1;
 }
 
 // bulletFunc53 @0x50fa34 —— 两阶段接近触发。[推断：常量存疑]
@@ -693,18 +711,23 @@ void Func80(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 }
 
 // bulletFunc84 @0x510ff4 —— 换皮 / 触发。[实测]
-void Func84(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (b.p2 == 1) {
-        int t = b.p1;
-        if (t > 255) {
-            t = 255;
-        }
-        if (t >= kBulletKindMin && t <= kBulletKindMax) {
-            b.bullet_kind = t;
-        }
-        if (DistSqToMyShip(b, tg) <= b.spd_init2) {
+void Func84(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // 0x510ff4: p2==0 → setOpacity(0)，且与 (spdInit2, xacc) 的平方距离 > life 时 p2=1；
+    //           p2==1 → setOpacity(min(p1<<4, 255)); p1++
+    if (b.p2 == 0) {
+        b.opacity = 0;
+        const double dx = b.x - b.spd_init2;
+        const double dy = b.y - b.xacc;
+        if (dx * dx + dy * dy > static_cast<double>(b.life)) {
             b.p2 = 1;
         }
+    } else if (b.p2 == 1) {
+        int a = b.p1 << 4;
+        if (a >= 255) {
+            a = 255;
+        }
+        b.opacity = a;
+        b.p1 += 1;
     }
 }
 
@@ -782,14 +805,31 @@ void Func54(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc65 @0x510498 —— 按 life/P2 换皮。[实测：贴图交宿主]
 void Func65(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    // ★ 与原版 bulletFunc65 @0x510f18 对齐：首帧只做贴图切换（原版 reimpl 里
-    //   setBulletType 是未转写的注释占位），**不改 speed / speed_cap**。
-    //   旧实现写 `b.speed = b.spd_init2`，而 spd_init2 默认 -1，会让子弹倒着飞；
-    //   tna_coverage 基准在 func65 上测出 360 的位置差。
-    //   贴图切换待 bullet_kind 映射解码后在此补，不影响运动学基准。
-    if (static_cast<int>(b.t) != 0) {
+    // 0x510498: 节拍门 t1 % p1 == 0；然后按 life(0/1) 换贴图并重置速度，末尾 life--
+    const int t = static_cast<int>(b.t);
+    if (t < 0) {
         return;
     }
+    const int rem = (b.p1 != 0) ? (t % b.p1) : t;
+    if (rem != 0) {
+        return;
+    }
+    if (b.life == 0) {
+        if (b.p2 == 0) {
+            b.bullet_kind = 0x37;
+        } else if (b.p2 == 1) {
+            b.bullet_kind = 0x3c;
+        }
+        b.speed = b.xacc;
+    } else if (b.life == 1) {
+        if (b.p2 == 0) {
+            b.bullet_kind = 0x2e;
+        } else if (b.p2 == 1) {
+            b.bullet_kind = 0x33;
+        }
+        b.speed = b.spd_init2;
+    }
+    b.life -= 1;
 }
 
 // ===========================================================================
@@ -1008,11 +1048,14 @@ void Func36(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     b.opacity = (c < 128) ? c : a;
 }
 
-// bulletFunc27 @0x50cd54 —— P1==1 → hitHantei=0；否则时间缩放。[推断]
+// bulletFunc27 @0x50cd54 —— P1==1 → hitHantei=0；否则 hitDis *= life*0.01。[实测]
 void Func27(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     if (b.p1 == 1) {
         b.hit_hantei = false;
+        return;
     }
+    // getHitDis()->setHitDis(life*0.01*hitDis)，中间量走 double（fcvt/fmul 序列）
+    b.hit_dis = static_cast<float>(static_cast<double>(b.life) * 0.01 * b.hit_dis);
 }
 
 // bulletFunc46 @0x50f654 —— 每 N 帧把角 ±90。[实测]
@@ -1056,22 +1099,41 @@ void Func61(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc63 @0x510394 —— a=A0; aa=-F98。[实测]
 void Func63(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) == 0) {
-        b.angle = b.angle_init;
-        b.angle_acc = -b.f598;
+    // 0x510394: if (t1-life < 0) return; if ((t1-life) % p1 != 0) return;
+    //            angle=A0; angleAcc=-f598; f56c=-prevAngle（16B 取反拷贝）
+    const int d = static_cast<int>(b.t) - b.life;
+    if (d < 0) {
+        return;
     }
+    const int rem = (b.p1 != 0) ? (d % b.p1) : d;   // ARM sdiv 0 → 0
+    if (rem != 0) {
+        return;
+    }
+    b.angle = b.angle_init;
+    b.angle_acc = -b.f598;
+    b.f56c = -b.prev_angle;
 }
 
 // bulletFunc64 @0x5103d0 —— 分阶段。[实测]
 void Func64(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
+    // 0x5103d0: 先过 t1 % p1 == 0 的节拍门；再按 life(0/1) 分支；末尾统一 life--
+    const int t = static_cast<int>(b.t);
+    const int rem = (b.p1 != 0) ? (t % b.p1) : t;
+    if (rem != 0) {
+        return;
+    }
     if (b.life == 0) {
         b.angle = b.angle_init;
         b.speed = b.spd_init2;
+        b.accel = 0.0;
+        b.speed_cap = 0.0;
     } else if (b.life == 1) {
         b.angle = AngleToMyShip(b, tg);
         b.speed = b.spd_init2;
+        b.accel = b.xacc;
         b.speed_cap = b.xacc_cap;
     }
+    b.life -= 1;
 }
 
 // bulletFunc37 @0x51172c —— 正弦角 a = 75·sin(L + X·T − 90) + 180。[推断]

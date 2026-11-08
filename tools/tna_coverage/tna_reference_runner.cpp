@@ -108,9 +108,9 @@ int main(int argc, char** argv) {
                 "{\"func\":%d,\"tick\":%d,\"x\":%.6f,\"y\":%.6f,"
                 "\"vx\":%.6f,\"vy\":%.6f,\"angle\":%.6f,\"speed\":%.6f,"
                 "\"hit_dis\":%.6f,\"half_w\":%.6f,\"half_h\":%.6f,"
-                "\"kind\":%d,\"life\":%d,\"t\":%.1f,\"opacity\":%d}\n",
+                "\"kind\":%d,\"life\":%d,\"t\":%.1f,\"opacity\":%d,\"scale\":%.6f}\n",
                 func, tick, b.x, b.y, b.vx, b.vy, b.angle, b.speed,
-                b.hitDis, b.halfW, b.halfH, b.bulletType, b.life, b.t, b.opacity);
+                b.hitDis, b.halfW, b.halfH, b.bulletType, b.life, b.t, b.opacity, b.scale);
         }
     }
     std::fclose(out);

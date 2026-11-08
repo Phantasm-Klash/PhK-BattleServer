@@ -17,11 +17,17 @@ SEED="${SEED:-12345}"
 TICKS="${TICKS:-90}"
 mkdir -p "$OUT"
 
-# 1) 原版参考（bullet_funcs_reimpl.hpp 从 ARM64 汇编翻译，固定 srand）
-g++ -std=c++17 -O2 -I "$HERE/reference" \
-    -o "$OUT/tna_reference_runner" "$HERE/tna_reference_runner.cpp"
-"$OUT/tna_reference_runner" --out "$OUT/tna-reference.jsonl" \
-    --ticks "$TICKS" --seed "$SEED"
+# 1) 原版参考：优先用 unicorn 直接执行 libMyGame_arm64.so 里的函数体（真值），
+#    没有 unicorn 时回退到 bullet_funcs_reimpl.hpp 的汇编重实现。
+if python3 -c 'import unicorn' 2>/dev/null; then
+    python3 "$HERE/tna_emu.py" --all --ticks "$TICKS" \
+        --out "$OUT/tna-reference.jsonl"
+else
+    g++ -std=c++17 -O2 -I "$HERE/reference" \
+        -o "$OUT/tna_reference_runner" "$HERE/tna_reference_runner.cpp"
+    "$OUT/tna_reference_runner" --out "$OUT/tna-reference.jsonl" \
+        --ticks "$TICKS" --seed "$SEED"
+fi
 
 # 2) 生产对战端复刻（UpdateBulletMotion + 固定 DeterministicRng）
 "$BUILD/phk_tna_replica" --out "$OUT/tna-replica.jsonl" \

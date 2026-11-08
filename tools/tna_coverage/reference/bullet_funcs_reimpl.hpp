@@ -103,6 +103,7 @@ struct BulletMotion {
     float halfW     = 0.0f;   // +0x554
     float halfH     = 0.0f;   // +0x558
     int   opacity   = 255;    // 原版走 cocos2d::Node::setOpacity（vtable+0x490，已在 .rela 解出）
+    float scale     = 1.0f;   // 原版走 cocos2d::Sprite::setScale（vtable+0x80）
 
     // 便捷：以 (angle,speed) 合成 vx/vy（update 默认尾段）
     void integrate_velocity() {
@@ -121,7 +122,10 @@ inline void bulletFunc5(BulletMotion&, float);
 inline void bulletFunc6(BulletMotion&, float);
 inline void bulletFunc7(BulletMotion&, float);
 inline void bulletFunc8(BulletMotion&, float);
+inline void bulletFunc27(BulletMotion&, float);
 inline void bulletFunc28(BulletMotion&, float);
+inline void bulletFunc44(BulletMotion&, float);
+inline void bulletFunc45(BulletMotion&, float);
 inline void bulletFunc36(BulletMotion&, float);
 inline void bulletFunc79(BulletMotion&, float);
 inline void bulletFunc11(BulletMotion&, float);
@@ -198,7 +202,10 @@ inline void update_common(BulletMotion& b, float dt) {
         case  6: bulletFunc6 (b,dt); break;
         case  7: bulletFunc7 (b,dt); break;
         case  8: bulletFunc8 (b,dt); break;
+        case 27: bulletFunc27(b,dt); break;
         case 28: bulletFunc28(b,dt); break;
+        case 44: bulletFunc44(b,dt); break;
+        case 45: bulletFunc45(b,dt); break;
         case 36: bulletFunc36(b,dt); break;
         case 79: bulletFunc79(b,dt); break;
         case 11: bulletFunc11(b,dt); break;
@@ -795,6 +802,43 @@ inline void bulletFunc85(BulletMotion& b, float dt) {
         if (b.bulletType == 0x25) b.hitDis = 20.0f;              // fmov #20.0
         else if (b.bulletType == 0x2a) b.hitDis = 4.0f;          // fmov #4.0
     }
+}
+
+// ---------------------------------------------------------------------------
+// func27 @0x50cd54 —— p1==1 时关掉碰撞；否则 hitDis *= life*0.01（double 中间量）
+//   getHitDis/setHitDis = vtable+0x6d0/+0x6d8；常量 0xac52f0 = 0.01
+// ---------------------------------------------------------------------------
+inline void bulletFunc27(BulletMotion& b, float) {
+    if (b.p1 == 1) { b.hitHantei = false; return; }
+    b.hitDis = (float)((double)b.life * 0.01 * (double)b.hitDis);
+}
+
+// ---------------------------------------------------------------------------
+// func44 @0x50f580 —— p2==0 && life==1 && pos.y < p1 时整体重置：
+//   angle=A0；{angleAcc,f56c,speed,spdAcc} ← {f598,prevAngle,spdInit2,xacc}（一条 16B 拷贝）；
+//   speedCap = xaccCap；p2++
+// ---------------------------------------------------------------------------
+inline void bulletFunc44(BulletMotion& b, float) {
+    if (b.p2 != 0) return;
+    if (b.life != 1) return;
+    if (!(b.y < (float)b.p1)) return;          // getPosition().y < p1
+    b.angle    = b.angleInit;
+    b.angleAcc = b.f598;
+    b.f56c     = b.prevAngle;
+    b.speed    = b.spdInit2;
+    b.accel    = b.xacc;
+    b.speedCap = b.xaccCap;
+    b.p2       = b.p2 + 1;
+}
+
+// ---------------------------------------------------------------------------
+// func45 @0x50f600 —— p2==0 时：setOpacity(life)、setScale(spdInit2)、p2=1
+// ---------------------------------------------------------------------------
+inline void bulletFunc45(BulletMotion& b, float) {
+    if (b.p2 != 0) return;
+    b.opacity = b.life;
+    b.scale   = b.spdInit2;
+    b.p2      = 1;
 }
 
 // bulletFunc3 @0x51130c —— vx/vy 叠加 0.0163333·(cos life, sin life)，角度制。

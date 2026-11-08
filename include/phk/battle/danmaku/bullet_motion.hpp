@@ -99,6 +99,7 @@ struct BulletMotion {
     double half_w = 0.0;       // +0x554 贴图半宽（bulletFunc6/8 的环绕边界用）
     double half_h = 0.0;       // +0x558 贴图半高
     int opacity = 255;         // 原版 vtable+0x490 = cocos2d::Node::setOpacity(uint8)
+    double scale = 1.0;        // 原版 vtable+0x80  = cocos2d::Sprite::setScale(float)
 
     // 以 (angle,speed) 合成 vx/vy（update 默认尾段）。
     void IntegrateVelocity() {
