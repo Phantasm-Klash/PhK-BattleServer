@@ -230,6 +230,9 @@ bool ParseArgs(
         } else if (arg == "--no-result-submit") {
             // 结算权交给 battle-agent 的签名 RPC；本进程只录 .dem。
             config->submit_result = false;
+        } else if (arg == "--no-delta") {
+            // 回退到全量 bullets[] 快照（仅用于排查/旧客户端兼容）。
+            config->delta_wire_enabled = false;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             std::exit(0);
@@ -245,6 +248,14 @@ bool ParseArgs(
 
 int main(int argc, char** argv) {
     phk::battle::MatchLifecycleConfig config;
+    // ★ 默认启用事件溯源式 delta wire：节点链 boss 单 tick 同屏弹可达 768 颗，
+    //   全量 `bullets[]` 快照（实测 trace ≈187 KB/tick @ 64Hz）会把 KCP 发送
+    //   队列撑爆，客户端一份完整快照都收不到（实机 `snaps 0`、只有 24B ACK）。
+    //   delta 模式只发 spawn/despawn 事件 + wire_cap，客户端
+    //   `BulletReconstructor` 从模板与 matchSeed 递推还原。
+    //   仅 `main()` 改默认值；`MatchLifecycleConfig` 本身仍默认 false，
+    //   所以单测/工具链的「默认关闭逐字节不变」契约不受影响。
+    config.delta_wire_enabled = true;
     config.match_id = "match_local_000001";
     config.player_ids = {"player_a", "player_b"};
     // Wall-clock pacing only: 1.0 keeps the real tick rate, anything lower runs
