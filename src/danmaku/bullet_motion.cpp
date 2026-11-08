@@ -20,6 +20,18 @@ constexpr double kDeg180 = 180.0;
 constexpr double kDeg360 = 360.0;
 constexpr double kNeg1 = -1.0;
 
+// 原版 MyMathUtil::sin 走的是**单精度**：sinf(deg * (π/180))。
+// func36 的 alpha 要按 1/128 取整，double 与 float 的 1ULP 差异正好会跨过截断边界
+// （基准里实测到 opacity 差 1），所以这里显式用 float 复刻原版。
+inline float SinDegF(float deg) {
+    constexpr float kPiF = 3.14159265358979323846f;
+    return std::sin(deg * (kPiF / 180.0f));
+}
+inline float CosDegF(float deg) {
+    constexpr float kPiF = 3.14159265358979323846f;
+    return std::cos(deg * (kPiF / 180.0f));
+}
+
 double AngleToMyShip(const BulletMotion& b, const MotionTargets& tg) {
     if (!tg.has_my_ship) {
         return b.angle;
@@ -888,11 +900,113 @@ void Func72(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 }
 
 // ===========================================================================
-// L 辅助（无字段写入）
+// L 辅助（无 angle/speed 写入，但会改位置 / 透明度）
 // ===========================================================================
 
-// bulletFunc3/6/8/28/36/79 —— 边界/着色/取值辅助，无运动字段写入。[实测]
+// bulletFunc3 @0x51130c —— vx/vy += 0.0163333·(cos life, sin life)，角度制。[实测]
+// ★ 分派真值：update 的跳转表 @0xb0a88e（项 = uint16×4 + 基址 0x50b514）里
+//   funcNo=3 走共用出口 0x50c618，且全库无 `bl bulletFunc3` 调用点 ⇒ 该函数
+//   不参与逐帧更新（其符号是独立导出的死代码）。生产侧保持 no-op 是对的。
 void FuncNoop(BulletMotion&, const MotionTargets&, DeterministicRng&) {}
+
+// bulletFunc3 @0x51130c —— vx/vy 叠加 0.0163333·(cos life, sin life)，角度制。[实测]
+// ★ 内联在 update 的比较链里：0x50c9b8 装 double 常量 0x3F90B9AF72015D87，
+//   0x50c9c4 写回 +0x57c/+0x580，故它逐帧执行（不是死代码）。
+//   注意：本工程 update 末尾统一 integrate_velocity() 会用 angle/speed 覆盖 vx/vy，
+//   因此该叠加对可观测轨迹无贡献——与既有 52 个函数的处理口径一致。
+void Func3(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    constexpr double kDrift = 0x1.0B9AF72015D87p-6;   // 0.01633334…
+    const double c = static_cast<double>(CosDegF(static_cast<float>(b.life)));
+    const double s = static_cast<double>(SinDegF(static_cast<float>(b.life)));
+    b.vx += static_cast<float>(kDrift * c);
+    b.vy += static_cast<float>(kDrift * s);
+}
+
+// bulletFunc6 @0x50d2e8 —— X 轴环绕：越界换边并 life--。[实测]
+//   原版用 getContentSize().width 做边界，这里约定 content = 2·half_w。
+void Func6(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    if (b.life < 1) {
+        return;
+    }
+    const double w = b.half_w * 2.0;
+    if (b.x > b.half_w + w) {
+        b.x = -w;
+        --b.life;
+    }
+    if (b.x < -w) {
+        b.x = b.half_w + w;
+        --b.life;
+    }
+}
+
+// bulletFunc8 @0x50d574 —— X/Y 双轴环绕（Y 下界 40-h）。[实测]
+void Func8(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    if (b.life < 1) {
+        return;
+    }
+    const double w = b.half_w * 2.0;
+    const double h = b.half_h * 2.0;
+    if (b.x > b.half_w + w) {
+        b.x = -w;
+        --b.life;
+    }
+    if (b.x < -w) {
+        b.x = b.half_w + w;
+        --b.life;
+    }
+    if (b.y > b.half_h + h) {
+        b.y = kTop - h;
+        --b.life;
+    }
+    if (b.y < kTop - h) {
+        b.y = b.half_h + h;
+        --b.life;
+    }
+}
+
+// bulletFunc28 @0x50e1e8 —— alpha = max(255 - p2·(t1-p1), life)，淡出。[实测]
+void Func28(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    const int d = static_cast<int>(b.t) - b.p1;
+    int a = 0;
+    if (d >= 0) {
+        a = 255 - b.p2 * d;
+        if (a < b.life) {
+            a = b.life;
+        }
+    }
+    b.opacity = a;
+}
+
+// bulletFunc79 @0x510ef0 —— alpha = min(p2·(t1-p1), life)，淡入。[实测]
+void Func79(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    const int d = static_cast<int>(b.t) - b.p1;
+    int a = 0;
+    if (d >= 0) {
+        a = b.p2 * d;
+        if (a > b.life) {
+            a = b.life;
+        }
+    }
+    b.opacity = a;
+}
+
+// bulletFunc36 @0x50ed50 —— alpha = 128 + 128·sin(p1·(t1-life)+90)，[实测]
+//   并把 hitHantei(0x548) 设为 alpha>127（暗到看不见时关掉碰撞）。
+void Func36(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    const int d = static_cast<int>(b.t) - b.life;
+    if (d < 0) {
+        b.opacity = 255;
+        return;
+    }
+    const int s = static_cast<int>(SinDegF(static_cast<float>(b.p1 * d + 90)) * 128.0f);
+    int a = s + 128;
+    if (a >= 255) {
+        a = 255;
+    }
+    const int c = (a < 0) ? 0 : a;
+    b.hit_hantei = (c > 127);
+    b.opacity = (c < 128) ? c : a;
+}
 
 // bulletFunc27 @0x50cd54 —— P1==1 → hitHantei=0；否则时间缩放。[推断]
 void Func27(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
@@ -1047,12 +1161,12 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
         case 0:  Func0(b, targets, rng); break;
         case 1:  Func1(b, targets, rng); break;
         case 2:  Func2(b, targets, rng); break;
-        case 3:  FuncNoop(b, targets, rng); break;
+        case 3:  Func3(b, targets, rng); break;
         case 4:  Func4(b, targets, rng); break;
         case 5:  Func5(b, targets, rng); break;
-        case 6:  FuncNoop(b, targets, rng); break;
+        case 6:  Func6(b, targets, rng); break;
         case 7:  Func7(b, targets, rng); break;
-        case 8:  FuncNoop(b, targets, rng); break;
+        case 8:  Func8(b, targets, rng); break;
         case 11: Func11(b, targets, rng); break;
         case 12: Func12(b, targets, rng); break;
         case 13: Func13(b, targets, rng); break;
@@ -1070,7 +1184,7 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
         case 25: Func25(b, targets, rng); break;
         case 26: Func26(b, targets, rng); break;
         case 27: Func27(b, targets, rng); break;
-        case 28: FuncNoop(b, targets, rng); break;
+        case 28: Func28(b, targets, rng); break;
         case 29: Func29(b, targets, rng); break;
         case 30: Func30(b, targets, rng); break;
         case 31: Func31(b, targets, rng); break;
@@ -1078,7 +1192,7 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
         case 33: Func33(b, targets, rng); break;
         case 34: Func34(b, targets, rng); break;
         case 35: Func35(b, targets, rng); break;
-        case 36: FuncNoop(b, targets, rng); break;
+        case 36: Func36(b, targets, rng); break;
         case 37: Func37(b, targets, rng); break;
         case 38: Func38(b, targets, rng); break;
         case 39: Func39(b, targets, rng); break;
@@ -1116,7 +1230,7 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
         case 76: Func76(b, targets, rng); break;
         case 77: Func77(b, targets, rng); break;
         case 78: Func78(b, targets, rng); break;
-        case 79: FuncNoop(b, targets, rng); break;
+        case 79: Func79(b, targets, rng); break;
         case 80: Func80(b, targets, rng); break;
         case 81: Func81(b, targets, rng); break;
         case 82: Func82(b, targets, rng); break;

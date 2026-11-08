@@ -70,7 +70,11 @@ touhou::BulletMotion MakeInitial(int func) {
     b.pf2 = 4.0f;
     b.hitHantei = true;
     b.bulletLife = 0;
-    b.life = 0;
+    b.life = 4;      // 非 0 才能让 func6/8 的环绕与 func36 的 (t1-life) 真正执行
+    if (func == 28 || func == 36 || func == 79) {
+        b.p1 = 2;    // 透明度渐变需要非零参数，否则 alpha 恒为常数、测不出差异
+        b.p2 = 8;
+    }
     b.t = 0.0f;
     return b;
 }
@@ -104,9 +108,9 @@ int main(int argc, char** argv) {
                 "{\"func\":%d,\"tick\":%d,\"x\":%.6f,\"y\":%.6f,"
                 "\"vx\":%.6f,\"vy\":%.6f,\"angle\":%.6f,\"speed\":%.6f,"
                 "\"hit_dis\":%.6f,\"half_w\":%.6f,\"half_h\":%.6f,"
-                "\"kind\":%d,\"life\":%d,\"t\":%.1f}\n",
+                "\"kind\":%d,\"life\":%d,\"t\":%.1f,\"opacity\":%d}\n",
                 func, tick, b.x, b.y, b.vx, b.vy, b.angle, b.speed,
-                b.hitDis, b.halfW, b.halfH, b.bulletType, b.life, b.t);
+                b.hitDis, b.halfW, b.halfH, b.bulletType, b.life, b.t, b.opacity);
         }
     }
     std::fclose(out);

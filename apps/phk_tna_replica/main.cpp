@@ -54,7 +54,13 @@ BulletMotion MakeInitial(int func) {
     b.pf2 = 4.0;
     b.hit_hantei = true;
     b.bullet_life = 0;
-    b.life = 0;
+    b.life = 4;
+    b.half_w = 4.0;
+    b.half_h = 4.0;
+    if (func == 28 || func == 36 || func == 79) {
+        b.p1 = 2;
+        b.p2 = 8;
+    }
     b.t = 0.0;
     return b;
 }
@@ -91,10 +97,10 @@ int main(int argc, char** argv) {
             std::fprintf(out,
                 "{\"func\":%d,\"tick\":%d,\"x\":%.6f,\"y\":%.6f,"
                 "\"vx\":%.6f,\"vy\":%.6f,\"angle\":%.6f,\"speed\":%.6f,"
-                "\"hit_dis\":%.6f,\"half_w\":4.0,\"half_h\":4.0,"
-                "\"kind\":%d,\"life\":%d,\"t\":%.1f}\n",
+                "\"hit_dis\":%.6f,\"half_w\":%.6f,\"half_h\":%.6f,"
+                "\"kind\":%d,\"life\":%d,\"t\":%.1f,\"opacity\":%d}\n",
                 func, tick, b.x, b.y, b.vx, b.vy, b.angle, b.speed,
-                b.hit_dis, b.bullet_kind, b.life, b.t);
+                b.hit_dis, b.half_w, b.half_h, b.bullet_kind, b.life, b.t, b.opacity);
         }
     }
     std::fclose(out);

@@ -30,7 +30,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 FIELDS = ["x", "y", "vx", "vy", "angle", "speed",
-          "hit_dis", "half_w", "half_h", "kind", "life"]
+          "hit_dis", "half_w", "half_h", "kind", "life", "opacity"]
 
 
 def load_jsonl(path: Path) -> dict[tuple[int, int], dict]:

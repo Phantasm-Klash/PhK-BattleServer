@@ -102,6 +102,7 @@ struct BulletMotion {
     bool  hitHantei = true;   // +0x548
     float halfW     = 0.0f;   // +0x554
     float halfH     = 0.0f;   // +0x558
+    int   opacity   = 255;    // 原版走 cocos2d::Node::setOpacity（vtable+0x490，已在 .rela 解出）
 
     // 便捷：以 (angle,speed) 合成 vx/vy（update 默认尾段）
     void integrate_velocity() {
@@ -114,9 +115,15 @@ struct BulletMotion {
 inline void bulletFunc0(BulletMotion&, float);
 inline void bulletFunc1(BulletMotion&, float);
 inline void bulletFunc2(BulletMotion&, float);
+inline void bulletFunc3(BulletMotion&, float);
 inline void bulletFunc4(BulletMotion&, float);
 inline void bulletFunc5(BulletMotion&, float);
+inline void bulletFunc6(BulletMotion&, float);
 inline void bulletFunc7(BulletMotion&, float);
+inline void bulletFunc8(BulletMotion&, float);
+inline void bulletFunc28(BulletMotion&, float);
+inline void bulletFunc36(BulletMotion&, float);
+inline void bulletFunc79(BulletMotion&, float);
 inline void bulletFunc11(BulletMotion&, float);
 inline void bulletFunc12(BulletMotion&, float);
 inline void bulletFunc14(BulletMotion&, float);
@@ -185,9 +192,15 @@ inline void update_common(BulletMotion& b, float dt) {
         case  0: bulletFunc0 (b,dt); break;
         case  1: bulletFunc1 (b,dt); break;
         case  2: bulletFunc2 (b,dt); break;
+        case  3: bulletFunc3 (b,dt); break;
         case  4: bulletFunc4 (b,dt); break;
         case  5: bulletFunc5 (b,dt); break;
+        case  6: bulletFunc6 (b,dt); break;
         case  7: bulletFunc7 (b,dt); break;
+        case  8: bulletFunc8 (b,dt); break;
+        case 28: bulletFunc28(b,dt); break;
+        case 36: bulletFunc36(b,dt); break;
+        case 79: bulletFunc79(b,dt); break;
         case 11: bulletFunc11(b,dt); break;
         case 12: bulletFunc12(b,dt); break;
         case 14: bulletFunc14(b,dt); break;
@@ -784,9 +797,79 @@ inline void bulletFunc85(BulletMotion& b, float dt) {
     }
 }
 
+// bulletFunc3 @0x51130c —— vx/vy 叠加 0.0163333·(cos life, sin life)，角度制。
+// 判别依据：update 体内 0x50c9b8..0x50c9c8 装了同一个 double 常量 0x3F90B9AF72015D87
+// 并写回 +0x57c(vx)/+0x580(vy) ⇒ 该函数被**内联**进 update 的比较链（cmp #0x3 @0x50c98c），
+// 逐帧执行，不是死代码。乘加在原版里走 double（fcvtl→fmul→fcvtn），故此处也先转 double。
+inline void bulletFunc3(BulletMotion& b, float) {
+    constexpr double kDrift = 0x1.0B9AF72015D87p-6;   // 0.01633334…
+    const double c = (double)my_cos_deg((float)b.life);
+    const double s = (double)my_sin_deg((float)b.life);
+    b.vx += (float)(kDrift * c);
+    b.vy += (float)(kDrift * s);
+}
+
+// ===========================================================================
+// 分派表命中、但作用在「位置 / 透明度」而非 angle·speed 的 5 个函数
+// （表 @0xb0a88e，项 = uint16 × 4 + 基址 0x50b514，索引 funcNo-1）
+//   bulletFunc6  @0x50d2e8 : X 轴环绕，越界换边并 life--
+//   bulletFunc8  @0x50d574 : X/Y 双轴环绕（Y 下界 40-h）
+//   bulletFunc28 @0x50e1e8 : alpha = max(255 - p2·(t1-p1), life)
+//   bulletFunc36 @0x50ed50 : alpha = 128+128·sin(p1·(t1-life)+90)，hitHantei = alpha>127
+//   bulletFunc79 @0x510ef0 : alpha = min(p2·(t1-p1), life)
+// 三处 alpha 最终都走 vtable+0x490 = cocos2d::Node::setOpacity(uint8)（.rela 已解出）。
+// 注：halfW/halfH 是贴图半径，原版用 getContentSize()（= 2·halfW/2·halfH）做环绕边界。
+// ===========================================================================
+inline void bulletFunc6(BulletMotion& b, float) {
+    if (b.life < 1) return;                        // 0x50b6a8: cmp life,#1; b.lt tail
+    const float w = b.halfW * 2.0f;                // getContentSize().width
+    if (b.x > b.halfW + w) { b.x = -w;           b.life -= 1; }
+    if (b.x < -w)          { b.x = b.halfW + w;  b.life -= 1; }
+}
+
+inline void bulletFunc8(BulletMotion& b, float) {
+    if (b.life < 1) return;
+    const float w = b.halfW * 2.0f;
+    const float h = b.halfH * 2.0f;
+    if (b.x > b.halfW + w)  { b.x = -w;            b.life -= 1; }
+    if (b.x < -w)           { b.x = b.halfW + w;   b.life -= 1; }
+    if (b.y > b.halfH + h)  { b.y = 40.0f - h;     b.life -= 1; }   // 0xace180 = 40.0
+    if (b.y < 40.0f - h)    { b.y = b.halfH + h;   b.life -= 1; }
+}
+
+inline void bulletFunc28(BulletMotion& b, float) {
+    const int d = (int)b.t - b.p1;
+    int a = 0;
+    if (d >= 0) {
+        a = 255 - b.p2 * d;                        // msub w8, p2, d, #0xff
+        if (a < b.life) a = b.life;                // csel → max(…, life)
+    }
+    b.opacity = a;
+}
+
+inline void bulletFunc79(BulletMotion& b, float) {
+    const int d = (int)b.t - b.p1;
+    int a = 0;
+    if (d >= 0) {
+        a = b.p2 * d;
+        if (a > b.life) a = b.life;                // csel → min(…, life)
+    }
+    b.opacity = a;
+}
+
+inline void bulletFunc36(BulletMotion& b, float) {
+    const int d = (int)b.t - b.life;
+    if (d < 0) { b.opacity = 255; return; }        // 0x50b908: orr w1,wzr,#0xff
+    const int s = (int)(my_sin_deg((float)(b.p1 * d + 90)) * 128.0f);  // fcvtzs #7
+    int a = s + 128;                               // add #0x80
+    if (a >= 255) a = 255;                         // csel lt
+    const int c = (a < 0) ? 0 : a;                 // bic w9,w8,w8,asr#31
+    b.hitHantei = (c > 127);                       // 0x548 = alpha > 127
+    b.opacity   = (c < 128) ? c : a;
+}
+
 // ===========================================================================
 // 以下为「未能确定」或高度复杂者，提供占位实现（真实公式见 disasm 文档 §5）
-//   bulletFunc3  @0x51130c : 返回 0.0163333*(cos L, sin L)+…，非运动函数
 //   bulletFunc27 @0x50cd54 : P1==1 → hitHantei=0；否则返回 L*0.01*t
 //   bulletFunc20 @0x50dde0 : 边界分段（80/240/340/320 带）
 //   bulletFunc26/33/66/75/82/83 : 参数方程/摆线（cos/sin 多路叠加）
