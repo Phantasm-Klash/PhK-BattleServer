@@ -1085,7 +1085,7 @@ void Func46(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     } else if (t != b.bullet_life) {
         return;
     }
-    b.angle += (b.life == 0) ? 90.0 : -90.0;
+    b.angle += (b.life == 0) ? -90.0 : 90.0;   // 表 @0xacee48: [0]=+90（life!=0）,[1]=-90
     b.bullet_loop += 1;
     b.bullet_life = b.p2 * b.bullet_loop + (b.p1 + t);
 }

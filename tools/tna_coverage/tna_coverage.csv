@@ -45,7 +45,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 43,1,0,0,,,0.0,MATCH
 44,1,0,0,,,0.0,MATCH
 45,1,0,0,,,0.0,MATCH
-46,1,0,0,0,"angle,vy,y",540.0,MISMATCH
+46,1,0,0,,,0.0,MATCH
 47,1,0,0,,,0.0,MATCH
 48,1,0,0,4,"angle,speed,vx,vy,x,y",211.561383,MISMATCH
 49,0,0,0,,,0.0,UNKNOWN_REF
