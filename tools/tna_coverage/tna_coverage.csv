@@ -29,7 +29,7 @@ func,ref_implemented,prod_noop,rng_dependent,first_mismatch_tick,mismatched_fiel
 27,1,0,0,,,0.0,MATCH
 28,1,0,0,,,0.0,MATCH
 29,1,0,0,,,2e-06,MATCH
-30,1,0,0,0,hit_dis,16.0,MISMATCH
+30,1,0,0,,,0.0,MATCH
 31,1,0,0,0,hit_dis,39.0,MISMATCH
 32,1,0,0,,,2e-06,MATCH
 33,1,0,0,,,0.0,MATCH

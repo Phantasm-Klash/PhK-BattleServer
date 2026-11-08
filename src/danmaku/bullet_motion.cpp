@@ -849,10 +849,16 @@ void Func83(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc30 @0x50e224 —— 按 bulletType 换贴图 + hitDis。[实测]
 void Func30(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) != b.p2) {
+    // 0x50e224: 门 = (t1-life) >= 0 且 t1 == p2；命中后换贴图并
+    //   hitDis(0x54c) = 20.0（0x50e3ec；文档旧值 4.0 是错的）
+    const int t = static_cast<int>(b.t);
+    if (t - b.life < 0) {
         return;
     }
-    b.hit_dis = 4.0;
+    if ((t - b.life) != b.p2) {   // 比较的是 (t1-life)，不是 t1
+        return;
+    }
+    b.hit_dis = 20.0;
 }
 
 // bulletFunc54 @0x50faf4 —— 按 life 阶段换皮。[实测：贴图交宿主]
