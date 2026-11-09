@@ -34,6 +34,17 @@ inline float CosDegF(float deg) {
     return std::cos(deg * kPiF / 180.0f);
 }
 
+// 原版边界反弹的常见指令序列：
+//   fsub s0, sC, sAngle; fadd s1, s0, s360; fcmp s0,#0; fcsel s0,s1,s0,mi
+// 即 d = C - angle；d<0 时 d += 360。x 边界 C=180(0xace194)，y 边界 C=360(0xace178)。
+inline double MirrorAngle(double angle, double c) {
+    double d = c - angle;
+    if (d < 0.0) {
+        d += kDeg360;
+    }
+    return d;
+}
+
 double AngleToMyShip(const BulletMotion& b, const MotionTargets& tg) {
     if (!tg.has_my_ship) {
         return b.angle;
@@ -177,15 +188,58 @@ void Func35(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     b.p2 = p2 + 1;
 }
 
-// bulletFunc39 @0x50ef00 —— 状态机：线性减速 va = -v/L。[实测]
+// bulletFunc39 @0x50ef00 —— p2 状态机。[unicorn 逐指令实测]
+//   p2==0：检查 x>320 / x<0（C=180）/ y>480（C=360）→ 镜像角、p2=1，
+//          然后 fallthrough 到减速段；若都不命中且 p2==life 则进复位段。
+//   p2==1：speedCap=0、spdAcc = -(speed/life)；**不写 angle**（旧实现写错了）。
+//   p2==life(>=2)：整块 16B 复位（angle=A0 位拷贝、speed=V1、spdAcc=X、
+//          angleAcc=F98、f56c=PA、speedCap=XC），p1=2/3/4 时换 bulletType 42/37/30。
+//   末尾 p2>=1 → p2++。
 void Func39(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    bool decel = false;
+    bool reset = false;
     if (b.p2 == 0) {
-        return;
+        double mirror = -1.0;
+        if (b.x > kHalfW || b.x < 0.0) {
+            mirror = kDeg180;
+        } else if (b.y > kHalfH) {
+            mirror = kDeg360;
+        }
+        if (mirror >= 0.0) {
+            b.angle = MirrorAngle(b.angle, mirror);
+            b.p2 = 1;
+            decel = true;
+        } else if (b.p2 == b.life) {
+            reset = true;
+        }
+    } else if (b.p2 == 1) {
+        decel = true;
+    } else if (b.p2 == b.life) {
+        reset = true;
     }
-    if (b.p2 == 1) {
+
+    if (decel) {
         b.speed_cap = 0.0;
-        b.accel = -(b.speed / static_cast<double>(b.life));
+        if (b.life != 0) {
+            b.accel = -(b.speed / static_cast<double>(b.life));
+        }
+    } else if (reset) {
         b.angle = b.angle_init;
+        b.angle_acc = b.f598;
+        b.f56c = b.prev_angle;
+        b.speed = b.spd_init2;
+        b.accel = b.xacc;
+        b.speed_cap = b.xacc_cap;
+        if (b.p1 == 4) {
+            b.bullet_kind = 30;
+        } else if (b.p1 == 3) {
+            b.bullet_kind = 37;
+        } else if (b.p1 == 2) {
+            b.bullet_kind = 42;
+        }
+    }
+    if (b.p2 >= 1) {
+        b.p2 += 1;
     }
 }
 
@@ -297,13 +351,29 @@ void Func17(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     }
 }
 
-// bulletFunc18 @0x50dc4c —— 同 17，P2 作目标选择标记。[推断：目标选择/限速细节]
+// bulletFunc18 @0x50dc4c —— 状态机：p2 保存上一次的瞄准角。[unicorn 逐指令实测]
+//   t1 == life：p2 = (int)getAngleToEnemy(pos, angle, (int)angleInit)
+//   t1 >  life：aim = getAngleToMyShip(pos)；先写 angle=aim，
+//               d = aim - p2；d>p1 → angle=p1+p2；d<p1 → angle=p2-p1；
+//               否则保持 aim；末尾 p2=(int)angle。
+//   ★ 注意原版 else 分支的门是 d<p1（不是 d<-p1），与 func17 同类原版写法。
 void Func18(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    const double target = (b.p2 == 2) ? AngleToEnemy(b, tg) : AngleToMyShip(b, tg);
-    if (static_cast<int>(b.t) < b.life) {
-        return;
+    const int t = static_cast<int>(b.t);
+    if (t == b.life) {
+        b.p2 = static_cast<int>(AngleToEnemy(b, tg));
     }
-    RateLimitedTurn(b, target, (b.angle_init > 0.0) ? b.angle_init : b.angle_acc);
+    if (t > b.life) {
+        const double aim = AngleToMyShip(b, tg);
+        b.angle = aim;
+        const double lim = static_cast<double>(b.p1);
+        const double d = aim - static_cast<double>(b.p2);
+        if (d > lim) {
+            b.angle = lim + static_cast<double>(b.p2);
+        } else if (d < lim) {
+            b.angle = static_cast<double>(b.p2) - lim;
+        }
+        b.p2 = static_cast<int>(b.angle);
+    }
 }
 
 // bulletFunc48 @0x50f6c4 —— T==L 时瞄准。[实测]
@@ -347,10 +417,29 @@ void Func12(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     }
 }
 
-// bulletFunc13 @0x50d860 —— 每帧朝自机瞄准；P1←0x168。[推断：最近点搜索细节]
+// bulletFunc13 @0x50d860 —— 近距限速追踪。[unicorn 逐指令实测]
+//   0x50d870 t1==0 → p1=(int)angle；0x50d8d8 距离门 dist² >= life² 则**整段跳过**；
+//   否则 getAngleToPoint(自机) 后按 p1%360 做 ±2° 限速：
+//     d = aim - (p1%360)；angle = (float)(p1 + (d<2 ? -2 : 2))；p1 = (int)angle。
+//   ★ 旧实现无条件 angle=自机角，且把 p1 写成 0x168(=360)，全错。
 void Func13(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    b.angle = AngleToMyShip(b, tg);
-    b.p1 = 0x168;
+    if (static_cast<int>(b.t) == 0) {
+        b.p1 = static_cast<int>(b.angle);
+    }
+    if (!tg.has_my_ship) {
+        return;
+    }
+    const double dx = tg.my_ship_x - b.x;
+    const double dy = tg.my_ship_y - b.y;
+    const double dist2 = dx * dx + dy * dy;
+    const double radius2 = static_cast<double>(b.life) * static_cast<double>(b.life);
+    if (dist2 >= radius2) {
+        return;
+    }
+    const double aim = AngleToMyShip(b, tg);
+    const double d = aim - static_cast<double>(b.p1 % 360);
+    b.angle = static_cast<float>(static_cast<double>(b.p1) + (d < 2.0 ? -2.0 : 2.0));
+    b.p1 = static_cast<int>(b.angle);
 }
 
 // bulletFunc14 @0x50d950 —— pf1 随 life 线性变化；hitDis = pf2·pf1。[实测]
@@ -404,59 +493,91 @@ void Func76(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
 // F 边界反弹 / 镜像
 // ===========================================================================
 
-// bulletFunc1 @0x50ce78 —— 三段边界反弹。[实测]
+// bulletFunc1 @0x50ce78 —— 三段**独立**边界反弹。[unicorn 逐指令实测]
+//   0x50cea4 x>320 / 0x50cf90 x<0 / 0x50d074 y>480；每命中一段各做一次
+//   angle = (C-angle) 归一到 [0,360)（C = 180 或 360）、按 p1 换皮、life--。
+//   ★ 原版**完全不写 speed / speedCap**；旧实现写了 spdInit2(-1) 导致子弹倒飞。
 void Func1(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    bool bounce = false;
-    if (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH) {
-        bounce = true;
-    }
-    if (bounce) {
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
-        }
-    }
-    b.speed = b.spd_init2;
-    b.speed_cap = b.xacc_cap;
+    int hits = 0;
+    if (b.x > kHalfW) { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
+    if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
+    if (b.y > kHalfH) { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
+    b.life -= hits;
 }
 
-// bulletFunc7 @0x50d3b8 —— 同 1，P1>=1 叠加随机角。[实测]
+// bulletFunc7 @0x50d3b8 —— 四段独立边界反弹，每段 life--，p1>=1 时叠加
+//   MyMathUtil::random(-p1, p1)。[unicorn 逐指令实测]
+//   x>320/x<0 用 C=180，y>480/y<40 用 C=360。
 void Func7(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
-    bool bounce = false;
-    if (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH || b.y < kTop) {
-        bounce = true;
+    int hits = 0;
+    if (b.x > kHalfW) { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
+    if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
+    if (b.y > kHalfH) { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
+    if (b.y < kTop)  { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
+    if (hits == 0) {
+        return;
     }
-    if (bounce) {
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
-        }
-        if (b.p1 >= 1) {
-            b.angle += static_cast<double>(rng.RandomInt(0, 360));
-        }
+    b.life -= hits;
+    if (b.p1 >= 1) {
+        b.angle += static_cast<double>(rng.RandomInt(-b.p1, b.p1));
     }
 }
 
-// bulletFunc20 @0x50dde0 —— 边界分段（80/240/340/320 带）。[推断]
+// bulletFunc20 @0x50dde0 —— 签名带 Vec2& 位置入/出参，会**直接改写位置**。
+//   [unicorn 逐指令实测] 常量：80(0xacd9b4) / 240(0xace1a0) / 340(0xace1c0) /
+//   180(0xace194) / 320 / 420 / 100。
+//   life==0：x>240→x=320,life=1,+180；x<80→x=0,life=2,+180；
+//            y>340→y=420,life=3,+180；y<180→y=100,life=4,+180。
+//   life>0：只在 x∈(80,240) 且 y∈(180,340) 内才按 (life-1) 做四档折返链。
+//   ★ 旧实现按 y<40/y>480/x>320/x<0 无条件改角，语义完全不同。
 void Func20(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (b.y < kTop) {
-        b.life = 1;
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
+    if (b.life < 0) {
+        return;
+    }
+    if (b.life == 0) {
+        if (b.x > 240.0) {
+            b.x = 320.0;
+            b.life = 1;
+            b.angle += kDeg180;
+        } else if (b.x < 80.0) {
+            b.x = 0.0;
+            b.life = 2;
+            b.angle += kDeg180;
         }
-    } else if (b.y > kHalfH) {
-        b.life = 2;
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
+        if (b.y > 340.0) {
+            b.y = 420.0;
+            b.life = 3;
+            b.angle += kDeg180;
+        } else if (b.y < 180.0) {
+            b.y = 100.0;
+            b.life = 4;
+            b.angle += kDeg180;
         }
-    } else if (b.x > kHalfW) {
-        b.life = 3;
-        b.angle += 90.0;
-    } else if (b.x < 0.0) {
-        b.life = 4;
-        b.angle -= 90.0;
+        return;
+    }
+    if (b.x <= 80.0 || b.x >= 240.0 || b.y <= 180.0 || b.y >= 340.0) {
+        return;
+    }
+    const int idx = b.life - 1;
+    if (idx > 3) {
+        return;
+    }
+    // 0x50de60 起的四档跳转表是**级联 fallthrough**（每档追加一次折返）。
+    switch (idx) {
+        case 0:
+            b.x = 320.0; b.life = 2; b.angle += kDeg180;
+            [[fallthrough]];
+        case 1:
+            b.x = 0.0; b.life = 3; b.angle += kDeg180;
+            [[fallthrough]];
+        case 2:
+            b.y = 420.0; b.life = 4; b.angle += kDeg180;
+            [[fallthrough]];
+        case 3:
+            b.y = 100.0; b.life = 5; b.angle += kDeg180;
+            break;
+        default:
+            break;
     }
 }
 
@@ -481,19 +602,29 @@ void Func32(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     b.p1 += 1;
 }
 
-// bulletFunc38 @0x50edcc —— 条件单次反弹；a = A0 + a。[推断]
+// bulletFunc38 @0x50edcc —— 节拍折返。[unicorn 逐指令实测]
+//   0x50edec 门：p2<1 直接返回；dt=t1-life>0 且 dt%life==0 才走主体；
+//   主体：p2--、angle = angleInit + angle；随后若 p2-1==1 则换皮并 p1++。
+//   dt<=0 且 p2==1 且 p1==1 时也换皮并 p1++。
+//   ★ 旧实现无条件 angle = angleInit + angle（初值 -1 → 每帧偏 1°）。
 void Func38(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    bool bounce = false;
-    if (b.y > kHalfH || b.y < kTop || b.x > kHalfW || b.x < 0.0) {
-        bounce = true;
+    const int p2 = b.p2;
+    if (p2 < 1) {
+        return;
     }
-    if (bounce) {
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
+    const int dt = static_cast<int>(b.t) - b.life;
+    const bool on_beat = (dt > 0 && b.life != 0 && (dt % b.life) == 0);
+    if (!on_beat) {
+        if (p2 == 1 && b.p1 == 1) {
+            b.p1 += 1;    // 0x50ee8c: 换贴图并 p1++
         }
+        return;
     }
+    b.p2 = p2 - 1;
     b.angle = b.angle_init + b.angle;
+    if (p2 - 1 == 1) {
+        b.p1 += 1;
+    }
 }
 
 // bulletFunc57 @0x50fd84 —— 在 A0±PA 之间三角波。[实测]
@@ -807,12 +938,35 @@ void Func85(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 // H 分裂/召唤（Boss）—— 需宿主回调生成子子弹，这里只做状态标记。
 // ===========================================================================
 
-// bulletFunc31 @0x50e498 —— Boss 分裂/召唤。[推断：子子弹生成交宿主]
+// bulletFunc31 @0x50e498 —— t1==p1 时按 (life-1) 走 31 档跳转表换皮 + 设半径。
+//   [unicorn 逐指令实测：life=1..31 逐档探测 hitDis / bulletType]
+//   2.4 / 3 / 3 / 43 / 2.4 / 2.4 来自 0x4019999A / 0x40400000 / 0x422C0000，
+//   第 7 档起只换 bulletType（不改 hitDis）。
 void Func31(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) == b.p1 && b.life <= 0x1e) {
-        b.rotate_flg = 2;
-        b.p2 = 1;  // 标记「本帧请求分裂」
+    if (static_cast<int>(b.t) != b.p1) {
+        return;
     }
+    const int idx = b.life - 1;
+    if (idx < 0 || idx > 30) {
+        return;
+    }
+    static constexpr float kHitDis[31] = {
+        2.4f, 3.0f, 3.0f, 43.0f, 2.4f, 2.4f,
+        4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f,
+        4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f,
+        4.0f, 4.0f, 4.0f, 4.0f, 4.0f,
+    };
+    static constexpr int kKind[31] = {
+        45, 45, 45, 45, 45, 45,
+        207, 210, 135, 206, 10, 186, 91, 184, 187, 189,
+        184, 189, 189, 175, 150, 169, 217, 218, 199, 211,
+        213, 215, 64, 69, 70,
+    };
+    b.hit_dis = kHitDis[idx];
+    b.bullet_kind = kKind[idx];
+    // 宿主侧扩展：分裂事件标记（原版对应的是 SpriteFrame 切换，不进逐弹状态）。
+    b.rotate_flg = 2;
+    b.p2 = 1;
 }
 
 // bulletFunc50 @0x50f800 —— Boss 蓄力/阶段。[推断：忽略音效/特效]

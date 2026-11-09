@@ -12,6 +12,7 @@ vptr 指向合成的 232 槽虚表（每槽一个哨兵地址，命中即用 Pyt
     python3 tna_emu.py --all --ticks 90 --out /tmp/emu.jsonl
 """
 import argparse
+import ctypes
 import json
 import math
 import struct
@@ -193,6 +194,37 @@ def set_s(uc, val):
     uc.reg_write(UC_ARM64_REG_S0, struct.unpack("<I", struct.pack("<f", float(val)))[0])
 
 
+# MyMathUtil::sin/cos 的真实实现（0x5ab0c0 / 0x5ab0dc，逐指令）：
+#   s1 = 2π(float, @0xb23b04)  s2 = 360.0f(@0xace178)
+#   s0 = deg * s1   (fmul, float)
+#   s0 = s0 / s2    (fdiv, float)
+#   b sinf@plt / cosf@plt
+# 旧 hook 用 Python 的 double math.sin(math.radians(deg))，在 func36 的
+# `fcvtzs w8,s0,#7`（×128 截断）边界上会差 1（192 vs 191）——那是**基准误差**，
+# 不是生产缺陷。改用 libm 的单精度 sinf/cosf 后 79 函数整体无回归，func36 转绿。
+_LIBM = ctypes.CDLL("libm.so.6")
+_sinf = _LIBM.sinf
+_sinf.argtypes = [ctypes.c_float]
+_sinf.restype = ctypes.c_float
+_cosf = _LIBM.cosf
+_cosf.argtypes = [ctypes.c_float]
+_cosf.restype = ctypes.c_float
+_K2PI_F = ctypes.c_float(6.2831854820251465).value   # 0xb23b04
+
+
+def _deg2rad_f(deg):
+    prod = ctypes.c_float(deg * _K2PI_F).value
+    return ctypes.c_float(prod / 360.0).value
+
+
+def _sin_deg_f(_emu, uc):
+    set_s(uc, _sinf(_deg2rad_f(s_reg(uc))))
+
+
+def _cos_deg_f(_emu, uc):
+    set_s(uc, _cosf(_deg2rad_f(s_reg(uc))))
+
+
 # 必须与 apps/phk_tna_replica/main.cpp 的 kShipX/kShipY/kEnemyX/kEnemyY 一致，
 # 否则所有带瞄准的函数都会因宿主坐标不同而假失败。
 MY_SHIP = (320.0, 600.0)
@@ -230,10 +262,8 @@ HOOKS = {
         struct.unpack("<f", struct.pack("<I", uc.reg_read(UC_ARM64_REG_S0) & 0xFFFFFFFF))[0],
         struct.unpack("<f", struct.pack("<I", uc.reg_read(UC_ARM64_REG_S1) & 0xFFFFFFFF))[0],
         ENEMY[0], ENEMY[1])),
-    0x2ece70: lambda e, uc: set_s(uc, math.sin(math.radians(     # MyMathUtil::sin（度）
-        struct.unpack("<f", struct.pack("<I", uc.reg_read(UC_ARM64_REG_S0) & 0xFFFFFFFF))[0]))),
-    0x2f01e0: lambda e, uc: set_s(uc, math.cos(math.radians(     # MyMathUtil::cos（度）
-        struct.unpack("<f", struct.pack("<I", uc.reg_read(UC_ARM64_REG_S0) & 0xFFFFFFFF))[0]))),
+    0x2ece70: _sin_deg_f,       # MyMathUtil::sin（度，单精度 sinf）
+    0x2f01e0: _cos_deg_f,       # MyMathUtil::cos（度，单精度 cosf）
     0x2f8990: lambda e, uc: (uc.mem_write(SCRATCH + 0x100,
                struct.pack("<ff", MY_SHIP[0], MY_SHIP[1])),
                uc.reg_write(UC_ARM64_REG_X0, SCRATCH + 0x100)),   # getMyShipPos
