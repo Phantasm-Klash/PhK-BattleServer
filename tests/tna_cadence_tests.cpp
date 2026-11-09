@@ -393,10 +393,13 @@ void TestPhaseRotationEndToEnd() {
 }
 
 // 回归：没有段表的 boss（#11 抽样样板 boss21）与两条旧路径（mvp 合成弹幕、
-// 默认 ruleset）必须与改动**前**逐字节一致。
+// 默认 ruleset）的状态哈希保持固定基线；配置：2 名玩家、310 tick、无输入。
 //
-// golden hash 取自改动前的构建（commit aecaa7e 的 build-linux，静态库直连探针），
-// 配置与本函数完全一致：2 名玩家、310 tick、无输入。
+// 2026-11-09 更新：bulletFunc 逐弹对齐原版（unicorn 直接执行 libMyGame.so，
+// 79/79 逐帧一致）后，boss21_tna phase0 与默认 ruleset 两条路径的弹幕轨迹
+// 随运动学修正而变化，基线更新为 b0fd5cfe... / 223e3405...。
+// 旧基线：79450138a8f24027 / ae1e49473951ac83。
+// 另两条（boss21 #11 sample、mvp）哈希未变，继续保护段表/合成弹幕不受牵连。
 void TestNoSegmentRegression() {
     struct Case {
         const char* label;
@@ -407,9 +410,9 @@ void TestNoSegmentRegression() {
     };
     const Case cases[] = {
         {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "a7c9e3ee688e4bf0", "chain:boss21"},
-        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "79450138a8f24027", "chain:boss21_tna"},
+        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "b0fd5cfe5484cf69", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
-        {"regress default ruleset", "", "boss21_tna", "ae1e49473951ac83", nullptr},
+        {"regress default ruleset", "", "boss21_tna", "223e3405a6482058", nullptr},
     };
     for (const Case& c : cases) {
         phk::battle::BossRaceConfig config;

@@ -239,6 +239,56 @@ def ang_to(x, y, px, py):
 _RND = {"n": 0}
 
 
+class _DetRng:
+    """生产端 DeterministicRng 的逐位等价 Python 实现（FNV-1a + Mix32）。
+
+    原版 MyMathUtil::random 走 arc4random，无法复现；本项目用确定性 RNG 取代，
+    基准侧必须复用**同一个** RNG，否则含随机分支的 func（62/70）永远对不上。
+    """
+
+    def __init__(self, seed, tick, pattern, spawn=0):
+        self.seed = seed
+        self.tick = tick
+        self.pattern = pattern
+        self.spawn = spawn
+        self.counter = 0
+
+    def next_u32(self):
+        h = 2166136261
+        for v in (self.seed, self.tick, self.pattern, self.spawn, self.counter):
+            for _ in range(8):
+                h ^= (v & 0xFF)
+                h = (h * 16777619) & 0xFFFFFFFF
+                v >>= 8
+        self.counter += 1
+        h ^= h >> 16
+        h = (h * 0x7FEB352D) & 0xFFFFFFFF
+        h ^= h >> 15
+        h = (h * 0x846CA68B) & 0xFFFFFFFF
+        h ^= h >> 16
+        return h & 0xFFFFFFFF
+
+    def rand_int(self, a, b):
+        if b < a:
+            a, b = b, a
+        span = (b - a) + 1
+        return a + (self.next_u32() % span)
+
+
+_RNG = None
+
+
+def _my_random(_emu, uc):
+    """MyMathUtil::random(int a, int b)@plt：a=w0, b=w1，返回值写 w0。"""
+    a = uc.reg_read(UC_ARM64_REG_X0) & 0xFFFFFFFF
+    b = uc.reg_read(UC_ARM64_REG_X1) & 0xFFFFFFFF
+    if a >= 0x80000000:
+        a -= 0x100000000
+    if b >= 0x80000000:
+        b -= 0x100000000
+    uc.reg_write(UC_ARM64_REG_X0, _RNG.rand_int(a, b) & 0xFFFFFFFF)
+
+
 def _arc4(emu_, uc):
     # 确定性替代 arc4random（MyMathUtil::random @0x5ab0f8 调它）
     _RND["n"] += 1
@@ -250,6 +300,7 @@ def _arc4(emu_, uc):
 
 
 HOOKS = {
+    0x2f7860: _my_random,       # MyMathUtil::random(int,int)@plt（与生产同一 RNG）
     0x2e67c0: _arc4,                                                  # arc4random@plt
     # EnemyBullet::setBulletType(kEnemyBullet)@plt：只关心写入的类型值
     0x2e8d90: lambda e, uc: e.wr_i(F["bulletType"], uc.reg_read(UC_ARM64_REG_X1)),
@@ -289,8 +340,13 @@ def snapshot(emu, func, tick):
 
 
 def run_func(emu, func_addr, size, ticks, init, seed=12345):
+    global _RNG
     uc = emu.uc
-    # 初始化对象
+    # 每个 func 都从**全新的零初始化对象**开始。BulletMotion 的默认构造把全部
+    # 字段清零，而 init 只显式覆盖其中一部分；旧实现复用同一块内存，导致
+    # bulletLoop(0x58c)、spdAcc(0x574)、vx/vy 等未列出的字段带着上一个 func
+    # 的残留值（func74 曾因此被误判：bulletLoop>=1 → 走 setOpacity(life) 分支）。
+    uc.mem_write(OBJ, b"\x00" * OBJ_SIZE)
     uc.mem_write(OBJ, struct.pack("<Q", VT))
     uc.mem_write(OBJ + 0x700, b"\x00" * 0x100)
     for k, v in init.items():
@@ -305,6 +361,8 @@ def run_func(emu, func_addr, size, ticks, init, seed=12345):
                   "x": float(init.get("x", 320.0)), "y": float(init.get("y", 480.0))})
     rows = []
     for tick in range(ticks):
+        # 与 phk_tna_replica 每 tick 新建 DeterministicRng(seed,tick,func,0) 一致。
+        _RNG = _DetRng(seed, tick, init["funcNo"], 0)
         # 复刻 UpdateBulletMotion 的前后处理，使唯一差异只剩 bulletFunc 本体
         if emu.rd_i(F["delay"]) > 0:
             emu.wr_i(F["delay"], emu.rd_i(F["delay"]) - 1)
