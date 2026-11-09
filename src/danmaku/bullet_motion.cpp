@@ -943,7 +943,15 @@ void Func85(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 //   2.4 / 3 / 3 / 43 / 2.4 / 2.4 来自 0x4019999A / 0x40400000 / 0x422C0000，
 //   第 7 档起只换 bulletType（不改 hitDis）。
 void Func31(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) != b.p1) {
+    const int t = static_cast<int>(b.t);
+    // 本项目扩展：链式分裂（1→8→64）的宿主标记沿用旧条件 life<=0x1e，
+    // 与原版逐弹状态的 life>=1 门**解耦**。否则 life=0 的宿主不再分裂，
+    // phk_danmaku_chain_tests 会退化成「只有 1 颗弹」。
+    if (t == b.p1 && b.life <= 0x1e) {
+        b.rotate_flg = 2;
+        b.p2 = 1;
+    }
+    if (t != b.p1) {
         return;
     }
     const int idx = b.life - 1;
@@ -964,9 +972,6 @@ void Func31(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     };
     b.hit_dis = kHitDis[idx];
     b.bullet_kind = kKind[idx];
-    // 宿主侧扩展：分裂事件标记（原版对应的是 SpriteFrame 切换，不进逐弹状态）。
-    b.rotate_flg = 2;
-    b.p2 = 1;
 }
 
 // bulletFunc50 @0x50f800 —— Boss 蓄力/阶段。[推断：忽略音效/特效]

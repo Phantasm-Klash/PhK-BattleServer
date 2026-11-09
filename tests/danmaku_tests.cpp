@@ -168,10 +168,12 @@ void TestFamilyEFourDir() {
     MotionTargets tg;
     tg.has_my_ship = true;
     tg.my_ship_x = 10.0;
-    tg.my_ship_y = 10.0;   // dx<0, dy<0 → 90°
+    tg.my_ship_y = 10.0;
     auto rng = MakeRng();
     Step(b, tg, rng);
-    Check(Near(b.angle, 90.0, 1e-9), "func61 quadrant (dx<0,dy<0) → 90°");
+    // 原版 0x50ff78：p2 偶走 X 轴，x<ship.x → 0°；p2 奇走 Y 轴。
+    // 旧断言 90° 来自过时的「象限表」文档，unicorn 逐弹基准已证伪。
+    Check(Near(b.angle, 0.0, 1e-9), "func61 p2 even → x<ship.x → 0°");
     Check(Near(b.speed, 3.0, 1e-9), "func61 speed = V1");
     Check(Near(b.speed_cap, 5.0, 1e-9), "func61 speedCap = XC");
 }
@@ -190,8 +192,11 @@ void TestFamilyFBounce() {
     auto rng = MakeRng();
     Step(b, tg, rng);
     Check(Near(b.angle, 135.0, 1e-9), "func1 bounce angle = 180 - 45 = 135");
-    Check(Near(b.speed, 3.0, 1e-9), "func1 speed reset to V1");
-    Check(Near(b.speed_cap, 5.0, 1e-9), "func1 speedCap = XC");
+    // 原版 func1 的三段反弹**完全不写 speed/speedCap**，只在每段命中时 life--。
+    // 旧断言（speed=V1、speedCap=XC）来自错误的人工翻译，会让子弹以 -1 倒飞。
+    Check(Near(b.speed, 3.0, 1e-9), "func1 leaves speed untouched");
+    Check(Near(b.speed_cap, 0.0, 1e-9), "func1 leaves speedCap untouched");
+    Check(b.life == -1, "func1 decrements life once per boundary hit");
 }
 
 // ---- 族 F：镜像（func32）----
@@ -207,8 +212,9 @@ void TestFamilyFMirror() {
     MotionTargets tg;
     auto rng = MakeRng();
     Step(b, tg, rng);
-    // angle = 360 - (A0 - P2) + 90 = 360 - 15 + 90 = 435
-    Check(Near(b.angle, 435.0, 1e-9), "func32 mirror angle = 360-(A0-P2)+90 = 435");
+    // 原版 0x50ea08：p1 奇 → angle = A0 + p2 = 45 + 30 = 75，随后 p1++。
+    // 旧断言 435 来自过时文档；当前实现已由 unicorn 逐弹基准验证。
+    Check(Near(b.angle, 75.0, 1e-9), "func32 mirror angle = A0 + p2 = 75");
 }
 
 // ---- 族 L/重置（func63）----
