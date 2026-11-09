@@ -574,6 +574,49 @@ def run_update(emu, func_no, ticks, init, seed=12345):
     return rows
 
 
+def make_init(fn, profile):
+    """与 apps/phk_tna_replica/main.cpp 的 MakeInitial(func, profile) 逐字段一致。"""
+    init = {
+        "funcNo": fn, "x": 320.0, "y": 480.0, "angle": 0.0, "speed": 3.0,
+        "bulletType": 45, "hitDis": 4.0, "halfW": 4.0, "halfH": 4.0,
+        "pf1": 1.0, "pf2": 4.0, "hitHantei": 1, "bulletLife": 0,
+        "life": 4, "t1": 0,
+        "angleInit": -1.0, "speedInit": -1.0, "spdInit2": -1.0,
+        "angleSpd": 0.0, "angleAcc": 0.0, "f56c": 0.0, "speedCap": 0.0,
+        "f598": 0.0, "prevAngle": 0.0, "xacc": 0.0, "xaccCap": 0.0,
+        "accel": 0.0, "rotateFlg": 0, "delay": 0, "vanishDelay": 0,
+        "p1": 0, "p2": 0, "f5e8": 0.0,
+    }
+    if fn in (28, 36, 79):
+        init["p1"] = 2
+        init["p2"] = 8
+    if profile == 1:
+        init.update({
+            "x": 400.0, "y": 520.0, "angle": 45.0, "speed": 2.0,
+            "hitDis": 6.0, "halfW": 6.0, "halfH": 6.0,
+            "pf1": 2.0, "pf2": 3.0,
+            "angleInit": 30.0, "speedInit": 2.0, "spdInit2": 4.0,
+            "angleSpd": 2.0, "angleAcc": 1.0, "f56c": 1.0,
+            "speedCap": 8.0, "f598": 0.5, "prevAngle": 10.0,
+            "xacc": 0.25, "xaccCap": 6.0, "bulletLife": 1,
+        })
+        if fn not in (28, 36, 79):
+            init["p1"], init["p2"] = 2, 3
+    elif profile == 2:
+        init.update({
+            "x": -10.0, "y": 30.0, "angle": 270.0, "speed": 1.5,
+            "hitDis": 5.0, "halfW": 5.0, "halfH": 5.0,
+            "pf1": 0.5, "pf2": 2.0,
+            "angleInit": -45.0, "speedInit": -3.0, "spdInit2": -2.0,
+            "angleSpd": -1.0, "angleAcc": -0.5, "f56c": -1.0,
+            "speedCap": 2.0, "f598": -0.25, "prevAngle": 5.0,
+            "xacc": -0.5, "xaccCap": 1.0,
+        })
+        if fn not in (28, 36, 79):
+            init["p1"], init["p2"] = 1, 5
+    return init
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--func", type=int)
@@ -582,6 +625,8 @@ def main():
     ap.add_argument("--out", default="/tmp/emu.jsonl")
     ap.add_argument("--mode", choices=("update", "func"), default="update",
                     help="update=执行原版整帧(默认)；func=只跑独立符号(旧口径)")
+    ap.add_argument("--profile", type=int, default=0, choices=(0, 1, 2),
+                    help="初值档：0=基准 1=出屏+非零参数 2=负向边界+负参数")
     args = ap.parse_args()
 
     load_syms()
@@ -596,22 +641,9 @@ def main():
         for fn in funcs:
             if args.mode == "func" and fn not in FUNC_ADDR:
                 continue
-            # 与 apps/phk_tna_replica/main.cpp 的 MakeInitial 完全一致，
+            # 必须与 phk_tna_replica 的 MakeInitial 逐字段一致，
             # 否则 -1 哨兵值（A0/V0/V1）会让两侧走不同分支。
-            init = {
-                "funcNo": fn, "x": 320.0, "y": 480.0, "angle": 0.0, "speed": 3.0,
-                "bulletType": 45, "hitDis": 4.0, "halfW": 4.0, "halfH": 4.0,
-                "pf1": 1.0, "pf2": 4.0, "hitHantei": 1, "bulletLife": 0,
-                "life": 4, "t1": 0,
-                "angleInit": -1.0, "speedInit": -1.0, "spdInit2": -1.0,
-                "angleSpd": 0.0, "angleAcc": 0.0, "f56c": 0.0, "speedCap": 0.0,
-                "f598": 0.0, "prevAngle": 0.0, "xacc": 0.0, "xaccCap": 0.0,
-                "accel": 0.0, "rotateFlg": 0, "delay": 0, "vanishDelay": 0,
-                "p1": 0, "p2": 0, "f5e8": 0.0,
-            }
-            if fn in (28, 36, 79):
-                init["p1"] = 2
-                init["p2"] = 8
+            init = make_init(fn, args.profile)
             for life0 in (4, 1, 0):
                 init2 = dict(init)
                 init2["life"] = life0

@@ -81,25 +81,11 @@ double DistSqToEnemy(const BulletMotion& b, const MotionTargets& tg) {
 // A 初始化/直线
 // ===========================================================================
 
-// bulletFunc0 @0x50cdcc —— 基础初始化 + 直线。[实测]
-void Func0(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (b.angle_init != kNeg1) {
-        b.angle = b.angle_init;
-    }
-    if (b.speed_init != kNeg1) {
-        b.angle_spd = b.speed_init;
-        b.angle_acc = b.f598;
-        b.f56c = b.prev_angle;
-    }
-    if (b.spd_init2 != kNeg1) {
-        b.speed = b.spd_init2;
-    }
-    if (b.xacc != kNeg1) {
-        b.accel = b.xacc;
-    }
-    if (b.xacc_cap != kNeg1) {
-        b.speed_cap = b.xacc_cap;
-    }
+// bulletFunc0 @0x50cdcc —— **不是逐帧路径**。
+// funcNo=0 在 update 跳转表里 index=-1（越界），直接落共用出口 0x50c618，
+// 全库没有 `bl bulletFunc0@plt`；独立符号是 spawn 时用的初始化函数。
+// 整帧实测：非零参数下 angle/speed 保持前处理后的值，不被引擎改写。
+void Func0(BulletMotion&, const MotionTargets&, DeterministicRng&) {
 }
 
 // bulletFunc4 @0x50bbf0（update 分派入口）—— 由 +0x541 标志门控。
@@ -438,10 +424,13 @@ void Func11(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 // bulletFunc12 @0x50d7a8 —— 出屏（含 y<40）后重新瞄准。[实测]
 void Func12(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     if (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH || b.y < kTop) {
+        // 0x50d840：出屏且 p1==1/2 时除了改角，还无条件 life--。
         if (b.p1 == 2) {
             b.angle = AngleToEnemy(b, tg);
+            b.life -= 1;
         } else if (b.p1 == 1) {
             b.angle = AngleToMyShip(b, tg);
+            b.life -= 1;
         }
     }
 }
@@ -559,6 +548,12 @@ void Func1(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
     if (b.y > kHalfH) { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
     b.life -= hits;
+    // 0x50cee8 起每段命中后按 (p1-1) 走字节表 @0xb0a972 换 bulletType：
+    // p1=1→30, 2→19, 3→109, 4→168；p1<=0 时 index 越界不换。
+    if (hits > 0 && b.p1 >= 1 && b.p1 <= 4) {
+        static constexpr int kKindByP1[4] = {30, 19, 109, 168};
+        b.bullet_kind = kKindByP1[b.p1 - 1];
+    }
 }
 
 // bulletFunc7 @0x50d3b8 —— 四段独立边界反弹，每段 life--，p1>=1 时叠加
@@ -1063,12 +1058,11 @@ void Func84(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc85 @0x5110a4 —— 接近自机 → 换 hitDis。[实测]
 void Func85(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (DistSqToMyShip(b, tg) < static_cast<double>(b.life)) {
-        if (b.bullet_kind == 0x25) {
-            b.hit_dis = 20.0;
-        } else if (b.bullet_kind == 0x2a) {
-            b.hit_dis = 4.0;
-        }
+    // 0x5112b4 `str s8,[x19,#1356]` 无条件写 hitDis；三档初值实测均为 4.0，
+    // 只有 bulletType==0x25 且距离门命中时才取 20.0。旧实现漏了默认写回。
+    b.hit_dis = 4.0;
+    if (DistSqToMyShip(b, tg) < static_cast<double>(b.life) && b.bullet_kind == 0x25) {
+        b.hit_dis = 20.0;
     }
 }
 

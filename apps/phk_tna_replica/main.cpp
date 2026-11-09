@@ -41,7 +41,7 @@ MotionTargets MakeTargets() {
     return tg;
 }
 
-BulletMotion MakeInitial(int func) {
+BulletMotion MakeInitial(int func, int profile) {
     BulletMotion b;
     b.x = 320.0;
     b.y = 480.0;
@@ -61,6 +61,28 @@ BulletMotion MakeInitial(int func) {
         b.p1 = 2;
         b.p2 = 8;
     }
+    if (profile == 1) {
+        // 出屏 + 非零运动参数：触发边界分支、角加速度、速度上限。
+        b.x = 400.0; b.y = 520.0; b.angle = 45.0; b.speed = 2.0;
+        b.hit_dis = 6.0; b.half_w = 6.0; b.half_h = 6.0;
+        b.pf1 = 2.0; b.pf2 = 3.0;
+        b.angle_init = 30.0; b.speed_init = 2.0; b.spd_init2 = 4.0;
+        b.angle_spd = 2.0; b.angle_acc = 1.0; b.f56c = 1.0;
+        b.speed_cap = 8.0; b.f598 = 0.5; b.prev_angle = 10.0;
+        b.xacc = 0.25; b.xacc_cap = 6.0;
+        b.bullet_life = 1;
+        if (func != 28 && func != 36 && func != 79) { b.p1 = 2; b.p2 = 3; }
+    } else if (profile == 2) {
+        // 负向边界 + 负参数：触发 x<0 / y<40 与镜像/减速分支。
+        b.x = -10.0; b.y = 30.0; b.angle = 270.0; b.speed = 1.5;
+        b.hit_dis = 5.0; b.half_w = 5.0; b.half_h = 5.0;
+        b.pf1 = 0.5; b.pf2 = 2.0;
+        b.angle_init = -45.0; b.speed_init = -3.0; b.spd_init2 = -2.0;
+        b.angle_spd = -1.0; b.angle_acc = -0.5; b.f56c = -1.0;
+        b.speed_cap = 2.0; b.f598 = -0.25; b.prev_angle = 5.0;
+        b.xacc = -0.5; b.xacc_cap = 1.0;
+        if (func != 28 && func != 36 && func != 79) { b.p1 = 1; b.p2 = 5; }
+    }
     b.t = 0.0;
     return b;
 }
@@ -70,12 +92,14 @@ BulletMotion MakeInitial(int func) {
 int main(int argc, char** argv) {
     std::string out_path = "/tmp/tna-replica.jsonl";
     int ticks = 90;
+    int profile = 0;
     std::uint64_t seed = 12345;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--out" && i + 1 < argc) out_path = argv[++i];
         else if (arg == "--ticks" && i + 1 < argc) ticks = std::atoi(argv[++i]);
         else if (arg == "--seed" && i + 1 < argc) seed = std::strtoull(argv[++i], nullptr, 10);
+        else if (arg == "--profile" && i + 1 < argc) profile = std::atoi(argv[++i]);
     }
 
     const MotionTargets targets = MakeTargets();
@@ -84,7 +108,7 @@ int main(int argc, char** argv) {
 
     for (int func = 0; func <= 85; ++func) {
       for (const int life0 : {4, 1, 0}) {
-        BulletMotion b = MakeInitial(func);
+        BulletMotion b = MakeInitial(func, profile);
         b.life = life0;
         for (int tick = 0; tick < ticks; ++tick) {
             DeterministicRng rng(seed, static_cast<std::uint64_t>(tick),
