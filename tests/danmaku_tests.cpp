@@ -72,7 +72,7 @@ void TestFamilyAStraightLine() {
     Check(Near(b.y, 15.0, 1e-5), "func0 直线累计位移 y = 3*5");
 }
 
-// ---- 族 B：加速到上限（func5）----
+// ---- 族 B：func5 的 update 内联门控 ----
 void TestFamilyBAccelerate() {
     BulletMotion b;
     b.bullet_func_no = 5;
@@ -82,13 +82,15 @@ void TestFamilyBAccelerate() {
     b.xacc_cap = 5.0;
     MotionTargets tg;
     auto rng = MakeRng();
+    // 整帧基准：update 分派入口 0x50b654 只有
+    // `ldrb w8,[x19,#1345]; cbz w8, 共用出口`，生产端该标志恒 0，
+    // 所以独立符号 0x50d250 的 v+=X / clamp / life-- 不在逐帧路径上。
     Step(b, tg, rng);
-    Check(Near(b.speed, 2.0, 1e-9), "func5 v += X (1 step)");
+    Check(Near(b.speed, 0.0, 1e-9), "func5 inline gate: speed untouched");
+    Check(b.life == 0, "func5 inline gate: life untouched");
     Step(b, tg, rng);
     Step(b, tg, rng);
-    Check(Near(b.speed, 5.0, 1e-9), "func5 v clamped to XC = 5");
-    Step(b, tg, rng);
-    Check(Near(b.speed, 5.0, 1e-9), "func5 stays at cap");
+    Check(Near(b.speed, 0.0, 1e-9), "func5 stays untouched");
 }
 
 // ---- 族 C：正弦调速（func25）----
@@ -182,6 +184,7 @@ void TestFamilyEFourDir() {
 void TestFamilyFBounce() {
     BulletMotion b;
     b.bullet_func_no = 1;
+    b.life = 4;       // update 分派入口 0x50b514 的 `life<1` 门
     b.angle = 45.0;
     b.speed = 3.0;
     b.spd_init2 = 3.0;
@@ -196,7 +199,7 @@ void TestFamilyFBounce() {
     // 旧断言（speed=V1、speedCap=XC）来自错误的人工翻译，会让子弹以 -1 倒飞。
     Check(Near(b.speed, 3.0, 1e-9), "func1 leaves speed untouched");
     Check(Near(b.speed_cap, 0.0, 1e-9), "func1 leaves speedCap untouched");
-    Check(b.life == -1, "func1 decrements life once per boundary hit");
+    Check(b.life == 3, "func1 decrements life once per boundary hit");
 }
 
 // ---- 族 F：镜像（func32）----

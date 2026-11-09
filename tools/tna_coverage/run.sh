@@ -17,11 +17,14 @@ SEED="${SEED:-12345}"
 TICKS="${TICKS:-90}"
 mkdir -p "$OUT"
 
-# 1) 原版参考：优先用 unicorn 直接执行 libMyGame_arm64.so 里的函数体（真值），
-#    没有 unicorn 时回退到 bullet_funcs_reimpl.hpp 的汇编重实现。
+# 1) 原版参考：unicorn 默认执行 EnemyBullet::update **完整一帧**
+#    （分派点 0x50b4e8 → ret），含内联实现、共用出口、速度合成与位置积分，
+#    86 个 funcNo 全覆盖。没有 unicorn 时回退到 bullet_funcs_reimpl.hpp
+#    的汇编重实现（旧口径，只覆盖有独立符号的 func）。
+#    另可用 TNA_EMU_MODE=func 显式跑「只执行独立 func 本体」的对照。
 if python3 -c 'import unicorn' 2>/dev/null; then
     python3 "$HERE/tna_emu.py" --all --ticks "$TICKS" \
-        --out "$OUT/tna-reference.jsonl"
+        --mode "${TNA_EMU_MODE:-update}" --out "$OUT/tna-reference.jsonl"
 else
     g++ -std=c++17 -O2 -I "$HERE/reference" \
         -o "$OUT/tna_reference_runner" "$HERE/tna_reference_runner.cpp"

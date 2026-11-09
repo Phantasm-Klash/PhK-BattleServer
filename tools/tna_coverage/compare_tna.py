@@ -132,6 +132,9 @@ def main() -> None:
     reference = load_jsonl(Path(args.reference))
     replica = load_jsonl(Path(args.replica))
     ref_impl, rng_funcs, prod_noop = source_sets(Path(args.reimpl), Path(args.prod))
+    # emu 整帧基准下，86 个 funcNo 都有数据；「已解码」不再取人工重实现头文件，
+    # 而是直接取参考数据里出现的编号数，避免继续显示过时的 56/79。
+    ref_count = len({k[0] for k in reference})
     rows = compare(reference, replica, ref_impl, rng_funcs, prod_noop,
                    oracle=args.oracle)
 
@@ -146,7 +149,7 @@ def main() -> None:
         "# 原版 TNA 弹幕类型覆盖矩阵",
         "",
         f"参考 {len(reference)} 条 / 复刻 {len(replica)} 条逐弹状态；"
-        f"原版已解码 {len(ref_impl)} 个 func，生产 Noop {len(prod_noop)} 个，"
+        f"原版有数据的 func {ref_count} 个，生产 Noop {len(prod_noop)} 个，"
         f"依赖随机 {len(rng_funcs)} 个。",
         "",
         "| 判定 | 数量 | 含义 |",
@@ -172,7 +175,7 @@ def main() -> None:
               ", ".join(str(r["func"]) for r in rows if r["verdict"] == "MATCH") or "(无)", ""]
     (out_dir / "tna_coverage.md").write_text("\n".join(lines), encoding="utf-8")
     print("reference", len(reference), "replica", len(replica))
-    print("ref_impl", len(ref_impl), "prod_noop", len(prod_noop), "rng", len(rng_funcs))
+    print("ref_funcs", ref_count, "prod_noop", len(prod_noop), "rng", len(rng_funcs))
     print(dict(counts))
     print("wrote", csv_path, out_dir / "tna_coverage.md")
 

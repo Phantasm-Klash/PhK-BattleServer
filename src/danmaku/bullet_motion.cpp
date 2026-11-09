@@ -102,10 +102,11 @@ void Func0(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     }
 }
 
-// bulletFunc4 @0x50d238 —— v = V1（速度重置）。[实测]
-void Func4(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    b.speed = b.spd_init2;
-    b.life -= 1;      // 0x50d244: 末尾无条件 life--
+// bulletFunc4 @0x50bbf0（update 分派入口）—— 由 +0x541 标志门控。
+// 整帧实测：入口只有 `ldrb w8,[x19,#1345]; cbz w8, 0x50c618`；
+// 生产端不产生该标志（恒 0），所以**整段不执行**，speed/life 都不改。
+// 独立符号 0x50d238 里的 `speed=V1; life--` 是给别处调用的，不是逐帧路径。
+void Func4(BulletMotion&, const MotionTargets&, DeterministicRng&) {
 }
 
 // bulletFunc29 @0x511384 —— 分段重置 + 合成 vx/vy。[实测]
@@ -124,39 +125,36 @@ void Func29(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
         b.speed = b.spd_init2;
         b.angle_acc = b.f598;
         b.speed_cap = b.xacc_cap;
+        // 原版 `bl bulletFunc29` 后直接 b 50cafc，跳过默认速度合成，
+        // 所以这里必须自己用更新后的 (angle,speed) 合成 vx/vy。
+        b.vx = b.speed * CosDeg(b.angle);
+        b.vy = b.speed * SinDeg(b.angle);
     }
 }
 
-// bulletFunc47 @0x5114a8 —— 每帧重算 vx/vy（直线）。[实测]
+// bulletFunc47 @0x50c9f8（update 内联）—— 节拍门控制是否合成速度。
+//   d = t1-life；d<0 或 (d%p1)!=0（p1==0 时退化为 d!=0）→ vx=vy=0；
+//   命中才 vx=speed·cos(angle)、vy=speed·sin(angle)。随后 b 50cafc 跳过默认尾段。
 void Func47(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (static_cast<int>(b.t) == 0) {
+    const int d = static_cast<int>(b.t) - b.life;
+    const int rem = (b.p1 != 0) ? (d % b.p1) : d;   // ARM sdiv 0 → 0
+    if (d < 0 || rem != 0) {
         b.vx = 0.0;
+        b.vy = 0.0;
+        return;
     }
+    b.vx = b.speed * CosDeg(b.angle);
+    b.vy = b.speed * SinDeg(b.angle);
 }
 
 // ===========================================================================
 // B 加速/减速
 // ===========================================================================
 
-// bulletFunc5 @0x50d250 —— v += X，夹到 XC。[实测]
-void Func5(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double a = b.xacc;
-    if (a > 0.0) {
-        if (b.speed < b.xacc_cap) {
-            b.speed += a;
-            if (b.speed > b.xacc_cap) {
-                b.speed = b.xacc_cap;
-            }
-        }
-    } else if (a < 0.0) {
-        if (b.speed > b.xacc_cap) {
-            b.speed += a;
-            if (b.speed < b.xacc_cap) {
-                b.speed = b.xacc_cap;
-            }
-        }
-    }
-    b.life -= 1;      // 0x50d2d8: 无条件（含 a==0 的早退路径）
+// bulletFunc5 @0x50b654（update 分派入口）—— 同样由 +0x541 标志门控，
+// 基准/生产端该标志恒 0 → 整段 no-op。独立符号 0x50d250 的加速与 life--
+// 不是 update 的逐帧路径（整帧实测 speed 恒 3、life 不变）。
+void Func5(BulletMotion&, const MotionTargets&, DeterministicRng&) {
 }
 
 // bulletFunc35 @0x50ec24 —— 接近自机 → 指数减速 + 朝自机。[实测/推断阈值]
@@ -220,9 +218,10 @@ void Func39(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
     if (decel) {
         b.speed_cap = 0.0;
-        if (b.life != 0) {
-            b.accel = -(b.speed / static_cast<double>(b.life));
-        }
+        // 原版 50efc8 是 `fdiv s0, speed, float(life)`，life==0 得到 IEEE ±inf；
+        // 共用出口 50c8f0 应用这个无穷加速度后会把 speed 夹到 speedCap(0)。
+        // 加 `life!=0` 保护反而让 func39 的 speed 停在 -1，与整帧基准不符。
+        b.accel = -(b.speed / static_cast<double>(b.life));
     } else if (reset) {
         b.angle = b.angle_init;
         b.angle_acc = b.f598;
@@ -414,15 +413,26 @@ void Func48(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 // E 周期瞄准 / 出屏转向
 // ===========================================================================
 
-// bulletFunc11 @0x50d6e4 —— 出屏后重新瞄准。[实测]
+// bulletFunc11 @0x50bc4c（update 入口内联调用 bulletFunc11Efff）。
+//   ★ 独立符号的**返回值**被 50c2fc 写回 angle，生产此前完全漏了这一步。
+//   屏内返回第三参数（常量 90）；出屏且 p1==1/2 才返回瞄准角并 life--。
+//   入口还有 `life<1` 门。
 void Func11(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
-    if (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH) {
-        if (b.p1 == 2) {
-            b.angle = AngleToEnemy(b, tg);
-        } else if (b.p1 == 1) {
-            b.angle = AngleToMyShip(b, tg);
-        }
+    if (b.life < 1) {
+        return;
     }
+    const bool out = (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH);
+    if (out && b.p1 == 1) {
+        b.angle = AngleToMyShip(b, tg);
+        b.life -= 1;
+        return;
+    }
+    if (out && b.p1 == 2) {
+        b.angle = AngleToEnemy(b, tg);
+        b.life -= 1;
+        return;
+    }
+    b.angle = 90.0;      // 0xac5384，update 调用点传给第 3 个 float 参数的常量
 }
 
 // bulletFunc12 @0x50d7a8 —— 出屏（含 y<40）后重新瞄准。[实测]
@@ -491,6 +501,10 @@ void Func14(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 //   随后按 p1 的 5 档跳转表换皮（160/161/150/17/214，p1==2 额外 setScale(A0)，
 //   p1==4 额外瞄准自机）；末尾 8B 拷贝 {V1,X}→{v,va}、speedCap=XC、life--。
 void Func70(BulletMotion& b, const MotionTargets& tg, DeterministicRng& rng) {
+    // update 分派入口 0x50ba8c：`life < 1` 整段跳过（life0=0 时原版为直线）。
+    if (b.life < 1) {
+        return;
+    }
     const bool hit[3] = {b.x > kHalfW, b.x < 0.0, b.y > kHalfH};
     for (int seg = 0; seg < 3; ++seg) {
         if (!hit[seg]) {
@@ -536,6 +550,10 @@ void Func76(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
 //   angle = (C-angle) 归一到 [0,360)（C = 180 或 360）、按 p1 换皮、life--。
 //   ★ 原版**完全不写 speed / speedCap**；旧实现写了 spdInit2(-1) 导致子弹倒飞。
 void Func1(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // update 分派入口 0x50b514：`life < 1` 直接跳到共用出口（整段 no-op）。
+    if (b.life < 1) {
+        return;
+    }
     int hits = 0;
     if (b.x > kHalfW) { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
     if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
@@ -547,6 +565,10 @@ void Func1(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 //   MyMathUtil::random(-p1, p1)。[unicorn 逐指令实测]
 //   x>320/x<0 用 C=180，y>480/y<40 用 C=360。
 void Func7(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
+    // update 分派入口 0x50bc14：`life < 1` 整段跳过。
+    if (b.life < 1) {
+        return;
+    }
     int hits = 0;
     if (b.x > kHalfW) { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
     if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
@@ -680,29 +702,37 @@ void Func57(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     }
 }
 
-// bulletFunc58 @0x50fe00 —— 节拍折返角。[unicorn 逐指令实测]
-//   门：t1>=0 且 t1%life==0（life==0 时只有 t1==0 命中）。
-//   p1 偶：angle = A0 + angle；angleAcc = F98 + angleAcc
-//   p1 奇：angle = angle - A0；angleAcc = angleAcc - F98
-//   随后 setRotation(360-angle+90) 只改贴图朝向，不进逐弹状态；末尾 p1++。
-//   ★ 旧实现把 setRotation 的角度当成运动角写进 angle，得到 450°。
+// bulletFunc58 @0x50bfa8（update 内联；独立符号 0x50fe00 不是逐帧路径）。
+//   门：t1>=0 且 t1%life==0（life==0 时 ARM sdiv 0 → rem = t1）。
+//   p1 偶：angle = 90 + A0；p1 奇：angle = 90 - A0（s2 固定为 0xac5384 = 90）。
+//   随后 setRotation(360-angle+90) 只改贴图朝向；末尾 p1++。
 void Func58(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     const int t = static_cast<int>(b.t);
     if (t < 0) {
         return;
     }
-    const int rem = (b.life != 0) ? (t % b.life) : t;
+    const int rem = (b.life != 0) ? (t % b.life) : t;   // ARM sdiv 0 → 0
     if (rem != 0) {
         return;
     }
-    if ((b.p1 & 1) == 0) {
-        b.angle = b.angle_init + b.angle;
-        b.angle_acc = b.f598 + b.angle_acc;
-    } else {
-        b.angle = b.angle - b.angle_init;
-        b.angle_acc = b.angle_acc - b.f598;
-    }
+    b.angle = ((b.p1 & 1) == 0) ? (90.0 + b.angle_init) : (90.0 - b.angle_init);
     b.p1 += 1;
+}
+
+// bulletFunc59 @0x50c768（update 共用出口的内联分支）—— t1<life 时每帧 angle+1。
+//   t1>=life 走 50c7ec：prevAngle 与 f598 符号相反时
+//   f598 += prevAngle；angle += f598（基准下两者均为 0，无变化）。
+//   独立符号表里没有 bulletFunc59，生产此前直接 no-op。
+void Func59(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    if (static_cast<int>(b.t) < b.life) {
+        b.angle += 1.0;
+        return;
+    }
+    if ((b.prev_angle < 0.0 && b.f598 > 0.0) ||
+        (b.prev_angle > 0.0 && b.f598 < 0.0)) {
+        b.f598 += b.prev_angle;
+        b.angle += b.f598;
+    }
 }
 
 // bulletFunc62 @0x510088 —— 签名 (float x, float y)，经 x8 出参**直接改写位置**。
@@ -713,6 +743,11 @@ void Func58(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 //            （四次调用按序消耗 RNG）、speed = xacc 的位拷贝、kind=45、life--。
 //   ★ 旧实现把它当成普通边界反弹，且 x/y 边界常数写错。
 void Func62(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
+    // update 分派入口 0x50bff8：`tbnz life,#31` → life<0 时整段跳过。
+    // 缺这个门会让 life 每帧继续递减，逐弹状态迅速发散。
+    if (b.life < 0) {
+        return;
+    }
     const double cw = 2.0 * b.half_w;
     const double ch = 2.0 * b.half_h;
     if (b.life >= 1) {
@@ -1473,14 +1508,10 @@ void Func36(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     b.opacity = (c < 128) ? c : a;
 }
 
-// bulletFunc27 @0x50cd54 —— P1==1 → hitHantei=0；否则 hitDis *= life*0.01。[实测]
-void Func27(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    if (b.p1 == 1) {
-        b.hit_hantei = false;
-        return;
-    }
-    // getHitDis()->setHitDis(life*0.01*hitDis)，中间量走 double（fcvt/fmul 序列）
-    b.hit_dis = static_cast<float>(static_cast<double>(b.life) * 0.01 * b.hit_dis);
+// bulletFunc27 —— update 的分派落在共用出口 0x50c618，比较链里没有 27，
+// 全库也没有 `bl bulletFunc27@plt`：整帧实测 hitDis 恒为初值 4。
+// 独立符号 0x50cd54 的 hitDis *= life*0.01 不是逐帧路径。
+void Func27(BulletMotion&, const MotionTargets&, DeterministicRng&) {
 }
 
 // bulletFunc46 @0x50f654 —— 每 N 帧把角 ±90。[实测]
@@ -1496,7 +1527,9 @@ void Func46(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     } else if (t != b.bullet_life) {
         return;
     }
-    b.angle += (b.life == 0) ? -90.0 : 90.0;   // 表 @0xacee48: [0]=+90（life!=0）,[1]=-90
+    // 表 @0xacee48 = [+90, -90]，update  inline 版是 `s2(90) + 表值`
+    // 赋给 angle（不是累加）：life!=0 → 180°，life==0 → 0°。
+    b.angle = 90.0 + ((b.life == 0) ? -90.0 : 90.0);
     b.bullet_loop += 1;
     b.bullet_life = b.p2 * b.bullet_loop + (b.p1 + t);
 }
@@ -1653,7 +1686,7 @@ bool IsKnownBulletFunc(int func_no) {
         case 27: case 28: case 29: case 30: case 31: case 32: case 33: case 34:
         case 35: case 36: case 37: case 38: case 39: case 40: case 41: case 42:
         case 43: case 44: case 45: case 46: case 47: case 48: case 50: case 51:
-        case 52: case 53: case 54: case 55: case 57: case 58: case 60: case 61:
+        case 52: case 53: case 54: case 55: case 57: case 58: case 59: case 60: case 61:
         case 62: case 63: case 64: case 65: case 66: case 67: case 70: case 71:
         case 72: case 73: case 74: case 75: case 76: case 77: case 78: case 79:
         case 80: case 81: case 82: case 83: case 84: case 85:
@@ -1720,6 +1753,7 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
         case 55: Func55(b, targets, rng); break;
         case 57: Func57(b, targets, rng); break;
         case 58: Func58(b, targets, rng); break;
+        case 59: Func59(b, targets, rng); break;
         case 60: Func60(b, targets, rng); break;
         case 61: Func61(b, targets, rng); break;
         case 62: Func62(b, targets, rng); break;
@@ -1749,6 +1783,27 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
     return true;
 }
 
+// 原版 EnemyBullet::update 的尾段真值（unicorn 整帧执行实测，见
+// tools/tna_coverage/findings-20261109.md）：
+//   50c978 起默认用 speed·cos/sin(angle) 合成 vx/vy；但 func3 的内联代码、
+//   func29 的 `bl` 分支、func47 的节拍分支写完后都直接 `b 50cafc`，
+//   **跳过速度合成**。
+bool SkipsVelocitySynthesis(int func_no) {
+    return func_no == 3 || func_no == 29 || func_no == 47;
+}
+
+// 50cafc 的二次分派表 @0xb0a938：下列编号不走 50cc5c 的默认位置积分
+// （26 走参数方程 setPosition；其余 8 个 `bl` 到独立 func 后直接 b 50cc84）。
+bool SkipsPositionIntegration(int func_no) {
+    switch (func_no) {
+        case 26: case 33: case 37: case 51: case 66:
+        case 75: case 81: case 82: case 83:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void UpdateBulletMotion(BulletMotion& b, const MotionTargets& targets, DeterministicRng& rng) {
     // 1) delay 倒计时（>0 则本帧不运动）。
     if (b.delay > 0) {
@@ -1773,8 +1828,25 @@ void UpdateBulletMotion(BulletMotion& b, const MotionTargets& targets, Determini
     }
     // 3) 依 bulletFuncNo 分派。
     ApplyBulletFunc(b, targets, rng);
-    // 4) 默认尾段：vx = speed·cos(angle); vy = speed·sin(angle)。
-    b.IntegrateVelocity();
+    // 4) 原版共用出口 0x50c8f0：spdAcc != 0 时 speed += accel 并夹到 speedCap。
+    //    旧实现完全漏了这段，导致写 accel 的 func（39/53 等）速度不变化。
+    if (b.accel > 0.0 && b.speed < b.speed_cap) {
+        b.speed = std::min(b.speed + b.accel, b.speed_cap);
+    } else if (b.accel < 0.0 && b.speed > b.speed_cap) {
+        b.speed = std::max(b.speed + b.accel, b.speed_cap);
+    }
+    // 5) 原版尾段：默认合成 vx/vy；少数 func 自己合成，跳过默认段。
+    const int fn = b.bullet_func_no;
+    if (!SkipsVelocitySynthesis(fn)) {
+        b.IntegrateVelocity();
+    }
+    // 6) 宿主（BossRaceSimulation / phk_tna_replica）紧接着固定做
+    //    pos += (vx,vy)。原版对二次分派里的这 9 个编号**跳过**该积分，
+    //    这里预减位移，使积分后正好回到 func 用 setPosition 钉下的位置。
+    if (SkipsPositionIntegration(fn)) {
+        b.x -= b.vx;
+        b.y -= b.vy;
+    }
 }
 
 }  // namespace phk::battle::danmaku

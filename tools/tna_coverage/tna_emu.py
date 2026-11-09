@@ -15,6 +15,7 @@ import argparse
 import ctypes
 import json
 import math
+import re
 import struct
 import subprocess
 import sys
@@ -22,7 +23,8 @@ import sys
 from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_ARM, UC_HOOK_CODE, UC_PROT_ALL
 from unicorn.arm64_const import (
     UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
-    UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X8, UC_ARM64_REG_X30,
+    UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X8, UC_ARM64_REG_X19,
+    UC_ARM64_REG_X20, UC_ARM64_REG_X23, UC_ARM64_REG_X30,
     UC_ARM64_REG_SP, UC_ARM64_REG_PC, UC_ARM64_REG_S0, UC_ARM64_REG_S1,
 )
 
@@ -39,6 +41,12 @@ SCRATCH = 0x33000000      # Vec2/Size/Color3B 返回缓冲
 EXIT = 0x34000000         # 返回哨兵
 STACK = 0x35000000
 STACK_SIZE = 0x20000
+
+# ---- 整帧模式：从 EnemyBullet::update 的分派点执行到 ret ----
+# 旧模式只跑独立 bulletFuncN 符号 + 手工复刻尾段，会漏掉 update 里的内联实现、
+# 共用出口比较链、速度合成跳过、二次分派跳过位置积分等真实行为。
+UPDATE_DISPATCH = 0x50B4E8     # `ldr w8,[x19,#1460]` 后的跳转表分派点
+PLT2FUNC = {}                  # bulletFuncN@plt -> 函数体地址（运行时解析）
 
 # ---- EnemyBullet 字段偏移（bullet_funcs_disasm.md §2）----
 F = {
@@ -124,6 +132,13 @@ class Emu:
     def _on_code(self, uc, addr, size, _u):
         if addr == EXIT:
             uc.emu_stop()
+            return
+        n = PLT2FUNC.get(addr)
+        if n is not None and n in FUNC_ADDR:
+            # update 里的 `bl bulletFuncN@plt`：PLT 未重定位会 br 到 0。
+            # bl 已把返回地址放进 LR，这里直接把 PC 指到真实函数体，
+            # 函数末尾的 ret 会自然回到 LR。
+            uc.reg_write(UC_ARM64_REG_PC, FUNC_ADDR[n])
             return
         if addr == 0:
             # GOT 未重定位的 PLT 会 br 到 0（0x00000000 = udf）；按“返回 0”兜底
@@ -459,20 +474,127 @@ def load_syms():
                     FUNC_SIZE[int(num)] = int(p[2])
 
 
+def load_plt_map():
+    """解析 update 区间里所有 `bl bulletFuncN@plt`，建立 PLT -> 编号映射。"""
+    txt = subprocess.run(
+        ["aarch64-linux-gnu-objdump", "-d", "--no-show-raw-insn",
+         "--start-address=0x50b0b8", "--stop-address=0x50cd04", SO],
+        capture_output=True, text=True).stdout
+    for ln in txt.splitlines():
+        m = re.search(
+            r"bl\s+([0-9a-f]+) <_ZN11EnemyBullet\d+bulletFunc(\d+)[^>]*@plt>", ln)
+        if m:
+            PLT2FUNC[int(m.group(1), 16)] = int(m.group(2))
+
+
+def _state_row(emu, func_no, tick):
+    return {
+        "func": func_no, "tick": tick,
+        "x": round(EXTRA["x"], 6), "y": round(EXTRA["y"], 6),
+        "vx": round(emu.rd_f(F["vx"]), 6), "vy": round(emu.rd_f(F["vy"]), 6),
+        "angle": round(emu.rd_f(F["angle"]), 6),
+        "speed": round(emu.rd_f(F["speed"]), 6),
+        "hit_dis": round(emu.rd_f(F["hitDis"]), 6),
+        "half_w": round(emu.rd_f(F["halfW"]), 6),
+        "half_h": round(emu.rd_f(F["halfH"]), 6),
+        "kind": emu.rd_i(F["bulletType"]),
+        "life": emu.rd_i(F["life"]),
+        "t": float(emu.rd_i(F["t1"])),
+        "opacity": EXTRA["opacity"], "scale": round(EXTRA["scale"], 6),
+    }
+
+
+def run_update(emu, func_no, ticks, init, seed=12345):
+    """执行原版 EnemyBullet::update 的**完整一帧**（分派点 -> ret）。
+
+    覆盖：66 个分派入口（内联实现或 bl 到独立符号）、共用出口 0x50c618 的
+    rotateFlg 尾与比较链、速度合成尾段、50cafc 二次分派（参数方程 setPosition /
+    bl 独立 func / 默认位置积分）、以及末尾 t1++。
+    """
+    global _RNG
+    uc = emu.uc
+    uc.mem_write(OBJ, b"\x00" * OBJ_SIZE)
+    uc.mem_write(OBJ, struct.pack("<Q", VT))
+    for k, v in init.items():
+        if k in F:
+            if k in ("rotateFlg", "bulletType", "bulletLife", "bulletLoop",
+                     "delay", "vanishDelay", "funcNo", "life", "p1", "p2", "t1"):
+                uc.mem_write(OBJ + F[k], struct.pack("<i", int(v)))
+            else:
+                uc.mem_write(OBJ + F[k], struct.pack("<f", float(v)))
+    EXTRA.update({"opacity": 255, "scale": 1.0,
+                  "x": float(init.get("x", 320.0)),
+                  "y": float(init.get("y", 480.0))})
+    sp = STACK + STACK_SIZE - 0x100
+    tls = SCRATCH + 0x400
+    rows = []
+    for tick in range(ticks):
+        _RNG = _DetRng(seed, tick, func_no, 0)
+        # 分派点之前的 update 开头：delay 倒计时 + angle 累加/夹持。
+        if emu.rd_i(F["delay"]) > 0:
+            emu.wr_i(F["delay"], emu.rd_i(F["delay"]) - 1)
+            rows.append(_state_row(emu, func_no, tick))
+            continue
+        if emu.rd_i(F["bulletLife"]) != 0:
+            ang = f32(emu.rd_f(F["angle"]) + emu.rd_f(F["angleAcc"]))
+            f56 = emu.rd_f(F["f56c"])
+            lim = f32(f56 + emu.rd_f(F["angleSpd"]))
+            if f56 > 0.0 and ang > lim:
+                ang = lim
+            if f56 < 0.0 and ang < lim:
+                ang = lim
+            emu.wr_f(F["angle"], ang)
+
+        uc.reg_write(UC_ARM64_REG_SP, sp)
+        # [sp+0x30] 是 update 保存的当前位置 Vec2：50cc5c 位置积分、
+        # 50cb24 参数方程、以及 func20/62 的 x8 出参都落在它上面。
+        uc.mem_write(sp + 0x30, struct.pack("<ff", EXTRA["x"], EXTRA["y"]))
+        uc.mem_write(sp + 0x38, b"\x00" * 8)
+        # stack_chk：x23 指向可控零内存，[sp+56] 哨兵必须与之相等。
+        uc.mem_write(tls, b"\x00" * 0x100)
+        uc.mem_write(sp + 56, struct.pack("<Q", 0))
+        # epilogue 的 `ldp x29,x30,[sp,#144]`：x29←+144、x30←+152（成对加载）。
+        # 我们从分派点进入、跳过了 prologue 的保存，必须自己放回返回地址。
+        uc.mem_write(sp + 144, struct.pack("<QQ", 0, EXIT))
+        uc.reg_write(UC_ARM64_REG_X19, OBJ)
+        uc.reg_write(UC_ARM64_REG_X20, LAYER)
+        uc.reg_write(UC_ARM64_REG_X23, tls)
+        uc.reg_write(UC_ARM64_REG_X0, OBJ)
+        uc.reg_write(UC_ARM64_REG_X1, sp + 0x30)
+        uc.reg_write(UC_ARM64_REG_X8, sp + 0x30)
+        uc.reg_write(UC_ARM64_REG_X30, EXIT)
+        uc.reg_write(UC_ARM64_REG_PC, UPDATE_DISPATCH)
+        try:
+            uc.emu_start(UPDATE_DISPATCH, EXIT, count=200000)
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"func": func_no, "tick": tick, "error": str(exc),
+                         "pc": hex(uc.reg_read(UC_ARM64_REG_PC))})
+            break
+        rows.append(_state_row(emu, func_no, tick))
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--func", type=int)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--ticks", type=int, default=90)
     ap.add_argument("--out", default="/tmp/emu.jsonl")
+    ap.add_argument("--mode", choices=("update", "func"), default="update",
+                    help="update=执行原版整帧(默认)；func=只跑独立符号(旧口径)")
     args = ap.parse_args()
 
     load_syms()
+    load_plt_map()
     emu = Emu(SO, HOOKS)
-    funcs = sorted(FUNC_ADDR) if args.all else [args.func]
+    if args.mode == "update":
+        # 整帧模式不需要独立符号，86 个 funcNo 全部有分派入口。
+        funcs = list(range(86)) if args.all else [args.func]
+    else:
+        funcs = sorted(FUNC_ADDR) if args.all else [args.func]
     with open(args.out, "w", encoding="utf-8") as fh:
         for fn in funcs:
-            if fn not in FUNC_ADDR:
+            if args.mode == "func" and fn not in FUNC_ADDR:
                 continue
             # 与 apps/phk_tna_replica/main.cpp 的 MakeInitial 完全一致，
             # 否则 -1 哨兵值（A0/V0/V1）会让两侧走不同分支。
@@ -493,8 +615,12 @@ def main():
             for life0 in (4, 1, 0):
                 init2 = dict(init)
                 init2["life"] = life0
-                for row in run_func(emu, FUNC_ADDR[fn], FUNC_SIZE[fn],
-                                    args.ticks, init2):
+                if args.mode == "update":
+                    rows = run_update(emu, fn, args.ticks, init2)
+                else:
+                    rows = run_func(emu, FUNC_ADDR[fn], FUNC_SIZE[fn],
+                                    args.ticks, init2)
+                for row in rows:
                     row["life0"] = life0
                     fh.write(json.dumps(row) + "\n")
     print("wrote", args.out)
