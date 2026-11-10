@@ -3,6 +3,15 @@
 // EnemyBullet 弹幕运动逻辑的 C++17 重实现（零依赖，仅标准库）
 // 逆向自 libMyGame_arm64.so（AArch64）；每个函数注释标注原始地址与实测常量。
 //
+// ★★ 2026-11-10 起，本文件**不再是真值来源**，只保留两件事：
+//    1) 历史留档；2) 提供 `my_random` 标记集合，供 compare_tna.py 判定
+//       RNG 相关函数。
+//    真值改为 unicorn 直接执行原版 `EnemyBullet::update` 完整一帧
+//    （tna_emu.py --mode update），86 个 funcNo 逐帧对拍全部一致。
+//    其中若干公式已被整帧基准证伪（func33 不写 angle、func3 不会被默认尾段
+//    覆盖、func78 是 360−a 而非 180−a、func54 的表不是逆序……），
+//    不要再以本文件为依据改生产实现。
+//
 // 关键约定（实测）：
 //   * 角度单位 = 度（degree）。MyMathUtil::sin/cos 内部 ×2π/360 再调 libm。
 //   * 字段偏移 ↔ 成员对应见下方 BulletMotion 注释。

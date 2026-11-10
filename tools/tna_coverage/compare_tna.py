@@ -2,12 +2,16 @@
 """原版 TNA 基准 ↔ 生产对战端复刻：逐弹比对 + 弹幕类型覆盖矩阵。
 
 输入（都在 gateway 上生成）：
-    /tmp/tna-reference.jsonl   tna_reference_runner（bullet_funcs_reimpl.hpp）
+    /tmp/tna-reference.jsonl   原版真值。默认来源是 tna_emu.py --mode update
+                                （unicorn 直接执行 EnemyBullet::update 完整一帧）；
+                                没有 unicorn 时才回退到 tna_reference_runner
+                                （基于 bullet_funcs_reimpl.hpp 的旧口径）。
     /tmp/tna-replica.jsonl     phk_tna_replica（生产 UpdateBulletMotion）
 
 源码（用于判定「是否实现」）：
-    docs/apk-reverse-notes/patterns/bullet_funcs_reimpl.hpp
     PhK-BattleServer/src/danmaku/bullet_motion.cpp
+    bullet_funcs_reimpl.hpp —— **仅**提供 my_random 标记集合（判定 RNG 相关）；
+                            它不再是真值来源，公式多处已被整帧基准证伪。
 
 用法：
     python3 compare_tna.py \
