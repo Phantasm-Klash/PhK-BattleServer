@@ -95,7 +95,35 @@
   零内存；`ldp x29,x30,[sp,#144]` 是成对加载，返回地址写 `sp+152`；
   `sdiv` 除零返回 0；`b.pl` 复用前一条 `fcmp` 的 flags。
 
-## 6 复现
+## 6 双端一致性门禁（2026-11-11 补齐）
+
+服务端与客户端**各自**与原版一致，并不等于两端**彼此**一致。仓库里两端 runner
+（`apps/phk_motion_diff` 与 `laya/dev/motion_diff.mjs`）本来就在，但缺场景生成器
+与比较器，是个半成品。这轮补齐：
+
+- `gen_scenarios.py`：三档初值 × 86 个 funcNo × life{4,1,0} × 90 tick
+  = **774 个场景**，输出两端共用的场景文本（初值与 `tna_emu.make_init` /
+  `phk_tna_replica MakeInitial` 逐字段一致）。
+- `compare_parity.py`：逐 tick 比对 `motion-cpp.txt` 与 `motion-ts.txt`。
+  整数列必须相等，浮点列用相对容差 —— **不能按文本比**，C++ 的 `%.17g` 与
+  JS 的最短往返表示不一定同形。
+- `run_parity.sh`：一键跑（生成 → C++ → TS → 比对），耗时 ~1.9s。
+- `apps/phk_motion_diff/main.cpp` 的 `ApplyMotionField` 补 `half_w` / `half_h` /
+  `hit_hantei`：func6/8/62 的环绕边界正需要这三个字段，缺了就覆盖不到。
+
+**当场抓到的真实问题**：客户端 runner 用 `parseInt(hex, 16)` 读 16 位十六进制
+种子，超过 2^53 后低位失真 → RNG 材料与服务端不同 → func62 的随机角每帧错开
+（C++ 216 vs TS 277）。已把场景种子拆成两个 ≤2^32 的半部，并让 runner 用
+`BigInt` 解析。
+
+当前结果：**774 场景 / 69660 行逐字段完全一致**。至此覆盖链条闭合：
+
+```
+原版(unicorn 整帧) ──run.sh──▶ 服务端 C++ ──run_parity.sh──▶ 客户端 TS
+     86/86 × 三档                    三档                       逐 tick 相同
+```
+
+## 7 复现
 
 ```bash
 cd /root/gotouhou/PhK-BattleServer
