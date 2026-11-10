@@ -114,3 +114,9 @@ jobs:
           BUILD_DIR: ${{ github.workspace }}/PhK-BattleServer/build
           SK_DIR: ${{ github.workspace }}/SpellKard
         run: bash PhK-BattleServer/tools/tna_coverage/run_parity.sh
+
+      - name: Delta wire acceptance (real danmaku trace)
+        env:
+          BUILD_DIR: ${{ github.workspace }}/PhK-BattleServer/build
+          SK_DIR: ${{ github.workspace }}/SpellKard
+        run: bash PhK-BattleServer/tools/tna_coverage/run_delta_acceptance.sh
