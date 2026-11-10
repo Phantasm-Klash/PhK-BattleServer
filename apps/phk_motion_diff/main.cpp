@@ -69,6 +69,9 @@ void ApplyMotionField(BulletMotion& b, const std::string& name, double value) {
     else if (name == "p2") b.p2 = static_cast<int>(value);
     else if (name == "bullet_func_no") b.bullet_func_no = static_cast<int>(value);
     else if (name == "hit_dis") b.hit_dis = value;
+    else if (name == "half_w") b.half_w = value;
+    else if (name == "half_h") b.half_h = value;
+    else if (name == "hit_hantei") b.hit_hantei = value != 0.0;
     else {
         std::cerr << "unknown motion field: " << name << "\n";
         std::exit(2);
