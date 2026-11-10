@@ -21,9 +21,10 @@ BUILD="${BUILD_DIR:-$REPO/build-linux}"
 OUT="${OUT_DIR:-/tmp/tna_coverage}"
 SEED="${SEED:-12345}"
 TICKS="${TICKS:-90}"
-# 门禁默认只跑基准档；`PROFILES="0 1 2"` 可做多初值诊断（见
-# tools/tna_coverage/multiprofile-gaps.md，p1/p2 仍有已知差异）。
-PROFILES="${PROFILES:-0}"
+# 三档初值全部纳入门禁（2026-11-10 起 p0/p1/p2 均 86/86）。
+# 可用 `PROFILES=0` 只跑基准档做快速回归；差异历史见
+# tools/tna_coverage/multiprofile-gaps.md。
+PROFILES="${PROFILES:-0 1 2}"
 mkdir -p "$OUT"
 
 HAS_UNICORN=0

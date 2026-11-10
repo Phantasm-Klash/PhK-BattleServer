@@ -97,25 +97,33 @@ void Func4(BulletMotion&, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc29 @0x511384 —— 分段重置 + 合成 vx/vy。[实测]
 void Func29(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // 独立符号 0x511384 逐指令：三段（不是旧实现的 t<life / t==life / t>=life）。
     const int t = static_cast<int>(b.t);
     if (t < b.life) {
         b.vx = b.prev_angle * CosDeg(b.angle);
         b.vy = b.prev_angle * SinDeg(b.angle);
+        return;
     }
-    if (t == b.life) {
-        b.angle = b.angle_init;
+    const int reset_at = b.life + b.p1;
+    if (t < reset_at) {
+        // 5113f4：只有 t == life+1 才写 A0；这一段 vx/vy 恒为 0。
+        if (t == b.life + 1) {
+            b.angle = b.angle_init;
+        }
         b.vx = 0.0;
+        b.vy = 0.0;
+        return;
     }
-    if (t >= b.life) {
+    if (t == reset_at) {
+        // 51140c：整块复位（angle=A0、{speed,spdAcc}={V1,X}、angleAcc=F98、speedCap=XC）
         b.angle = b.angle_init;
         b.speed = b.spd_init2;
+        b.accel = b.xacc;
         b.angle_acc = b.f598;
         b.speed_cap = b.xacc_cap;
-        // 原版 `bl bulletFunc29` 后直接 b 50cafc，跳过默认速度合成，
-        // 所以这里必须自己用更新后的 (angle,speed) 合成 vx/vy。
-        b.vx = b.speed * CosDeg(b.angle);
-        b.vy = b.speed * SinDeg(b.angle);
     }
+    b.vx = b.speed * CosDeg(b.angle);
+    b.vy = b.speed * SinDeg(b.angle);
 }
 
 // bulletFunc47 @0x50c9f8（update 内联）—— 节拍门控制是否合成速度。
@@ -261,10 +269,17 @@ void Func40(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc73 @0x510bbc —— pf1 = A0 + F98·sin(V1 + PA·P2)；hitDis = pf2·pf1。[实测]
 void Func73(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double arg = b.spd_init2 + b.prev_angle * static_cast<double>(b.p2);
-    b.pf1 = b.angle_init + b.f598 * SinDeg(arg);
-    b.scale = b.pf1;              // 0x510c00: 随后 setScale(pf1)
-    b.hit_dis = b.pf2 * b.pf1;
+    // 0x510bcc 全程 s 寄存器（float），末尾 p2++。
+    // 用 double 中间量会在 pf2*pf1 上放大出 ~0.2 的 hit_dis 误差。
+    const float arg = static_cast<float>(b.spd_init2)
+                      + static_cast<float>(b.prev_angle) * static_cast<float>(b.p2);
+    const float s = SinDegF(arg);
+    const float pf1 = static_cast<float>(b.angle_init)
+                      + static_cast<float>(b.f598) * s;
+    b.pf1 = pf1;
+    b.scale = pf1;               // 0x510c00 setScale(pf1)
+    b.hit_dis = static_cast<float>(b.pf2) * pf1;
+    b.p2 += 1;                  // 0x510c20
 }
 
 // bulletFunc81 @0x511d48 —— pf1 = A0 + F98·sin(PA·P2)；v = V1 + XC·s。[实测]
@@ -322,17 +337,19 @@ void Func17(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
         return;
     }
     if (static_cast<int>(b.t) > b.life) {
-        // 0x50dc10: d = aim - prevAngle；d > lim → prev+lim；否则 **d < 0** → prev-lim
-        // （第二个分支的门是 d<0，不是 d<-lim）
-        double t = target;
-        const double d = t - b.prev_angle;
+        // 0x50dc20 `fcmp d,A0` 之后两个分支复用同一组 flags：
+        //   b.le → 50dc30 的 `b.pl` 只在 d==A0 时成立（保持 target）；
+        //   d > A0 → prev+A0；d < A0 → prev-A0。
+        // 旧实现把第三支写成 d<0，导致 0<=d<A0 时错误地保持 target。
+        const double d = target - b.prev_angle;
+        double out = target;
         if (d > b.angle_init) {
-            t = b.prev_angle + b.angle_init;
-        } else if (d < 0.0) {
-            t = b.prev_angle - b.angle_init;
+            out = b.prev_angle + b.angle_init;
+        } else if (d < b.angle_init) {
+            out = b.prev_angle - b.angle_init;
         }
-        b.angle = t;
-        b.prev_angle = b.angle;
+        b.angle = out;
+        b.prev_angle = out;
     }
 }
 
@@ -423,6 +440,11 @@ void Func11(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc12 @0x50d7a8 —— 出屏（含 y<40）后重新瞄准。[实测]
 void Func12(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
+    // update 分派入口 0x50bc68：`life < 1` 整段跳过。缺这个门会让
+    // life-- 一直减到负数（p1/p2 档在 t4 之后明显发散）。
+    if (b.life < 1) {
+        return;
+    }
     if (b.x > kHalfW || b.x < 0.0 || b.y > kHalfH || b.y < kTop) {
         // 0x50d840：出屏且 p1==1/2 时除了改角，还无条件 life--。
         if (b.p1 == 2) {
@@ -522,11 +544,21 @@ void Func70(BulletMotion& b, const MotionTargets& tg, DeterministicRng& rng) {
 
 // bulletFunc76 @0x510d30 —— y>480 → 瞄准 + 换皮。[实测]
 void Func76(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
+    // 分派入口 0x50c0fc：`life < 1` 整段跳过。
+    if (b.life < 1) {
+        return;
+    }
     if (b.y > kHalfH) {
-        b.angle = kDeg360 - b.angle;
-        b.angle += static_cast<double>(rng.RandomInt(0, b.p2));
+        // 0x510d78 `s8 = 360-angle`，`s0 = float(random) + s8`，**不归一**。
+        b.angle = kDeg360 - b.angle + static_cast<double>(rng.RandomInt(-b.p2, b.p2));
+        // 0x510d80 8B 拷贝 {spdInit2,xacc}→{speed,spdAcc} + speedCap=XC。
         b.speed = b.spd_init2;
+        b.accel = b.xacc;
         b.speed_cap = b.xacc_cap;
+        if (b.p1 == 0) {
+            b.bullet_kind = 17;      // 0x510da4
+        }
+        b.life -= 1;                 // 0x510db0
     }
 }
 
@@ -553,6 +585,15 @@ void Func1(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
     if (hits > 0 && b.p1 >= 1 && b.p1 <= 4) {
         static constexpr int kKindByP1[4] = {30, 19, 109, 168};
         b.bullet_kind = kKindByP1[b.p1 - 1];
+        // 表项 idx1(50cf60) 还会把 spdInit2 写进 speed；
+        // idx3(50cf20) 是 8B 拷贝 {spdInit2,xacc}→{speed,spdAcc} 并 speedCap=XC。
+        if (b.p1 == 2 || b.p1 == 4) {
+            b.speed = b.spd_init2;
+        }
+        if (b.p1 == 4) {
+            b.accel = b.xacc;
+            b.speed_cap = b.xacc_cap;
+        }
     }
 }
 
@@ -564,18 +605,24 @@ void Func7(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
     if (b.life < 1) {
         return;
     }
+    // 原版四段各自 `bl MyMathUtil::random(-p1,p1)`（0x50d430 等），
+    // 不是四段命中后统一加一次；调用次数不同会让整条 RNG 流错位。
     int hits = 0;
-    if (b.x > kHalfW) { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
-    if (b.x < 0.0)   { b.angle = MirrorAngle(b.angle, kDeg180); ++hits; }
-    if (b.y > kHalfH) { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
-    if (b.y < kTop)  { b.angle = MirrorAngle(b.angle, kDeg360); ++hits; }
-    if (hits == 0) {
-        return;
-    }
+    const auto bounce = [&](bool hit, double c) {
+        if (!hit) {
+            return;
+        }
+        b.angle = MirrorAngle(b.angle, c);
+        if (b.p1 >= 1) {
+            b.angle += static_cast<double>(rng.RandomInt(-b.p1, b.p1));
+        }
+        ++hits;
+    };
+    bounce(b.x > kHalfW, kDeg180);
+    bounce(b.x < 0.0, kDeg180);
+    bounce(b.y > kHalfH, kDeg360);
+    bounce(b.y < kTop, kDeg360);
     b.life -= hits;
-    if (b.p1 >= 1) {
-        b.angle += static_cast<double>(rng.RandomInt(-b.p1, b.p1));
-    }
 }
 
 // bulletFunc20 @0x50dde0 —— 签名带 Vec2& 位置入/出参，会**直接改写位置**。
@@ -823,11 +870,14 @@ void Func77(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
 
 // bulletFunc78 @0x510e88 —— y<40 → 镜像角。[实测]
 void Func78(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
+    // 分派入口 0x50c180：`life < 1` 整段跳过（life 减到 0 后不再翻转）。
+    // 0x510ea4 逐指令：y < 40 时 angle = 360-angle（不是 180-angle），并 life--。
+    if (b.life < 1) {
+        return;
+    }
     if (b.y < kTop) {
-        b.angle = kDeg180 - b.angle;
-        if (b.angle < 0.0) {
-            b.angle += kDeg360;
-        }
+        b.angle = MirrorAngle(b.angle, kDeg360);
+        b.life -= 1;
     }
 }
 
@@ -1178,16 +1228,22 @@ void Func83(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc30 @0x50e224 —— 按 bulletType 换贴图 + hitDis。[实测]
 void Func30(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    // 0x50e224: 门 = (t1-life) >= 0 且 t1 == p2；命中后换贴图并
-    //   hitDis(0x54c) = 20.0（0x50e3ec；文档旧值 4.0 是错的）
-    const int t = static_cast<int>(b.t);
-    if (t - b.life < 0) {
+    // 0x50e248 逐指令：d = t1-life；d<0 → 只做 setRotation（不改状态）。
+    //   rem = d % p1（p1==0 时 ARM sdiv 0 → rem = d）；
+    //   rem==0 → 换贴图并把 hitDis 写 20.0（0x41a00000）；
+    //   rem==p2-1 → 换贴图并把 hitDis 写 4.0（0x40800000）；
+    //   其余且 rem<p2 → 只做 setRotation(360 - rotateAngle + 90)。
+    // 旧实现把门写成 `d == p2`，只在 p0 哨兵档碰巧等价。
+    const int d = static_cast<int>(b.t) - b.life;
+    if (d < 0) {
         return;
     }
-    if ((t - b.life) != b.p2) {   // 比较的是 (t1-life)，不是 t1
-        return;
+    const int rem = (b.p1 != 0) ? (d % b.p1) : d;
+    if (rem == 0) {
+        b.hit_dis = 20.0;
+    } else if (rem == b.p2 - 1) {
+        b.hit_dis = 4.0;
     }
-    b.hit_dis = 20.0;
 }
 
 // bulletFunc54 @0x50faf4 —— 按 life 阶段换皮。[实测：贴图交宿主]
@@ -1209,7 +1265,10 @@ void Func54(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
             b.bullet_kind = 0xcc;
         }
     } else if (b.life == 1) {
-        static constexpr int kTypeByP2Mod7[7] = {0xa3, 0xa2, 0xa1, 0xa0, 0x9f, 0x9e, 0x9d};
+        // 字节表 @0xb0a9c7 = [0,26,28,30,32,34,36] → 目标地址
+        // 50fbd0 / 50fc38 / 50fc40 / 50fc48 / 50fc50 / 50fc58 / 50fc60，
+        // 对应 kind 163,157,158,159,160,161,162（旧实现写成了逆序）。
+        static constexpr int kTypeByP2Mod7[7] = {0xa3, 0x9d, 0x9e, 0x9f, 0xa0, 0xa1, 0xa2};
         b.bullet_kind = kTypeByP2Mod7[((b.p2 % 7) + 7) % 7];
     } else if (b.life == 2) {
         if (b.p2 == 0) {
@@ -1275,12 +1334,16 @@ void Func26(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc33 @0x51160c —— 双正弦参数轨迹。[推断]
 void Func33(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
-    const double a = b.angle + b.f598 * b.t;
-    const double px = b.speed * b.t * CosDeg(a);
-    const double py = b.speed * b.t * SinDeg(a);
-    b.xacc = px;
-    b.xacc_cap = py;
-    b.angle = AngleToPoint(0.0, 0.0, px, py);
+    // 独立符号 0x51160c 逐指令：只把两个「目标坐标」写进 xacc(1444) /
+    // xaccCap(1448)，尾部 atan2f 只用于 setRotation。
+    // ★ 原版**完全不写 angle**（旧实现写 AngleToPoint 会让 p1/p2 档发散）。
+    const double t = b.t;
+    const double x = b.angle_init + b.speed * t * CosDeg(b.angle)
+                     + b.spd_init2 * CosDeg(b.f598 * t);
+    const double y = b.prev_angle + b.speed * t * SinDeg(b.angle)
+                     + b.spd_init2 * SinDeg(b.f598 * t);
+    b.xacc = x;
+    b.xacc_cap = y;
 }
 
 // bulletFunc66 @0x511ab4 —— 参数方程。[推断]
@@ -1530,10 +1593,17 @@ void Func46(BulletMotion& b, const MotionTargets&, DeterministicRng&) {
 
 // bulletFunc52 @0x50f9e4 —— 随机角。[实测]
 void Func52(BulletMotion& b, const MotionTargets&, DeterministicRng& rng) {
-    if (static_cast<int>(b.t) != 0) {
+    // 0x50f9f0 逐指令：t1>=0 且 t1%life==0（life==0 时退化为 t1==0）；
+    //   `neg w0,w1` → random(-p2,p2)，结果再乘 p1 写进 angle。
+    const int t = static_cast<int>(b.t);
+    if (t < 0) {
         return;
     }
-    b.angle = static_cast<double>(rng.RandomInt(0, b.p2));
+    const int rem = (b.life != 0) ? (t % b.life) : t;   // ARM sdiv 0 → 0
+    if (rem != 0) {
+        return;
+    }
+    b.angle = static_cast<double>(b.p1) * rng.RandomInt(-b.p2, b.p2);
 }
 
 // bulletFunc61 @0x50ff78 —— 四方向（0/90/180/270）。[实测]
@@ -1554,7 +1624,10 @@ void Func61(BulletMotion& b, const MotionTargets& tg, DeterministicRng&) {
     } else {
         b.angle = (b.y < tg.my_ship_y) ? 90.0 : 270.0;
     }
+    // 0x510034 是 8B 拷贝 {spdInit2,xacc}→{speed,spdAcc}，
+    // 漏写 spdAcc 会让同帧的共用出口少加一次 xacc。
     b.speed = b.spd_init2;
+    b.accel = b.xacc;
     b.speed_cap = b.xacc_cap;
     b.p2 += 1;
 }
@@ -1690,7 +1763,30 @@ bool IsKnownBulletFunc(int func_no) {
     }
 }
 
-bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, DeterministicRng& rng) {
+namespace {
+
+// 原版 EnemyBullet::update 的三段调用时机（整帧执行实测）：
+//   0 early = 分派入口 / 共用出口内联（0x50b514..0x50c618 之前）
+//   1 mid   = func29，在 0x50c9ec（共用出口 accel 应用**之后**、
+//             50ca58 速度合成**之前**），随后 b 0x50cafc
+//   2 late  = 0x50cafc 二次分派里 `bl` 的 8 个独立符号（速度合成之后）
+int BulletFuncStage(int func_no) {
+    switch (func_no) {
+        case 29:
+            return 1;
+        case 33: case 37: case 51: case 66:
+        case 75: case 81: case 82: case 83:
+            return 2;
+        default:
+            return 0;
+    }
+}
+
+bool ApplyBulletFuncStage(BulletMotion& b, const MotionTargets& targets,
+                          DeterministicRng& rng, int stage) {
+    if (BulletFuncStage(b.bullet_func_no) != stage) {
+        return true;   // 本阶段不执行，但编号是已知的
+    }
     switch (b.bullet_func_no) {
         case 0:  Func0(b, targets, rng); break;
         case 1:  Func1(b, targets, rng); break;
@@ -1777,6 +1873,16 @@ bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, Deterministi
     return true;
 }
 
+}  // namespace
+
+// 兼容外部调用（danmaku_tests 的确定性覆盖测试）：一次跑完三个阶段。
+bool ApplyBulletFunc(BulletMotion& b, const MotionTargets& targets, DeterministicRng& rng) {
+    const bool known = ApplyBulletFuncStage(b, targets, rng, 0);
+    ApplyBulletFuncStage(b, targets, rng, 1);
+    ApplyBulletFuncStage(b, targets, rng, 2);
+    return known;
+}
+
 // 原版 EnemyBullet::update 的尾段真值（unicorn 整帧执行实测，见
 // tools/tna_coverage/findings-20261109.md）：
 //   50c978 起默认用 speed·cos/sin(angle) 合成 vx/vy；但 func3 的内联代码、
@@ -1820,8 +1926,8 @@ void UpdateBulletMotion(BulletMotion& b, const MotionTargets& targets, Determini
             }
         }
     }
-    // 3) 依 bulletFuncNo 分派。
-    ApplyBulletFunc(b, targets, rng);
+    // 3) early 阶段：分派入口 / 共用出口内联。
+    ApplyBulletFuncStage(b, targets, rng, 0);
     // 4) 原版共用出口 0x50c8f0：spdAcc != 0 时 speed += accel 并夹到 speedCap。
     //    旧实现完全漏了这段，导致写 accel 的 func（39/53 等）速度不变化。
     if (b.accel > 0.0 && b.speed < b.speed_cap) {
@@ -1829,17 +1935,28 @@ void UpdateBulletMotion(BulletMotion& b, const MotionTargets& targets, Determini
     } else if (b.accel < 0.0 && b.speed > b.speed_cap) {
         b.speed = std::max(b.speed + b.accel, b.speed_cap);
     }
+    // 4b) mid 阶段：func29（0x50c9ec）。它必须在 accel 应用**之后**，
+    //     否则它写入的 spdAcc 会在同帧被应用，speed 多出一个 xacc。
+    ApplyBulletFuncStage(b, targets, rng, 1);
     // 5) 原版尾段：默认合成 vx/vy；少数 func 自己合成，跳过默认段。
     const int fn = b.bullet_func_no;
     if (!SkipsVelocitySynthesis(fn)) {
         b.IntegrateVelocity();
     }
+    // 5b) late 阶段：0x50cafc 二次分派的 8 个 func（速度合成之后）。
+    ApplyBulletFuncStage(b, targets, rng, 2);
     // 6) 宿主（BossRaceSimulation / phk_tna_replica）紧接着固定做
     //    pos += (vx,vy)。原版对二次分派里的这 9 个编号**跳过**该积分，
     //    这里预减位移，使积分后正好回到 func 用 setPosition 钉下的位置。
     if (SkipsPositionIntegration(fn)) {
         b.x -= b.vx;
         b.y -= b.vy;
+    }
+    // 7) 原版 0x50cc84：帧末 bulletLife--（>0 时）。
+    //    它决定**下一帧开头**是否做 angle 累加/夹持；漏掉会让生产端
+    //    每帧都夹持，而原版只在 bulletLife 归零前夹持（p1 档大批差异的根因）。
+    if (b.bullet_life > 0) {
+        b.bullet_life -= 1;
     }
 }
 

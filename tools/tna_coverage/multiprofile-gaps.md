@@ -1,77 +1,93 @@
-# 多初值档诊断：已知差异与后续路线（2026-11-09）
+# 多初值档：从诊断到三档全绿（2026-11-09 → 11-10 完成）
 
 ## 1 为什么加多初值档
 
-`run.sh` 的默认门禁（profile 0）每帧用固定初值：中心位置 (320,480)、
+`run.sh` 最初的门禁（profile 0）每帧固定初值：中心位置 (320,480)、
 `angle=0, speed=3`、`p1=p2=0`、`A0/V0/V1 = -1` 哨兵、`X/XC/F98/PA = 0`，
 `life0 ∈ {4,1,0}`。很多 `bulletFunc` 的分支在这些哨兵值下恰好是 no-op，
-因此生产实现即使只覆盖了「默认路径」也能通过 86/86。
+因此生产实现即使只覆盖「默认路径」也能通过 86/86 —— 属于覆盖盲区。
 
 `tna_emu.py --profile N` 与 `phk_tna_replica --profile N` 提供三档严格一致的
-初值，`run.sh` 用 `PROFILES="0 1 2"` 可一次跑完：
+初值：
 
 | 档 | 位置 | angle/speed | 关键参数 | 覆盖目标 |
 |---|---|---|---|---|
-| 0 | (320,480) | 0 / 3 | -1 哨兵、p1=p2=0 | 默认直线（门禁档） |
+| 0 | (320,480) | 0 / 3 | -1 哨兵、p1=p2=0 | 默认直线 |
 | 1 | (400,520) | 45 / 2 | A0=30,V1=4,X=0.25,XC=6,F98=0.5,PA=10,angleAcc=1,bulletLife=1,p1=2,p2=3 | 出屏、角加速度/夹持、速度上限 |
 | 2 | (-10,30) | 270 / 1.5 | A0=-45,V1=-2,X=-0.5,XC=1,F98=-0.25,PA=5,p1=1,p2=5 | x<0 / y<40、负向镜像与减速 |
 
-★ 前置 `bulletLife != 0` 会让原版 update 把 angle 累加并夹到
-`f56c + angleSpd`（p1 档 = 3），这是很多 p1 差异的公共来源，不是基准 bug。
+★ p1 档 `bulletLife != 0` 会让原版 update 每帧把 angle 累加并夹到
+`f56c + angleSpd`（=3），**但原版帧末 `0x50cc84` 会把 bulletLife 递减**，
+所以只有第一帧夹持。这一点是 p1 档大批差异的公共来源。
 
-## 2 当前结果
+## 2 结果（2026-11-10）
 
 | 档 | MATCH | MISMATCH | RNG_DIFF | 状态 |
 |---|---:|---:|---:|---|
-| 0 | 86 | 0 | 0 | **门禁 PASS**（`run.sh` 默认） |
-| 1 | 58 | 24 | 4 | 诊断档，已知差异 |
-| 2 | 73 | 11 | 2 | 诊断档，已知差异（4 项修复前的读数） |
+| 0 | 86 | 0 | 0 | **PASS** |
+| 1 | 86 | 0 | 0 | **PASS** |
+| 2 | 86 | 0 | 0 | **PASS** |
 
-默认门禁只跑 profile 0，`PROFILES="0 1 2"` 是诊断用途，不要求全绿。
+`run.sh` 默认 `PROFILES="0 1 2"`，三档全部纳入门禁；`ctest` 20/20。
+诊断期间的最低点：p1 24 MISMATCH + 4 RNG_DIFF，p2 11 + 2。
 
-## 3 已修（对三档都有收益，且 p0 保持 86/86）
+## 3 修复清单（按收益排序）
 
-- **func0**：`funcNo=0` 在跳转表里 index=-1 越界，直接落共用出口，全库无
-  `bl bulletFunc0@plt`。独立符号是 spawn 时初始化用的，**不是逐帧路径**。
-  生产改为 no-op；p1/p2 的 `angle/speed/vx/vy/x/y` 差异消除。
-- **func1**：每段反弹后按 `(p1-1)` 走字节表 @`0xb0a972` 换 bulletType
-  （表项 `[0,22,2,6]` → 30 / 19 / 109 / 168）；p1=0 时 index 越界不换。
-- **func12**：独立符号 `0x50d840` 出屏且 p1==1/2 时除改角外还有 `life--`。
-- **func85**：`0x5112b4 str s8,[x19,#1356]` **无条件**写 hitDis（默认 4.0，
-  仅 bulletType==0x25 且距离门命中时 20.0），旧实现漏了默认写回。
+### 3.1 架构级（一次性消掉 17 个 p1 差异、全部 p2 差异）
 
-## 4 p1 剩余 24 个 MISMATCH + 4 个 RNG_DIFF（根因分类）
+- **帧末 `bulletLife--`**：原版 `0x50cc84` 在 >0 时递减，决定下一帧开头是否做
+  angle 累加/夹持。生产端漏掉 → 每帧都夹持，与整帧基准从第一帧起分叉。
+- **`ApplyBulletFunc` 拆三阶段**（`BulletFuncStage`）：
+  - stage 0 early = 分派入口 / 共用出口内联；
+  - stage 1 mid = **func29**（`0x50c9ec`，共用出口 accel 应用**之后**、
+    速度合成**之前**）；
+  - stage 2 late = `0x50cafc` 二次分派 8 个 {33,37,51,66,75,81,82,83}。
+  - `UpdateBulletMotion` 顺序：前处理 → stage0 → accel 应用 → stage1 →
+    速度合成（3/29/47 跳过）→ stage2 → 预减位移（9 个编号）→ bulletLife--。
+  - 遗留 WIP 曾把 func29 误放进 late，已按 `0x50c9ec` 的位置纠正。
+- **共用出口 `0x50c8f0` 的 `speed += spdAcc` 夹到 speedCap** 已在上一轮补齐；
+  本轮发现多个 func 写的是 **8B 拷贝 `{spdInit2,xacc}` → `{speed,spdAcc}`**，
+  生产只写了 speed，导致同帧少加一次 xacc（func61/76）。
 
-| 类别 | func | 说明 |
-|---|---|---|
-| A 阶段顺序 | 33, 46, 58, 59, 61, 64, 67 | 原版二次分派（`bl` 33/37/51/66/75/81/82/83）发生在**速度合成之后、位置积分之前**；生产在 `ApplyBulletFunc` 开头一次性调用，前处理与尾段顺序不同。非零参数下角度/速度被覆盖的时机不同。 |
-| B 内联真值缺失 | 2, 11, 12, 17, 20, 29, 32, 38, 39, 48, 50, 62, 63 | 这些 func 在 profile 0 下因哨兵值退化为 no-op，但 p1 的非零 A0/X/XC/PA 会激活额外分支（对准、节拍、16B 复位块等），生产实现只覆盖了基准档。 |
-| C 分派表误调用 | 0（已修）, 30, 54, 85（已修） | 部分 FuncN 是从独立符号抄来的，但 update 逐帧路径并不调用它们（或调用时机不同）。需要按跳转表逐编号判定。 |
-| D RNG 调用次数/顺序 | 7, 52, 70, 76 | 两边都用同一个 `DeterministicRng` 算法，但 p1 非零 p1/p2 会让随机分支触发次数不同；需核对每个 func 的调用次数与顺序。 |
-| E 浮点精度 | 73 | `hit_dis/scale` 差 ~0.2，原版全程 float 中间量，生产用 double；需要按指令链加 `static_cast<float>`。 |
+### 3.2 逐函数真值修正
 
-p2 剩余（4 项修复前）：0, 1, 7, 12, 29, 30, 33, 46, 52, 54, 73, 78, 85 ——
-与 p1 高度重合，集中在 A/B 两类，说明是系统性而非偶发。
+| func | 修正 |
+|---|---|
+| 0 | 分派表 index=-1 越界，独立符号是 spawn 初始化 → **no-op** |
+| 1 | 三段独立反弹；按 `(p1-1)` 字节表 @`0xb0a972` 换皮 {30,19,109,168}；p1==2 写 `speed=spdInit2`，p1==4 8B 拷贝 + `speedCap=XC` |
+| 7 | 四段**各自**调用一次 `random(-p1,p1)`（原来汇总调用一次，RNG 流错位） |
+| 11/12/70/78 | 分派入口的 `life<1` 门；func12 出屏且 p1==1/2 时 `life--` |
+| 17 | 限速第三支：`d < A0 → prev-A0`（不是 `d<0`）；`d==A0` 保持 target |
+| 29 | 三段：`t<life` 用 prevAngle 合成 vx/vy；`life<=t<life+p1` vx=vy=0（仅 `t==life+1` 写 A0）；`t>=life+p1` 复位 16B 并重新合成 |
+| 30 | 门 `rem=(t-life)%p1`；`rem==0 → hitDis=20`、`rem==p2-1 → hitDis=4` |
+| 33 | **不写 angle**（只写 xacc/xaccCap 两个目标坐标；尾部 atan2f 只用于 setRotation） |
+| 46 | update 内联版是 `angle = s2 + 表[life==0]` 赋值，不是 `angle += ±90` |
+| 52 | 门 `t%life==0`；`angle = p1 * random(-p2,p2)` |
+| 54 | 字节表 @`0xb0a9c7` 解出 {163,157,158,159,160,161,162}（旧实现写成逆序） |
+| 61/76 | 补 `accel=xacc`；func76 另有 `life<1` 门、`random(-p2,p2)`、`p1==0→kind17`、`life--`、angle 不归一 |
+| 73 | **全程 float**（`SinDegF`）并 `p2++`；double 中间量放大出 ~0.2 的 hitDis 误差 |
+| 78 | `y<40` 时 `angle=360-angle`（不是 180）并 `life--`；分派入口 `life<1` 门 |
+| 85 | `0x5112b4` 无条件写 hitDis=4.0，仅 kind==0x25 且距离门命中时 20.0 |
+| 4/5/27 | update 内联门控 / 无 `bl` → **no-op**（独立符号不是逐帧路径） |
+| 58/59/47/3 | update 内联真值：58 用 `90±A0`、59 在 `t1<life` 时 `angle+=1`、47 节拍门、3 内联后跳过速度合成 |
 
-## 5 下一步（建议顺序）
+## 4 方法论教训
 
-1. **把整帧基准的入口从分派点 `0x50b4e8` 提前到 `update` 入口
-   `0x50b0b8`**，让 delay / vanish / angle 累加与夹持全部由原版代码决定，
-   消除目前手工复刻前处理带来的角度偏差（func33/46/59 等）。
-   需要补：LAYER_VT 的 2088/2104 槽、vtable 632/1744/1752 槽的语义桩。
-2. **按跳转表重构 `ApplyBulletFunc` 为两阶段**：early（分派入口 / 共用出口内联）
-   与 late（二次分派 9 个 + 29），中间插入 accel 应用与速度合成，
-   与原版 `0x50c618 → 0x50c978 → 0x50cafc` 的顺序一致。
-3. 用 p1/p2 逐类消掉 B/C/D/E，最后把 `run.sh` 的 `PROFILES` 默认值
-   改回 `"0 1 2"`，让三档都成为门禁。
-4. 同步客户端 `SpellKard/laya/src/core/sim/danmaku/bullet_motion.ts`
-   （见 `findings-20261109.md` §6，该文件仍是无条件 `integrateVelocity()` 的旧口径）。
+- **「两边一起错」的自洽假象**：p0 全绿不代表正确；只有把基准换成
+  「执行原版 `update` 完整一帧」+ 多组非哨兵初值，才能暴露阶段顺序、
+  字段漏写、float/double 精度、RNG 调用次数这类问题。
+- **先找系统性根因再逐函数修**：帧末 bulletLife-- 与三阶段拆分各一次消掉
+  十几个差异，比逐个 func 调参数高效得多。
+- **整帧模拟的坑**：`bl bulletFuncN@plt` 需重定向到函数体；`x23` 指向可控
+  零内存；`ldp x29,x30,[sp,#144]` 是成对加载，返回地址写 `sp+152`；
+  `sdiv` 除零返回 0；`b.pl` 复用前一条 `fcmp` 的 flags。
 
-## 6 复现
+## 5 复现
 
 ```bash
 cd /root/gotouhou/PhK-BattleServer
-bash tools/tna_coverage/run.sh                 # 默认门禁：profile 0，必须全绿
-PROFILES="0 1 2" bash tools/tna_coverage/run.sh   # 三档诊断，p1/p2 允许失败
-PROFILES=2 bash tools/tna_coverage/run.sh         # 单独跑某一档
+bash tools/tna_coverage/run.sh                 # 默认三档门禁，必须全绿
+PROFILES=0 bash tools/tna_coverage/run.sh     # 快速回归单档
+PROFILES=2 bash tools/tna_coverage/run.sh     # 单独跑某一档
+ctest --test-dir build-linux                  # 20/20
 ```
