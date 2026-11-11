@@ -114,10 +114,14 @@ void TestRegisteredTable() {
     Check(ChainTriggerCountAt(*tables.front(), 91) == 4, "registry: tick 91 fires 4 x 18-frame");
     Check(ChainTriggerCountAt(*tables.front(), 2) == 0, "registry: nothing fires at tick 2");
     Check(ChainTriggerCountAt(*tables.front(), 401) == 37, "registry: 37 fire at tick 401 (36 x 400-waves + 20-wave)");
-    // 角度 270 → 174，步进 -12
+    // 原版实测角度 270 → 174，步进 -12（cocos2d，y 轴向上）。
+    // ★ registry 里的节点存的是**本项目坐标**（屏幕系，y 向下）下的角度：
+    //   原版 270 (y-up) ⇒ 本项目 90；原版 174 (y-up) ⇒ 本项目 186。
+    //   表函数 `TnaBoss21NodeAngleDeg` 仍返回原版值（270/174），转换发生在
+    //   建节点时（chain_node.cpp 的 FromOriginalAngleDeg）。
     const std::vector<ChainNode>& nodes = tables.front()->nodes;
-    Check(nodes[0].spawn_command.base_angle_deg == 270.0f, "registry: node 0 at 270 degrees");
-    Check(nodes[8].spawn_command.base_angle_deg == 174.0f, "registry: node 8 at 174 degrees");
+    Check(nodes[0].spawn_command.base_angle_deg == 90.0f, "registry: node 0 at 90 degrees (y-down)");
+    Check(nodes[8].spawn_command.base_angle_deg == 186.0f, "registry: node 8 at 186 degrees (y-down)");
     Check(nodes[0].spawn_command.count == 1, "registry: each node carries one bullet");
 }
 
@@ -400,7 +404,13 @@ void TestPhaseRotationEndToEnd() {
 // （86/86），补齐速度合成跳过、位置积分跳过、共用出口加速度应用等尾段真值
 // 后，弹幕轨迹再次变化，基线更新为 22e0d51d... / de44b147...。
 // 更早基线：79450138a8f24027 / ae1e49473951ac83。
-// 另两条（boss21 #11 sample、mvp）哈希未变，继续保护段表/合成弹幕不受牵连。
+//
+// ★ 2026-11-11：修正 boss21 弹幕的**坐标系**（见 chain_node.cpp 的
+//   FromOriginalAngleDeg）——原版是 cocos2d（y 向上），本项目是屏幕系
+//   （y 向下），原版实测角 270±10 被直接当本项目角用 ⇒ 弹全部朝屏幕上方飞、
+//   永远碰不到下方的自机。修正后走 chain 表的两条基线再次变化：
+//   boss21 #11 sample → e9267f6d...，boss21_tna → a06b26cd...。
+//   另两条（mvp / default，走 legacy 合成路径）哈希未变，继续保护合成弹幕。
 void TestNoSegmentRegression() {
     struct Case {
         const char* label;
@@ -410,8 +420,8 @@ void TestNoSegmentRegression() {
         const char* expected_pattern;  // nullptr = 该路径不该出现任何 chain: 弹幕
     };
     const Case cases[] = {
-        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "a7c9e3ee688e4bf0", "chain:boss21"},
-        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "22e0d51d2819b2e7", "chain:boss21_tna"},
+        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "e9267f6dc6c8dce6", "chain:boss21"},
+        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "a06b26cd80e63f02", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
         {"regress default ruleset", "", "boss21_tna", "de44b147cb9c26f9", nullptr},
     };

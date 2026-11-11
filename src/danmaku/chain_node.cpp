@@ -61,6 +61,38 @@ ChainNode MakeBlockAHeadNode() {
     return node;
 }
 
+/**
+ * 原版角度（cocos2d，y 轴向上）→ 本项目角度（屏幕系，y 轴向下）。
+ *
+ * ★ 坐标系必须在这里换一次，否则整屏弹幕会朝反方向飞。
+ *
+ * 原版是 cocos2d-x：节点的 y 轴**向上**，且
+ *   `GameLayer::getAngleToMyShip`（0x535d28）= atan2f(shipY - thisY, shipX - thisX)
+ *   速度合成 = (vx, vy) = speed · (cos a, sin a)
+ * 两式自洽 ⇒ 同一个 y 语义下弹一定朝自机飞。
+ *
+ * 本项目的运动学（bullet_motion.cpp 的 IntegrateVelocity / AngleToPoint）用的是
+ * **屏幕系**（y 向下，自机在下、boss 在上）。同一个 270° 在两套语义里指向相反：
+ *   原版 y-up 的 270°：sin(270°) = -1 ⇒ vy<0 ⇒ y 减小 ⇒ cocos2d 里是屏幕【下方】
+ *                      ⇒ 朝自机 ✔
+ *   本项目 y-down 的 270°：sin(270°) = -1 ⇒ vy<0 ⇒ y 减小 ⇒ 屏幕【上方】
+ *                      ⇒ 背离自机 ✘
+ *
+ * y 轴翻转等价于角度取负（(vx, vy_up) → (vx, -vy_up) = speed·(cos(-a), sin(-a))），
+ * 所以 y-up 角 → y-down 角 = (-a) mod 360。
+ *
+ * state14 的 `base_angle = 270 + random(-10,10)` 与环形 spawn 的
+ * `offset_angle` 都取自**原版静态表**（y-up 语义），进本项目前必须过这个转换。
+ */
+double FromOriginalAngleDeg(double angle_up_deg) {
+    double flipped = -angle_up_deg;
+    flipped = std::fmod(flipped, 360.0);
+    if (flipped < 0.0) {
+        flipped += 360.0;
+    }
+    return flipped;
+}
+
 ChainNode MakeBlockAPayloadNode() {
     ChainNode node;
     node.trigger_period = 300;
@@ -104,7 +136,10 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     node.trigger_period = entry.period;
     node.trigger_tick = entry.phase;
     node.spawn_command.count = static_cast<std::int16_t>(entry.count_per_node);
-    node.spawn_command.base_angle_deg = TnaBoss21NodeAngleDeg(entry, index);
+    // ★ 实测角度来自原版（cocos2d，y 向上）：270° 起每步 −12°，即弹朝屏幕
+    //   下方（朝自机）。本项目用屏幕系（y 向下），所以这里换一次坐标。
+    node.spawn_command.base_angle_deg = static_cast<float>(
+        FromOriginalAngleDeg(TnaBoss21NodeAngleDeg(entry, index)));
     // 弹种与初速来自同一份 .rodata 模板（+0x00 / +0x20）；不填这两项，弹幕会全部
     // 堆在 Boss 点、半径为 0（实测踩过）。
     node.spawn_command.bullet_type = entry.bullet_type;
@@ -370,7 +405,10 @@ std::vector<ChainNode> MakeState14Nodes() {
         node.motion_override.bullet_kind = 180;
         node.motion_override.speed = wave.speed_base;  // 运行期按 f40 分布覆盖
         node.runtime.enabled = true;
-        node.runtime.angle_nominal_deg = 270.0;
+        // ★ 原版实测 `270 + random(-10,10)`（cocos2d，y 向上 ⇒ 朝屏幕下方）。
+        //   本项目用屏幕系（y 向下），这里换成等价角 90（±10 的抖动对称，
+        //   分布不变）。
+        node.runtime.angle_nominal_deg = 90.0;
         node.runtime.angle_jitter_deg = 10;
         node.runtime.speed_base = wave.speed_base;
         node.runtime.speed_step = 0.1;
@@ -607,6 +645,9 @@ ChainNodeExpansion ExpandChainNode(
         const ChainRuntimeSlot& r = node.runtime;
         DeterministicRng rng(ctx.match_seed, tick, r.rng_salt, 0);
         if (r.angle_jitter_deg != 0) {
+            // ★ 原版 `270 + random(-10,10)` 是 cocos2d（y 向上）语义的角度，
+            //   必须换成本项目（y 向下）的角度，否则弹全部朝屏幕上方飞、
+            //   永远碰不到下方的自机。
             cmd.base_angle_deg = static_cast<float>(
                 r.angle_nominal_deg +
                 rng.RandomInt(-r.angle_jitter_deg, r.angle_jitter_deg));
@@ -620,7 +661,10 @@ ChainNodeExpansion ExpandChainNode(
             // 按 state14 的四段子循环把 c 钳到 [0,3]：半径 80~140 / 100~160 px，
             // 与原版的环形扩散形状一致。这里标为**推断**，待逆向确认后修正。
             const double wave = static_cast<double>((tick / period) % 4);
-            const double radians = r.spawn_offset_angle_deg * 3.14159265358979323846 / 180.0;
+            // ★ 环形 spawn 的 offset_angle 同样取自原版静态表（y 向上语义），
+            //   换成 y 向下后再算 sin/cos，环才落在原版的那个方向上。
+            const double radians =
+                FromOriginalAngleDeg(r.spawn_offset_angle_deg) * 3.14159265358979323846 / 180.0;
             cmd.spawn_x = static_cast<float>(ctx.emitter_x +
                 std::cos(radians) * (r.spawn_radius_x_base + r.spawn_radius_step * wave));
             cmd.spawn_y = static_cast<float>(ctx.emitter_y +
