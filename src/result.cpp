@@ -277,6 +277,16 @@ std::vector<std::string> JsonObjectFieldNames(const std::string& json) {
     return fields;
 }
 
+bool ContainsDuplicateJsonObjectField(const std::string& json) {
+    std::set<std::string> unique_fields;
+    for (const auto& field_name : JsonObjectFieldNames(json)) {
+        if (!unique_fields.insert(field_name).second) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsKnownBossResultField(
     const std::string& field_name,
     const BattleResultVerificationOptions& options
@@ -678,8 +688,18 @@ BattleResultVerification BattleResultVerifier::Verify(
         Fail(verification, "mode_result_json_invalid");
         return verification;
     }
+    if (!result.mode_result_json.empty() &&
+        ContainsDuplicateJsonObjectField(result.mode_result_json)) {
+        Fail(verification, "mode_result_json_duplicate_field");
+        return verification;
+    }
     if (!result.reward_projection_json.empty() && !LooksLikeSingleJsonObject(result.reward_projection_json)) {
         Fail(verification, "reward_projection_json_invalid");
+        return verification;
+    }
+    if (!result.reward_projection_json.empty() &&
+        ContainsDuplicateJsonObjectField(result.reward_projection_json)) {
+        Fail(verification, "reward_projection_json_duplicate_field");
         return verification;
     }
     if (!IsBossMode(result.mode_id) && ContainsBossOnlyResultField(result.mode_result_json)) {
