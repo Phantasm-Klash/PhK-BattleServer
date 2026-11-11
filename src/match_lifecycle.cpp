@@ -233,74 +233,83 @@ void AppendJsonDouble(std::string& json, double value) {
 // 整数用 std::to_string，浮点沿用 AppendJsonDouble 的 "%.17g"（双端同精度），
 // 字段名严格照 §4，不做任何编队/运动变换的编造。
 
+// ★ 只写**非默认**字段：客户端 `motionFromTemplate`（bullet_reconstructor.ts）
+//   对缺失字段一律回落到 `createBulletMotion` 的默认值，而那个默认值与服务端
+//   `danmaku::BulletMotion` 的默认成员**逐字段一致**（含 speed_init/spd_init2
+//   的 -1 哨兵）。所以省略默认字段不丢信息。
+//
+//   为什么必须省：一条 boss21 的 delta 快照里 spawn 多达 312 条，模板 471B/条
+//   （33 个字段全写）⇒ 131KB；KCP 的发送窗口只有 128 段 × ~1376B ≈ 176KB，
+//   也就是说**单条快照就吃掉 3/4 的窗口**，一旦丢包/延迟，后面所有快照全被
+//   堵在服务端发送队列里（`ikcp_send` 返回非 0 ⇒ payload 直接丢弃）。
+//   实机症状：客户端只收到开头 2 条快照，权威 tick 卡住不前进。
+//
+//   省略默认字段后同一条快照约 45KB（省 67%），窗口能容纳多条。
+//
+//   ★ wire 格式变了（字段可能缺失），所以差量验收（run_delta_acceptance.sh）
+//     必须重跑：它会逐 tick 比较「客户端从 spawn 重建的弹」与「服务端全量」。
 void AppendBulletMotionTemplateJson(std::string& json, const danmaku::BulletMotion& m) {
-    json += "{\"x\":";
-    AppendJsonDouble(json, m.x);
-    json += ",\"y\":";
-    AppendJsonDouble(json, m.y);
-    json += ",\"vx\":";
-    AppendJsonDouble(json, m.vx);
-    json += ",\"vy\":";
-    AppendJsonDouble(json, m.vy);
-    json += ",\"angle\":";
-    AppendJsonDouble(json, m.angle);
-    json += ",\"speed\":";
-    AppendJsonDouble(json, m.speed);
-    json += ",\"accel\":";
-    AppendJsonDouble(json, m.accel);
-    json += ",\"t\":";
-    AppendJsonDouble(json, m.t);
-    json += ",\"life\":";
-    json += std::to_string(m.life);
-    json += ",\"angle_spd\":";
-    AppendJsonDouble(json, m.angle_spd);
-    json += ",\"angle_acc\":";
-    AppendJsonDouble(json, m.angle_acc);
-    json += ",\"f56c\":";
-    AppendJsonDouble(json, m.f56c);
-    json += ",\"speed_cap\":";
-    AppendJsonDouble(json, m.speed_cap);
-    json += ",\"angle_init\":";
-    AppendJsonDouble(json, m.angle_init);
-    json += ",\"speed_init\":";
-    AppendJsonDouble(json, m.speed_init);
-    json += ",\"f598\":";
-    AppendJsonDouble(json, m.f598);
-    json += ",\"prev_angle\":";
-    AppendJsonDouble(json, m.prev_angle);
-    json += ",\"spd_init2\":";
-    AppendJsonDouble(json, m.spd_init2);
-    json += ",\"xacc\":";
-    AppendJsonDouble(json, m.xacc);
-    json += ",\"xacc_cap\":";
-    AppendJsonDouble(json, m.xacc_cap);
-    json += ",\"pf1\":";
-    AppendJsonDouble(json, m.pf1);
-    json += ",\"pf2\":";
-    AppendJsonDouble(json, m.pf2);
-    json += ",\"bullet_kind\":";
-    json += std::to_string(m.bullet_kind);
-    json += ",\"rotate_flg\":";
-    json += std::to_string(m.rotate_flg);
-    json += ",\"bullet_life\":";
-    json += std::to_string(m.bullet_life);
-    json += ",\"bullet_loop\":";
-    json += std::to_string(m.bullet_loop);
-    json += ",\"delay\":";
-    json += std::to_string(m.delay);
-    json += ",\"vanish_delay\":";
-    json += std::to_string(m.vanish_delay);
-    json += ",\"p1\":";
-    json += std::to_string(m.p1);
-    json += ",\"p2\":";
-    json += std::to_string(m.p2);
-    json += ",\"bullet_func_no\":";
-    json += std::to_string(m.bullet_func_no);
-    json += ",\"hit_dis\":";
-    AppendJsonDouble(json, m.hit_dis);
-    json += ",\"hit_hantei\":";
-    json += m.hit_hantei ? "true" : "false";
+    json += '{';
+    bool first = true;
+    auto sep = [&json, &first]() {
+        if (!first) json += ',';
+        first = false;
+    };
+    auto put_double = [&](const char* key, double value, double fallback) {
+        if (value == fallback) return;
+        sep();
+        json += '"';
+        json += key;
+        json += "\":";
+        AppendJsonDouble(json, value);
+    };
+    auto put_int = [&](const char* key, std::int64_t value, std::int64_t fallback) {
+        if (value == fallback) return;
+        sep();
+        json += '"';
+        json += key;
+        json += "\":";
+        json += std::to_string(value);
+    };
+
+    put_double("x", m.x, 0.0);
+    put_double("y", m.y, 0.0);
+    put_double("vx", m.vx, 0.0);
+    put_double("vy", m.vy, 0.0);
+    put_double("angle", m.angle, 0.0);
+    put_double("speed", m.speed, 0.0);
+    put_double("accel", m.accel, 0.0);
+    put_double("t", m.t, 0.0);
+    put_int("life", m.life, 0);
+    put_double("angle_spd", m.angle_spd, 0.0);
+    put_double("angle_acc", m.angle_acc, 0.0);
+    put_double("f56c", m.f56c, 0.0);
+    put_double("speed_cap", m.speed_cap, 0.0);
+    put_double("angle_init", m.angle_init, -1.0);
+    put_double("speed_init", m.speed_init, -1.0);
+    put_double("f598", m.f598, 0.0);
+    put_double("prev_angle", m.prev_angle, 0.0);
+    put_double("spd_init2", m.spd_init2, -1.0);
+    put_double("xacc", m.xacc, 0.0);
+    put_double("xacc_cap", m.xacc_cap, 0.0);
+    put_double("pf1", m.pf1, 1.0);
+    put_double("pf2", m.pf2, 0.0);
+    put_int("bullet_kind", m.bullet_kind, 0);
+    put_int("rotate_flg", m.rotate_flg, 0);
+    put_int("bullet_life", m.bullet_life, 0);
+    put_int("bullet_loop", m.bullet_loop, 0);
+    put_int("delay", m.delay, 0);
+    put_int("vanish_delay", m.vanish_delay, 0);
+    put_int("p1", m.p1, 0);
+    put_int("p2", m.p2, 0);
+    put_int("bullet_func_no", m.bullet_func_no, 0);
+    put_double("hit_dis", m.hit_dis, 0.0);
+    if (!m.hit_hantei) {
+        sep();
+        json += "\"hit_hantei\":false";
+    }
     json += '}';
+    return;
 }
 
 void AppendBulletSpawnsJson(std::string& json, const std::vector<BulletSpawnWire>& spawns) {
@@ -1330,13 +1339,20 @@ void MatchServer::AdvanceTick() {
         //   之前这里直接 return，客户端收不到任何终局信号 —— 实机症状是
         //   服务端「TIMEOUT ticks=7200」退出后，客户端仍在本地空跑：本地 tick
         //   一路涨（12926），权威 tick 停在 7199，帧率从 60 掉到 20。
-        //   只广播一次（final_snapshot_sent_ 去重），否则每个 tick 都会重发。
+        //   只广播一次（final_snapshot_sent_ 去重），否则每个 tick 都会重发；
+        //   但**发送窗口满时会保留并重试**（见 BroadcastFinalSnapshotIfNeeded）。
         BroadcastFinalSnapshotIfNeeded();
         return;
     }
     if (coop_mode_) {
         const CoopBossSnapshot snapshot = coop_->Tick();
         BroadcastSnapshotPayload(EncodeCoopBossSnapshotPayload(snapshot));
+        // ★ 协作模式的终局在 Tick() 内部才置 Finished，所以这一 tick 的快照
+        //   仍是 "running" —— 必须**紧接着**再广播一条 finished 的（见
+        //   BroadcastFinalSnapshotIfNeeded）。
+        if (coop_->State() == CoopBossState::Finished) {
+            BroadcastFinalSnapshotIfNeeded();
+        }
     } else {
         const BossRaceSnapshot snapshot = simulation_.Tick();
         if (config_.delta_wire_enabled) {
@@ -1366,6 +1382,12 @@ void MatchServer::AdvanceTick() {
             BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot, &delta));
         } else {
             BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+        }
+        // ★ 同上：race 的终局也在 Tick() 内部才置 Finished（boss HP 归零），
+        //   所以这一 tick 的快照 state 仍是 "running"。紧接着补发一条
+        //   state="finished" 的终局快照，客户端才知道该收尾了。
+        if (simulation_.State() == BossRaceState::Finished) {
+            BroadcastFinalSnapshotIfNeeded();
         }
     }
     DetectAllPlayersDisconnected();
@@ -1591,6 +1613,10 @@ void MatchServer::BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payl
 
 void MatchServer::BroadcastFinalSnapshotIfNeeded() {
     if (final_snapshot_sent_) {
+        // ★ 已经发过，但可能**没发出去**：KCP 发送窗口满时 ikcp_send 会返回
+        //   非 0，payload 被丢掉 —— 那样客户端永远收不到终局。每 tick 重试，
+        //   直到真正送达（或对局进程结束）。
+        RetryPendingFinalSnapshot();
         return;
     }
     final_snapshot_sent_ = true;
@@ -1600,26 +1626,55 @@ void MatchServer::BroadcastFinalSnapshotIfNeeded() {
     // 终局快照走**与常规 tick 相同的编码路径**：race 带 delta（wire_cap 置位、
     // 省略全量 bullets[]），coop 走它自己的编码器。客户端因此看到与中途
     // 快照**同形**的数据，只是 state 变成 "finished"。
+    std::vector<std::uint8_t> payload;
     if (coop_mode_) {
         CoopBossSnapshot coop_snapshot = coop_->Snapshot();
         // ★ state 强制 finished：`--max-ticks` 超时路径里模拟仍是 Running，
         //   不改的话客户端收到的还是 "running"，照样判不出终局。
         coop_snapshot.state = CoopBossState::Finished;
-        BroadcastSnapshotPayload(EncodeCoopBossSnapshotPayload(coop_snapshot));
+        payload = EncodeCoopBossSnapshotPayload(coop_snapshot);
+    } else {
+        BossRaceSnapshot snapshot = simulation_.Snapshot();
+        // ★ 同上：超时路径的模拟状态仍是 Running，终局快照必须显式标 finished，
+        //   客户端据此停本地模拟、进结算。
+        snapshot.state = BossRaceState::Finished;
+        if (config_.delta_wire_enabled) {
+            // 终局 delta 为空：此时场上仍有弹，但客户端的重建器只关心 spawn /
+            // despawn 事件流，终局这一帧不需要再重建（子弹随即清场）。
+            BossRaceDeltaWire delta;
+            payload = EncodeBossRaceSnapshotPayload(snapshot, &delta);
+        } else {
+            payload = EncodeBossRaceSnapshotPayload(snapshot);
+        }
+    }
+    if (!SendFinalSnapshotToAll(payload)) {
+        // 窗口满：留到下一 tick 重试。
+        pending_final_snapshot_ = std::move(payload);
+    }
+}
+
+void MatchServer::RetryPendingFinalSnapshot() {
+    if (pending_final_snapshot_.empty()) {
         return;
     }
-    BossRaceSnapshot snapshot = simulation_.Snapshot();
-    // ★ 同上：超时路径的模拟状态仍是 Running，终局快照必须显式标 finished，
-    //   客户端据此停本地模拟、进结算。
-    snapshot.state = BossRaceState::Finished;
-    if (config_.delta_wire_enabled) {
-        // 终局 delta 为空：此时场上仍有弹，但客户端的重建器只关心 spawn /
-        // despawn 事件流，终局这一帧不需要再重建（子弹随即清场）。
-        BossRaceDeltaWire delta;
-        BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot, &delta));
-        return;
+    if (SendFinalSnapshotToAll(pending_final_snapshot_)) {
+        pending_final_snapshot_.clear();
     }
-    BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+}
+
+bool MatchServer::SendFinalSnapshotToAll(const std::vector<std::uint8_t>& payload) {
+    if (player_by_conv_.empty()) {
+        return false;
+    }
+    bool all_sent = true;
+    for (const auto& entry : player_by_conv_) {
+        // ★ Send 返回 false = KCP 发送缓冲区满（窗口饱和）。此时**不能**当作
+        //   已送达 —— 丢掉这条就等于客户端永远收不到终局。
+        if (!endpoint_.Send(entry.first, payload)) {
+            all_sent = false;
+        }
+    }
+    return all_sent;
 }
 
 void MatchServer::BroadcastFinalSnapshot() {

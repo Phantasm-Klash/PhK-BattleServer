@@ -362,6 +362,10 @@ private:
     void BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payload);
     // 终局广播一条快照，让客户端能收尾（停本地模拟、进结算）。
     void BroadcastFinalSnapshotIfNeeded();
+    // 发送窗口满时保留终局快照，下一 tick 重试。
+    void RetryPendingFinalSnapshot();
+    // 把终局快照发给所有会话；返回 false 表示有会话的发送缓冲区满（需重试）。
+    bool SendFinalSnapshotToAll(const std::vector<std::uint8_t>& payload);
     void SubmitResultIfNeeded();
     // F3：全断线判定 → 推一次 all_players_disconnected 进收集器（去重）。
     void DetectAllPlayersDisconnected();
@@ -402,6 +406,8 @@ private:
     bool started_ = false;
     // 终局快照只广播一次（否则每个 tick 都重发）。
     bool final_snapshot_sent_ = false;
+    // 发送窗口满时暂存终局快照，逐 tick 重试直到送达。
+    std::vector<std::uint8_t> pending_final_snapshot_;
 };
 
 }  // namespace phk::battle

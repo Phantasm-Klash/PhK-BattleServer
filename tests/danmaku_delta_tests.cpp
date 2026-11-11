@@ -216,14 +216,46 @@ void TestSpawnTemplateMirrorsBulletMotion() {
 
     const std::string json =
         JsonOf(phk::battle::EncodeBossRaceSnapshotPayload(snap, &delta));
-    for (const char* field : {"\"x\":320", "\"y\":120", "\"angle\":90",
-                              "\"speed\":3", "\"angle_init\":-1",
-                              "\"spd_init2\":2.5", "\"xacc\":0.5",
-                              "\"bullet_kind\":12", "\"bullet_func_no\":7",
-                              "\"hit_dis\":4", "\"p1\":3", "\"p2\":4",
-                              "\"delay\":5", "\"hit_hantei\":true"}) {
-        Check(Contains(json, field),
-              std::string("spawn template mirrors BulletMotion field ") + field);
+    // ★ 契约是「**解析出来的模板值**与 BulletMotion 逐字段相等」，不是
+    //   「JSON 里必须出现每一个键」。服务端只写**非默认**字段（否则一条快照
+    //   能到 130KB，把 KCP 发送窗口吃满 —— 实机症状：客户端只收到开头 2 条
+    //   快照），客户端对缺失字段回落 `createBulletMotion` 的默认值，而那个
+    //   默认值与服务端 BulletMotion 的默认成员逐字段一致。
+    //   所以这里按「键存在 ⇒ 值相等；键缺失 ⇒ 值等于默认值」逐字段断言。
+    auto field_value = [&json](const std::string& key) -> std::string {
+        const std::string needle = "\"" + key + "\":";
+        const std::size_t at = json.find(needle);
+        if (at == std::string::npos) return std::string();
+        std::size_t start = at + needle.size();
+        const std::size_t end = json.find_first_of(",}", start);
+        return json.substr(start, end - start);
+    };
+    struct Expect {
+        const char* key;
+        const char* value;
+    };
+    for (const Expect& expect : {
+             Expect{"x", "320"}, Expect{"y", "120"}, Expect{"angle", "90"},
+             Expect{"speed", "3"},
+             Expect{"spd_init2", "2.5"}, Expect{"xacc", "0.5"},
+             Expect{"bullet_kind", "12"}, Expect{"bullet_func_no", "7"},
+             Expect{"hit_dis", "4"}, Expect{"p1", "3"}, Expect{"p2", "4"},
+             Expect{"delay", "5"}}) {
+        const std::string actual = field_value(expect.key);
+        Check(actual == expect.value,
+              std::string("spawn template mirrors BulletMotion field ") + expect.key +
+                  " (expected " + expect.value + ", got " +
+                  (actual.empty() ? "<omitted>" : actual) + ")");
+    }
+    // 默认值字段：服务端省略键，客户端按默认值回落 —— 这里断言「键确实被省略」
+    // 且省略的值恰好是服务端 BulletMotion 的默认值。
+    for (const char* key : {"vx", "vy", "accel", "t", "life", "angle_spd",
+                            "angle_acc", "f56c", "speed_cap", "speed_init",
+                            "angle_init", "f598", "prev_angle", "xacc_cap",
+                            "pf1", "pf2", "rotate_flg", "bullet_life",
+                            "bullet_loop", "vanish_delay", "hit_hantei"}) {
+        Check(field_value(key).empty(),
+              std::string("default field is omitted from the wire: ") + key);
     }
     Check(Contains(json, "\"t0\":45,\"p\":3,\"q\":7,\"group_id\":0"),
           "spawn four-tuple + group_id are encoded");

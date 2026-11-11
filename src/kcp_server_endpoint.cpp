@@ -1,5 +1,7 @@
 #include "phk/battle/kcp_server_endpoint.hpp"
 
+#include <cstdio>
+
 #include "ikcp.h"
 
 #include <arpa/inet.h>
@@ -354,10 +356,16 @@ bool KcpServerEndpoint::Send(std::uint32_t conv, const std::vector<std::uint8_t>
         return false;
     }
     Impl::Session* session = it->second.get();
-    if (ikcp_send(
+    // ★★ `ikcp_send` **返回已排入发送队列的字节数**（成功），只有出错才返回
+    //   负值（-1 参数非法 / -2 分片数超过窗口或内存分配失败）。所以判断必须
+    //   看**是否 < 0**，不能看 `!= 0`。
+    //   旧代码写的是 `!= 0` ⇒ 任何一条成功排队的快照（返回 942 等）都被当成
+    //   失败而丢弃 —— 实机症状：客户端只收到开头 2 条快照，权威 tick 卡住。
+    const int rc = ikcp_send(
             session->kcp,
             reinterpret_cast<const char*>(payload.data()),
-            static_cast<int>(payload.size())) != 0) {
+            static_cast<int>(payload.size()));
+    if (rc < 0) {
         return false;
     }
     session->messages_out += 1;

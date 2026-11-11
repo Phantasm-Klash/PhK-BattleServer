@@ -563,8 +563,90 @@ private:
     std::vector<std::vector<std::uint8_t>> received_;
 };
 
-void TestSocketSmokeRace() {
+// ★ 终局必须广播一条快照 —— 客户端据此收尾（停本地模拟、进结算）。
+//   之前服务端从不广播终局快照（正常结束只 flush 事件就 return，超时直接
+//   Stop()），客户端判终局只认 `winner_player_id !== ''`，于是「超时 / 无胜者」
+//   这类终局永远判不出来：客户端本地模拟无限空跑（实机：本地 tick 12926 vs
+//   权威 7199，帧率 60 → 20）。
+void TestFinalSnapshotIsBroadcast() {
     phk::battle::MatchLifecycleConfig config;
+    config.all_features_enabled = false;
+    config.port = 0;
+    config.match_id = "match_final_snapshot";
+    config.seed = 24680u;
+    config.player_ids = {"player_a", "player_b"};
+    config.boss_max_hp = 100;
+
+    phk::battle::MatchServer server(config);
+    std::string error;
+    Check(server.Start(&error), "final-snapshot server starts (" + error + ")");
+
+    server.SetResultSubmitter([&](const std::string&) {
+        phk::battle::HttpPostResult result;
+        result.ok = true;
+        result.status_code = 200;
+        result.body = "{}";
+        return result;
+    });
+
+    KcpClient client_a;
+    KcpClient client_b;
+    Check(client_a.Open("127.0.0.1", server.Port(), 0x0000C003u), "final client_a opens");
+    Check(client_b.Open("127.0.0.1", server.Port(), 0x0000D004u), "final client_b opens");
+
+    std::uint64_t seq_a = 0;
+    std::uint64_t seq_b = 0;
+    for (std::uint64_t tick = 1; tick <= 400 && !server.finished(); ++tick) {
+        client_a.Send(phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_a", tick, ++seq_a, true)));
+        client_b.Send(phk::battle::EncodeBattleInputPayload(
+            MakeInput(config.match_id, "player_b", tick, ++seq_b, false)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        server.ProcessNetwork(0);
+        server.AdvanceTick();
+        client_a.Pump();
+        client_b.Pump();
+    }
+    Check(server.finished(), "final-snapshot race finished");
+
+    // 再 pump 几轮，把终局快照取回来。★ 终局快照可能因为 KCP 发送窗口满
+    //   而发不出去（服务端会保留并逐 tick 重试），所以要多 pump 几轮，
+    //   让 ACK 回流、窗口腾出空间。
+    for (int i = 0; i < 60; ++i) {
+        server.AdvanceTick();
+        client_a.Pump();
+        client_b.Pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    // 快照负载：字节 4 = payload type，其余是 JSON。
+    auto has_finished_state = [](const std::vector<std::uint8_t>& payload) {
+        if (payload.size() < 6) return false;
+        const std::string body(payload.begin() + 1, payload.end());
+        return body.find("\"state\":\"finished\"") != std::string::npos;
+    };
+
+    bool a_saw_finished = false;
+    for (std::size_t i = 0; i < client_a.ReceivedCount(); ++i) {
+        const auto& m = client_a.Received(i);
+        if (has_finished_state(m)) {
+            a_saw_finished = true;
+            break;
+        }
+    }
+    Check(a_saw_finished, "client_a received a snapshot with state=finished");
+
+    // 终局快照只发一次（否则每个 tick 都重发）。
+    const std::uint64_t after_final = server.SnapshotBroadcastCount();
+    server.AdvanceTick();
+    server.AdvanceTick();
+    Check(server.SnapshotBroadcastCount() == after_final,
+          "the final snapshot is broadcast exactly once");
+
+    server.Stop();
+}
+
+void TestSocketSmokeRace() {    phk::battle::MatchLifecycleConfig config;
     // 测的是 legacy 回退路径：显式关闭全开开关，逐字节复现改动前行为。
     config.all_features_enabled = false;
     config.port = 0;
@@ -1159,6 +1241,7 @@ int main() {
     TestCardInputFieldsCodec();
     TestResultPayloadAndJson();
     TestSocketSmokeRace();
+    TestFinalSnapshotIsBroadcast();
     TestSocketSmokeCoop();
     TestHttpPostClient();
     TestDemRecordingFromAppPath();
