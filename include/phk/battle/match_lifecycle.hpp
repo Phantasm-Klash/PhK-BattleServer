@@ -314,6 +314,17 @@ public:
     [[nodiscard]] MatchResultPayload ResultPayload() const;
     [[nodiscard]] std::string ResultJson() const;
 
+    /**
+     * Broadcasts one final snapshot so the client can wind down.
+     *
+     * Called on the normal end-of-match path (inside `AdvanceTick`) and
+     * explicitly by the binary when it gives up on `--max-ticks`: without it
+     * the client keeps its local simulation running forever after the server
+     * is gone (observed in the field: local tick 12926 vs authoritative 7199,
+     * frame rate 60 → 20).
+     */
+    void BroadcastFinalSnapshot();
+
     // Number of snapshot frames broadcast so far (diagnostics/tests).
     [[nodiscard]] std::uint64_t SnapshotBroadcastCount() const;
     [[nodiscard]] std::uint64_t AcceptedInputCount() const;
@@ -349,6 +360,8 @@ private:
     );
     // 广播已编码的快照负载（race = 字节 4 + JSON，coop = 字节 12 + JSON）。
     void BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payload);
+    // 终局广播一条快照，让客户端能收尾（停本地模拟、进结算）。
+    void BroadcastFinalSnapshotIfNeeded();
     void SubmitResultIfNeeded();
     // F3：全断线判定 → 推一次 all_players_disconnected 进收集器（去重）。
     void DetectAllPlayersDisconnected();
@@ -387,6 +400,8 @@ private:
     std::uint64_t snapshot_broadcasts_ = 0;
     std::uint64_t accepted_inputs_ = 0;
     bool started_ = false;
+    // 终局快照只广播一次（否则每个 tick 都重发）。
+    bool final_snapshot_sent_ = false;
 };
 
 }  // namespace phk::battle

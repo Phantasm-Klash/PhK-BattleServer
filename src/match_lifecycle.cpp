@@ -1326,6 +1326,12 @@ void MatchServer::AdvanceTick() {
         // 终局强制 flush 一次：跳过冷却，把收集器里剩下的行全部送出。
         FlushEventsIfNeeded(true);
         SubmitResultIfNeeded();
+        // ★ 终局也要**广播一条快照**：客户端据此收尾（停本地模拟、结算界面）。
+        //   之前这里直接 return，客户端收不到任何终局信号 —— 实机症状是
+        //   服务端「TIMEOUT ticks=7200」退出后，客户端仍在本地空跑：本地 tick
+        //   一路涨（12926），权威 tick 停在 7199，帧率从 60 掉到 20。
+        //   只广播一次（final_snapshot_sent_ 去重），否则每个 tick 都会重发。
+        BroadcastFinalSnapshotIfNeeded();
         return;
     }
     if (coop_mode_) {
@@ -1581,6 +1587,43 @@ void MatchServer::BroadcastSnapshotPayload(const std::vector<std::uint8_t>& payl
         endpoint_.Send(entry.first, payload);
     }
     snapshot_broadcasts_ += 1;
+}
+
+void MatchServer::BroadcastFinalSnapshotIfNeeded() {
+    if (final_snapshot_sent_) {
+        return;
+    }
+    final_snapshot_sent_ = true;
+    if (player_by_conv_.empty()) {
+        return;
+    }
+    // 终局快照走**与常规 tick 相同的编码路径**：race 带 delta（wire_cap 置位、
+    // 省略全量 bullets[]），coop 走它自己的编码器。客户端因此看到与中途
+    // 快照**同形**的数据，只是 state 变成 "finished"。
+    if (coop_mode_) {
+        CoopBossSnapshot coop_snapshot = coop_->Snapshot();
+        // ★ state 强制 finished：`--max-ticks` 超时路径里模拟仍是 Running，
+        //   不改的话客户端收到的还是 "running"，照样判不出终局。
+        coop_snapshot.state = CoopBossState::Finished;
+        BroadcastSnapshotPayload(EncodeCoopBossSnapshotPayload(coop_snapshot));
+        return;
+    }
+    BossRaceSnapshot snapshot = simulation_.Snapshot();
+    // ★ 同上：超时路径的模拟状态仍是 Running，终局快照必须显式标 finished，
+    //   客户端据此停本地模拟、进结算。
+    snapshot.state = BossRaceState::Finished;
+    if (config_.delta_wire_enabled) {
+        // 终局 delta 为空：此时场上仍有弹，但客户端的重建器只关心 spawn /
+        // despawn 事件流，终局这一帧不需要再重建（子弹随即清场）。
+        BossRaceDeltaWire delta;
+        BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot, &delta));
+        return;
+    }
+    BroadcastSnapshotPayload(EncodeBossRaceSnapshotPayload(snapshot));
+}
+
+void MatchServer::BroadcastFinalSnapshot() {
+    BroadcastFinalSnapshotIfNeeded();
 }
 
 void MatchServer::DetectAllPlayersDisconnected() {

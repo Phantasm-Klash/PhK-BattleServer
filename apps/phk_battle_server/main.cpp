@@ -324,6 +324,10 @@ int main(int argc, char** argv) {
             // meaningful mid-match; the winner is whoever leads, and nobody
             // leading (an empty winner) settles as a draw on the lobby side.
             std::cout << "RESULT " << server.ResultJson() << std::endl;
+            // ★ 超时也是对局的**结束**：给客户端发一条终局快照，否则它收不到
+            //   任何收尾信号，会一直空跑本地模拟（实机：本地 tick 12926 vs
+            //   权威 7199，帧率 60 → 20）。先发快照再停 socket。
+            server.BroadcastFinalSnapshot();
             server.Stop();
             return 0;
         }
