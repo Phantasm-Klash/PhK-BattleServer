@@ -405,6 +405,14 @@ void TestPhaseRotationEndToEnd() {
 // 后，弹幕轨迹再次变化，基线更新为 22e0d51d... / de44b147...。
 // 更早基线：79450138a8f24027 / ae1e49473951ac83。
 //
+// ★ 2026-11-12：修正弹种（kEnemyBullet）派生。原版 createBullets1 把双跳转表
+//   的 (w2,w3) 传给子弹虚初始化（vtable+0x218），w3 是**弹种**而非原始 mode id
+//   （实测：setBulletType @0x512140 用 type-9 查 216 项表；spriteWithFile
+//   @0x4fd744 签名首参即 kEnemyBullet）。旧 MakeCadenceNode 只取 w2，弹种回落成
+//   bullet_type，9 种弹的贴图全错（如 type=10 应 heart_05 却画 kusabi_02）。
+//   修正后 cadence/state20 的 state_hash 变化 ⇒ boss21_tna → 83acc8fd...。
+//   boss21（state14 硬编码 180）与另两条 legacy 哈希未变。
+//
 // ★ 2026-11-12：修正「弹数上限 + 固定节点顺序截断」造成的弹幕偏斜
 //   （见 boss_race.cpp::SpawnChainBulletsForTick 的名额公平轮转）。384/玩家
 //   满额后只有前几个节点能抢到名额，而 state14 前 18 个节点偏移角都在右半圈
@@ -429,7 +437,7 @@ void TestNoSegmentRegression() {
     };
     const Case cases[] = {
         {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "36e6bc4fca7d5120", "chain:boss21"},
-        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "492b3dfd43ea1108", "chain:boss21_tna"},
+        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "83acc8fdc6522dbc", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
         {"regress default ruleset", "", "boss21_tna", "de44b147cb9c26f9", nullptr},
     };

@@ -29,13 +29,14 @@
 namespace phk::battle::danmaku {
 namespace {
 
-// 原版模式 id → (w2, w3)（bullet_mode_map 双跳转表，字段赋意为[推断]）。
-// 50 → (53, 182)：w2=53 作 bullet_func_no；w3=182 的字段赋值未验证，
-// 故 motion_override.bullet_kind 留 0 = 发射时回退 cmd.bullet_type（50 → kome 纹理，
-// 与 bullet_kind_table 的纹理表语义一致，实测）。
+// 原版模式 id → (w2, w3)（bullet_mode_map 双跳转表）。
+// 50 → (53, 182)：w2=53 → bullet_func_no [推断]；
+// w3=182 → kEnemyBullet 弹种 [实测，见 MakeCadenceNode 的逐指令依据]，
+// 对应贴图 heart_09.png（不是原始 mode id 50 的 kome_06.png）。
 constexpr int kBlockAPayloadModeId = 0x32;   // 50 [实测：#11 §4.2]
 constexpr int kBlockAHeadModeId = 0xfa;      // 250 [实测：#11 §4.2 头节点]
 constexpr int kBlockAPayloadFuncNo = 53;     // w2 [推断：BulletModeForId(50)]
+constexpr int kBlockAPayloadBulletKind = 182;  // w3 [实测：BulletModeForId(50)]
 
 // 触发块 A 的载荷节点偏移（#11 §4.2 [实测]）：
 //   a = random(1, 360)
@@ -102,8 +103,8 @@ ChainNode MakeBlockAPayloadNode() {
     node.spawn_command.spawn_x = kSpawnFollowEmitter;        // 偏移含 random/fcsel，未静态化
     node.spawn_command.spawn_y = kSpawnFollowEmitter;
     // base_angle_deg / spread / 速度：#11 §4.2 未解码 → 未转写（默认 0）。
-    node.motion_override.bullet_func_no = kBlockAPayloadFuncNo;  // w2 [推断]
-    node.motion_override.bullet_kind = 0;  // 0 = 用 cmd.bullet_type(50)（w3=182 赋值未验证）
+    node.motion_override.bullet_func_no = kBlockAPayloadFuncNo;       // w2 [推断]
+    node.motion_override.bullet_kind = kBlockAPayloadBulletKind;      // w3 [实测] = heart_09
     node.offset_expr = "s8/s9 = (A*0.2>enemyX ? ±30 : ±cos(random(1,360))*30) / "
                        "(A*0.1>enemyY ? ±30 : ±sin(random(1,360))*30)";
     node.provenance = "boss_pattern_tables.md §4.2 触发块 A 载荷节点 [实测]（#11 解码样板）；"
@@ -144,14 +145,26 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     // 堆在 Boss 点、半径为 0（实测踩过）。
     node.spawn_command.bullet_type = entry.bullet_type;
     node.motion_override.speed = static_cast<double>(entry.speed);
-    // 运动函数：原版 `Enemy::createBullets1` @0x37bacc 读 command+0x00（= 本表
-    // bullet_type，即节点模式 id），经双跳转表映射出 (w2, w3)，并把这一对作为
-    // 参数 2/3 传给每颗子弹的虚初始化（vtable+0x218）[实测：0x37bef0 起]。
-    // w2 的取值域（24..59）与 bulletFunc 编号域相容 → 取作运动函数号 [推断]。
+    // 运动函数与弹种：原版 `Enemy::createBullets1` @0x37bacc 读 command+0x00
+    // （= 本表 bullet_type，即节点模式 id），经双跳转表映射出 (w2, w3)，并把
+    // 这一对作为参数 2/3 传给每颗子弹的虚初始化（vtable+0x218）
+    // [实测：0x37bef0 `ldr x8,[x8,#0x218]; mov x0,x20; blr x8`]。
+    //   * w2 (24..59) → bullet_func_no（运动函数号）[推断，取值域相容]；
+    //   * w3 (12 / 178..211) → kEnemyBullet **弹种** [实测]：
+    //     `EnemyBullet::setBulletType(kEnemyBullet)` @0x512140 用 `type-9` 查
+    //     216 项跳转表，`EnemyBullet::spriteWithFile(kEnemyBullet,...)` @0x4fd744
+    //     用它索引贴图。贴图表 `bullet_kind_table.md` 的 216 个帧名与之一一对应。
+    // ★ 2026-11-12：旧实现只派生了 w2，**没有把 w3 写进 bullet_kind**，于是
+    //   EmitRadial 的 `kind = tmpl.bullet_kind != 0 ? tmpl.bullet_kind : cmd.bullet_type`
+    //   把弹种回落成原始 mode id（10/29/39/48/114/148/172…），贴图全错：
+    //   例如 type=10 原版应 heart_05、当前画成 kusabi_02；type=48 应 heart_09、
+    //   当前画成 kome_04。这才是「弹幕类型和原版不一致」的直接原因。
     // bullet_type == 0 表示该波模板的弹种字段未定位（4 条 (400,1) 波），
-    // 此时不派生（保持 0 = 直线），避免用一个不属于它的函数号改掉运动。
+    // 此时不派生（保持 0 = 直线），避免用不属于它的函数号改掉运动。
     if (entry.bullet_type > 0) {
-        node.motion_override.bullet_func_no = BulletModeForId(entry.bullet_type).w2;
+        const danmaku::BulletModePair pair = BulletModeForId(entry.bullet_type);
+        node.motion_override.bullet_func_no = pair.w2;
+        node.motion_override.bullet_kind = pair.w3;
     }
     // 半径：模板里对应 `pf2`（碰撞半径系数）的字段尚未定位，先用引擎直线弹的
     // 默认 4.0px（= 4000 milli，与合成弹幕同口径），保证可判定、可渲染。
@@ -159,7 +172,7 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
     node.spawn_command.spawn_x = -1.0f;  // 跟随发射者（原版哨兵）
     node.spawn_command.spawn_y = -1.0f;
     node.provenance = "tna_boss21.hpp：节奏点实测（subs+msub）+ 9 次循环 × count=1；"
-                      "bullet_func_no 由 BulletModeForId(bullet_type).w2 派生";
+                      "bullet_func_no/bullet_kind 由 BulletModeForId(bullet_type) 的 (w2,w3) 派生";
     return node;
 }
 
