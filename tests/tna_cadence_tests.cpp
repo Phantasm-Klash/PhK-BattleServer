@@ -405,6 +405,14 @@ void TestPhaseRotationEndToEnd() {
 // 后，弹幕轨迹再次变化，基线更新为 22e0d51d... / de44b147...。
 // 更早基线：79450138a8f24027 / ae1e49473951ac83。
 //
+// ★ 2026-11-12：修正「弹数上限 + 固定节点顺序截断」造成的弹幕偏斜
+//   （见 boss_race.cpp::SpawnChainBulletsForTick 的名额公平轮转）。384/玩家
+//   满额后只有前几个节点能抢到名额，而 state14 前 18 个节点偏移角都在右半圈
+//   ⇒ 实机左侧弹消失、整屏弹幕「集中在右下」。改为按 tick 轮转遍历起点后
+//   场上弹的 x 中心从 +105px 回到 +13px（对称）。发射顺序变化 ⇒ 基线再更新：
+//   boss21 #11 sample → 36e6bc4f...，boss21_tna → 492b3dfd...。
+//   另两条（mvp / default，走 legacy 路径）哈希未变。
+//
 // ★ 2026-11-11：修正 boss21 弹幕的**坐标系**（见 chain_node.cpp 的
 //   FromOriginalAngleDeg）——原版是 cocos2d（y 向上），本项目是屏幕系
 //   （y 向下），原版实测角 270±10 被直接当本项目角用 ⇒ 弹全部朝屏幕上方飞、
@@ -420,8 +428,8 @@ void TestNoSegmentRegression() {
         const char* expected_pattern;  // nullptr = 该路径不该出现任何 chain: 弹幕
     };
     const Case cases[] = {
-        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "e9267f6dc6c8dce6", "chain:boss21"},
-        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "a06b26cd80e63f02", "chain:boss21_tna"},
+        {"regress boss21 (#11 sample)", "tna-1.40-danmaku", "boss21", "36e6bc4fca7d5120", "chain:boss21"},
+        {"regress boss21_tna at phase 0", "tna-1.40-danmaku", "boss21_tna", "492b3dfd43ea1108", "chain:boss21_tna"},
         {"regress mvp-boss-race-s0", "mvp-boss-race-s0", "boss21_tna", "dacb182264b0f6d0", nullptr},
         {"regress default ruleset", "", "boss21_tna", "de44b147cb9c26f9", nullptr},
     };

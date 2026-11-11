@@ -908,8 +908,27 @@ void BossRaceSimulation::SpawnChainBulletsForTick(std::uint64_t tick) {
 
         // spawn_index = 该玩家该 tick 展开序（跨节点连续，保证 (pattern_index,
         // spawn_index) 对每颗弹唯一 → 运动学 RNG 输入不撞车）。
+        //
+        // ★★★ 名额公平轮转（2026-11-12 实机定位）：
+        //   `kBossRaceMaxBulletsPerPlayer`（384）满了之后，每 tick 只有少量弹出界
+        //   腾出名额。若总是从 emissions[0] 顺序遍历并「先到先得」，**永远是数组
+        //   最前面那几个节点抢到名额**。boss21 state14 的前 18 个节点偏移角都在
+        //   -90..+90（右半圈，cos>0），左半圈（174..270）排在第 18 位之后，
+        //   于是实机上左侧弹完全消失、整屏弹幕长期「集中在右下」。
+        //   证据：长时窗 delta trace 里 spawn 的 q（节点序号）从前期 0..155 退化到
+        //   后期 0..18；出生 x 直方图从对称退化为 +40/+80/+120 一侧独大。
+        //
+        //   修法：把遍历起点按 tick 轮转（emissions.size() 为模），让每个节点在
+        //   长期窗口内都有同等机会拿到名额。只改**遍历顺序**，不改发射内容、
+        //   不改 spawn_index 的连续唯一性、不改 wire 格式、不改运动学。
         std::uint32_t spawn_index = 0;
-        for (const danmaku::ChainNodeEmission& emission : emissions) {
+        const std::size_t emission_count = emissions.size();
+        const std::size_t emission_start = emission_count == 0
+            ? 0
+            : static_cast<std::size_t>(tick % emission_count);
+        for (std::size_t step = 0; step < emission_count; ++step) {
+            const danmaku::ChainNodeEmission& emission =
+                emissions[(emission_start + step) % emission_count];
             for (const danmaku::BulletMotion& motion : emission.bullets) {
                 if (EmittedBulletsFor(player.player_id) >= kBossRaceMaxBulletsPerPlayer) {
                     break;
