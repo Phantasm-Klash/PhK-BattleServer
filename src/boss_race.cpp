@@ -812,13 +812,24 @@ std::size_t BossRaceSimulation::EmittedBulletsFor(const std::string& player_id) 
 }
 
 void BossRaceSimulation::SpawnBulletsForTick(std::uint64_t tick) {
-    // 主路径 = 真实弹幕（tna-1.40）；旧合成弹幕仅在 mvp-boss-race-s0 下保留兼容。
-    if (config_.ruleset_version == "mvp-boss-race-s0") {
-        SpawnSyntheticBulletsForTick(tick);
-    } else if (chain_tables_active_) {
-        // ChainNode 表路径：EmitChainBossTickDetailed 取代 10 模式轮转
-        // （启用条件见 ChainTablesActive：tna-1.40-danmaku + 库内 boss_id）。
+    // ★★★ 分派顺序：**chain 表优先**。
+    //
+    // 旧顺序是「mvp-boss-race-s0 先命中」，于是线上大厅（环境变量
+    // GENSOULKYO_BATTLE_RULESET=mvp-boss-race-s0）**永远走项目自造的 10 模式
+    // 合成库**（pattern_timeline / SpawnSyntheticBulletsForTick），原版 boss21
+    // 的 ChainNode 弹幕表（state14 实测 192 波次 / cadence / state20）从来没
+    // 在实机生效过 —— 实机 HUD 上的 PATTERN 是合成库的 `laser_curtain` 等 id，
+    // 弹幕的出生点与分布自然与原版对不上。
+    //
+    // 现在 chain 表可用时优先走它；合成弹幕退回「没有 chain 表」时的兜底。
+    // `chain_tables_active_` 的启用条件见 ChainTablesActive：
+    //   全开（all_features_enabled，默认 true）或 danmaku ruleset
+    //   + 库内有该 boss_id 的表（boss21 / boss21_tna / boss21_tna_s20）。
+    if (chain_tables_active_) {
         SpawnChainBulletsForTick(tick);
+    } else if (config_.ruleset_version == "mvp-boss-race-s0") {
+        // 无 chain 表时的兼容兜底：旧 10 模式合成弹幕（tian/hui 等）。
+        SpawnSyntheticBulletsForTick(tick);
     } else {
         // 其余（含 kRulesetRealDanmaku）一律走真实弹幕。
         (void)kRulesetRealDanmaku;
