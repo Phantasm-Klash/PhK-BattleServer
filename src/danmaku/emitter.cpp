@@ -1,4 +1,5 @@
 #include "phk/battle/danmaku/emitter.hpp"
+#include "phk/battle/danmaku/bullet_size.hpp"  // 原版 per-kind hitDis/artScale（实测）
 
 #include <cstddef>
 
@@ -80,10 +81,22 @@ std::vector<BulletMotion> EmitRadial(
         b.delay = tmpl.delay;
         b.rotate_flg = 0;
         b.hit_hantei = true;
-        // 碰撞半径兜底：运动函数（func 0 等）不写 hit_dis 时用它 = pf2·pf1。
-        // 不兜底的话链式节点的弹幕 radius_milli 恒 0 —— 既画不出来也判不到碰撞。
-        if (b.hit_dis == 0.0 && b.pf2 > 0.0) {
-            b.hit_dis = b.pf2 * b.pf1;
+        // 碰撞半径兜底：运动函数（func 0 等）不写 hit_dis 时用它。
+        // ★ 2026-11-13：原版 `EnemyBullet::setBulletType` @0x512140 按弹种写
+        //   对象 +0x54c 的 hitDis（216 个 kind 逐分支解出，见 bullet_size.hpp）：
+        //     普通弹 2.4px / heart·knife 类 8.0px / 大弹 14.14·66·86px。
+        //   旧实现用模板 pf2·pf1（chain_node 硬编码 pf2=4.0）让**所有弹统一
+        //   4px**，既与原版不符，也让客户端按 radius 归一化时尺寸全错。
+        //   优先用原版 per-kind 值；仅当该 kind 未收录（kind<=0 等）才回退
+        //   pf2·pf1，保留 legacy 路径行为。
+        if (b.hit_dis == 0.0) {
+            if (kind > 0) {
+                const float original = BulletHitDisForKind(kind);
+                b.hit_dis = (original > 0.0f) ? static_cast<double>(original)
+                                              : b.pf2 * b.pf1;
+            } else if (b.pf2 > 0.0) {
+                b.hit_dis = b.pf2 * b.pf1;
+            }
         }
 
         bullets.push_back(b);
