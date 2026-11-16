@@ -238,19 +238,19 @@ std::vector<ChainNode> MakeState14Nodes() {
                 node.spawn_command.bullet_type = 28;
                 node.spawn_command.count = 1;
                 node.spawn_command.spread_or_speed = 0.0f;
-                node.spawn_command.base_angle_deg = 270.0f;
+                node.spawn_command.base_angle_deg = static_cast<float>(FromOriginalAngleDeg(270.0));  // y-up270→y-down90
                 node.spawn_command.spawn_x = -1.0f;
                 node.spawn_command.spawn_y = -1.0f;
                 node.motion_override.bullet_func_no = 45;
                 node.motion_override.bullet_kind = 180;
                 node.motion_override.speed = 1.5;
                 node.runtime.enabled = true;
-                node.runtime.angle_nominal_deg = 270.0;
+                node.runtime.angle_nominal_deg = FromOriginalAngleDeg(270.0);  // → 90
                 node.runtime.angle_jitter_deg = 10;
                 node.runtime.speed_base = 1.5;
                 node.runtime.speed_step = 0.1;
                 node.runtime.speed_rand_max = 10;
-                node.runtime.spawn_offset_angle_deg = gate.start_offset_deg + gate.step_deg * it;
+                node.runtime.spawn_offset_angle_deg = FromOriginalAngleDeg(gate.start_offset_deg + gate.step_deg * it);
                 node.runtime.spawn_radius_x_base = 80.0;
                 node.runtime.spawn_radius_y_base = 100.0;
                 node.runtime.spawn_radius_step = 0.0;  // c 发射时清零 → 固定半径
@@ -498,8 +498,8 @@ ChainNodeExpansion ExpandChainNode(
             //   c=0，故 rx=80 / ry=100 **固定**，不存在「半径逐波扩散」。
             //   offset_angle 由整段模拟 dump 的 spawn 坐标**在项目坐标系下**
             //   反推得到（椭圆反推：atan2((y-ey)/100,(x-ex)/80)），已是本项目
-            //   屏幕系语义，**不能再走 FromOriginalAngleDeg 翻转**（那会让环
-            //   镜像到错误方向）。旧实现的 wave=(tick/period)%4 + 翻转是错的。
+            //   ★★ 纠正：offset 来自 cocos(y-up) dump，**必须**经 FromOriginalAngleDeg
+            //   转成屏幕系；之前误判「不能翻转」导致弹幕朝上飞出屏(实机 vy 全负)。
             const double radians = r.spawn_offset_angle_deg * 3.14159265358979323846 / 180.0;
             cmd.spawn_x = static_cast<float>(ctx.emitter_x +
                 std::cos(radians) * (r.spawn_radius_x_base + r.spawn_radius_step));
