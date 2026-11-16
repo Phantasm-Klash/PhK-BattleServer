@@ -194,246 +194,71 @@ ChainNode MakeCadenceNode(const TnaCadenceEntry& entry, std::uint16_t index) {
 //   其中 offset_angle 是**确定**的环上偏移方向（本表第二列），
 //   随机部分交给 ChainRuntimeSlot / ExpandChainNode 的确定性 RNG。
 // ---------------------------------------------------------------------------
-struct Tna21State14Wave {
-    std::uint32_t period;
-    double offset_angle_deg;  // 原版 spawn 偏移方向（确定值，实测）
-    double speed_base;        // f40 分布下界
-    int speed_rand_max;       // f40 = 0.1*U(0,n) + speed_base 的上界
-};
+// ★ 2026-11-17：按原版 .so 整段执行的权威真值重建 state14 发射表。
+//   来源：gateway /tmp/real_nodes.json（unicorn 整段 setBossBullet21 dump 的
+//   Enemy+0x5b0 节点链表），与 docs/apk-reverse-notes/patterns/
+//   boss21_setboss21_timing_truth.md / boss21_state14_original_traj.jsonl 同源。
+//
+// 真值（实测，非推断）：
+//   - 触发：tick % 240 ∈ {10,20,30,40,50}（sub=14 最密子阶段）
+//   - 每次触发 72 颗 = 4 gate × 18 iter
+//   - gate 起始/步长（offset 角）：(3,-6) (-3,+6) (177,-6) (-177,+6)，6° 等间隔
+//   - spawn = boss + (cos(offset)*80, sin(offset)*100)  —— c 发射时清零 → rx=80/ry=100 固定
+//   - speed = 1.5 + 0.1*U(0,10) → 1.5..2.5；angle = 270 + U(-10,10)
+//   - func=45 / kind=180（heart_07）；hitDis=8.0（bullet_size.hpp）
+//
+// 旧表（192 行压平、period 30/20/10、speed_base 0.5/0.8/1.2）是**错的近似**：
+// 它每 30/20/10 tick 齐射 36/36/120 颗，密度比原版高一个数量级。
 
-// 192 个波次：P=30:36 / P=20:36 / P=10:120
-inline constexpr Tna21State14Wave kTna21State14Waves[] = {
-    {30, 6.0, 0.5, 6},
-    {30, -6.0, 0.5, 6},
-    {30, -18.0, 0.5, 6},
-    {30, -30.0, 0.5, 6},
-    {30, -42.0, 0.5, 6},
-    {30, -54.0, 0.5, 6},
-    {30, -66.0, 0.5, 6},
-    {30, -78.0, 0.5, 6},
-    {30, -90.0, 0.5, 6},
-    {30, -6.0, 0.5, 6},
-    {30, 6.0, 0.5, 6},
-    {30, 18.0, 0.5, 6},
-    {30, 30.0, 0.5, 6},
-    {30, 42.0, 0.5, 6},
-    {30, 54.0, 0.5, 6},
-    {30, 66.0, 0.5, 6},
-    {30, 78.0, 0.5, 6},
-    {30, 90.0, 0.5, 6},
-    {30, 174.0, 0.5, 6},
-    {30, 186.0, 0.5, 6},
-    {30, 198.0, 0.5, 6},
-    {30, 210.0, 0.5, 6},
-    {30, 222.0, 0.5, 6},
-    {30, 234.0, 0.5, 6},
-    {30, 246.0, 0.5, 6},
-    {30, 258.0, 0.5, 6},
-    {30, 270.0, 0.5, 6},
-    {30, 186.0, 0.5, 6},
-    {30, 174.0, 0.5, 6},
-    {30, 162.0, 0.5, 6},
-    {30, 150.0, 0.5, 6},
-    {30, 138.0, 0.5, 6},
-    {30, 126.0, 0.5, 6},
-    {30, 114.0, 0.5, 6},
-    {30, 102.0, 0.5, 6},
-    {30, 90.0, 0.5, 6},
-    {20, 6.0, 0.8, 6},
-    {20, -6.0, 0.8, 6},
-    {20, -18.0, 0.8, 6},
-    {20, -30.0, 0.8, 6},
-    {20, -42.0, 0.8, 6},
-    {20, -54.0, 0.8, 6},
-    {20, -66.0, 0.8, 6},
-    {20, -78.0, 0.8, 6},
-    {20, -90.0, 0.8, 6},
-    {20, -6.0, 0.8, 6},
-    {20, 6.0, 0.8, 6},
-    {20, 18.0, 0.8, 6},
-    {20, 30.0, 0.8, 6},
-    {20, 42.0, 0.8, 6},
-    {20, 54.0, 0.8, 6},
-    {20, 66.0, 0.8, 6},
-    {20, 78.0, 0.8, 6},
-    {20, 90.0, 0.8, 6},
-    {20, 174.0, 0.8, 6},
-    {20, 186.0, 0.8, 6},
-    {20, 198.0, 0.8, 6},
-    {20, 210.0, 0.8, 6},
-    {20, 222.0, 0.8, 6},
-    {20, 234.0, 0.8, 6},
-    {20, 246.0, 0.8, 6},
-    {20, 258.0, 0.8, 6},
-    {20, 270.0, 0.8, 6},
-    {20, 186.0, 0.8, 6},
-    {20, 174.0, 0.8, 6},
-    {20, 162.0, 0.8, 6},
-    {20, 150.0, 0.8, 6},
-    {20, 138.0, 0.8, 6},
-    {20, 126.0, 0.8, 6},
-    {20, 114.0, 0.8, 6},
-    {20, 102.0, 0.8, 6},
-    {20, 90.0, 0.8, 6},
-    {10, 4.5, 1.2, 8},
-    {10, -4.5, 1.2, 8},
-    {10, -13.5, 1.2, 8},
-    {10, -22.5, 1.2, 8},
-    {10, -31.5, 1.2, 8},
-    {10, -40.5, 1.2, 8},
-    {10, -49.5, 1.2, 8},
-    {10, -58.5, 1.2, 8},
-    {10, -67.5, 1.2, 8},
-    {10, -76.5, 1.2, 8},
-    {10, -85.5, 1.2, 8},
-    {10, -94.5, 1.2, 8},
-    {10, 4.5, 1.2, 8},
-    {10, 13.5, 1.2, 8},
-    {10, 22.5, 1.2, 8},
-    {10, 31.5, 1.2, 8},
-    {10, 40.5, 1.2, 8},
-    {10, 49.5, 1.2, 8},
-    {10, 58.5, 1.2, 8},
-    {10, 67.5, 1.2, 8},
-    {10, 76.5, 1.2, 8},
-    {10, 85.5, 1.2, 8},
-    {10, 94.5, 1.2, 8},
-    {10, 103.5, 1.2, 8},
-    {10, 184.5, 1.2, 8},
-    {10, 193.5, 1.2, 8},
-    {10, 202.5, 1.2, 8},
-    {10, 211.5, 1.2, 8},
-    {10, 220.5, 1.2, 8},
-    {10, 229.5, 1.2, 8},
-    {10, 238.5, 1.2, 8},
-    {10, 247.5, 1.2, 8},
-    {10, 256.5, 1.2, 8},
-    {10, 265.5, 1.2, 8},
-    {10, 274.5, 1.2, 8},
-    {10, 283.5, 1.2, 8},
-    {10, 184.5, 1.2, 8},
-    {10, 175.5, 1.2, 8},
-    {10, 166.5, 1.2, 8},
-    {10, 157.5, 1.2, 8},
-    {10, 148.5, 1.2, 8},
-    {10, 139.5, 1.2, 8},
-    {10, 130.5, 1.2, 8},
-    {10, 121.5, 1.2, 8},
-    {10, 112.5, 1.2, 8},
-    {10, 103.5, 1.2, 8},
-    {10, 94.5, 1.2, 8},
-    {10, 85.5, 1.2, 8},
-    {10, 3.0, 1.5, 10},
-    {10, -3.0, 1.5, 10},
-    {10, -9.0, 1.5, 10},
-    {10, -15.0, 1.5, 10},
-    {10, -21.0, 1.5, 10},
-    {10, -27.0, 1.5, 10},
-    {10, -33.0, 1.5, 10},
-    {10, -39.0, 1.5, 10},
-    {10, -45.0, 1.5, 10},
-    {10, -51.0, 1.5, 10},
-    {10, -57.0, 1.5, 10},
-    {10, -63.0, 1.5, 10},
-    {10, -69.0, 1.5, 10},
-    {10, -75.0, 1.5, 10},
-    {10, -81.0, 1.5, 10},
-    {10, -87.0, 1.5, 10},
-    {10, -93.0, 1.5, 10},
-    {10, -99.0, 1.5, 10},
-    {10, -3.0, 1.5, 10},
-    {10, 3.0, 1.5, 10},
-    {10, 9.0, 1.5, 10},
-    {10, 15.0, 1.5, 10},
-    {10, 21.0, 1.5, 10},
-    {10, 27.0, 1.5, 10},
-    {10, 33.0, 1.5, 10},
-    {10, 39.0, 1.5, 10},
-    {10, 45.0, 1.5, 10},
-    {10, 51.0, 1.5, 10},
-    {10, 57.0, 1.5, 10},
-    {10, 63.0, 1.5, 10},
-    {10, 69.0, 1.5, 10},
-    {10, 75.0, 1.5, 10},
-    {10, 81.0, 1.5, 10},
-    {10, 87.0, 1.5, 10},
-    {10, 93.0, 1.5, 10},
-    {10, 99.0, 1.5, 10},
-    {10, 177.0, 1.5, 10},
-    {10, 183.0, 1.5, 10},
-    {10, 189.0, 1.5, 10},
-    {10, 195.0, 1.5, 10},
-    {10, 201.0, 1.5, 10},
-    {10, 207.0, 1.5, 10},
-    {10, 213.0, 1.5, 10},
-    {10, 219.0, 1.5, 10},
-    {10, 225.0, 1.5, 10},
-    {10, 231.0, 1.5, 10},
-    {10, 237.0, 1.5, 10},
-    {10, 243.0, 1.5, 10},
-    {10, 249.0, 1.5, 10},
-    {10, 255.0, 1.5, 10},
-    {10, 261.0, 1.5, 10},
-    {10, 267.0, 1.5, 10},
-    {10, 273.0, 1.5, 10},
-    {10, 279.0, 1.5, 10},
-    {10, 183.0, 1.5, 10},
-    {10, 177.0, 1.5, 10},
-    {10, 171.0, 1.5, 10},
-    {10, 165.0, 1.5, 10},
-    {10, 159.0, 1.5, 10},
-    {10, 153.0, 1.5, 10},
-    {10, 147.0, 1.5, 10},
-    {10, 141.0, 1.5, 10},
-    {10, 135.0, 1.5, 10},
-    {10, 129.0, 1.5, 10},
-    {10, 123.0, 1.5, 10},
-    {10, 117.0, 1.5, 10},
-    {10, 111.0, 1.5, 10},
-    {10, 105.0, 1.5, 10},
-    {10, 99.0, 1.5, 10},
-    {10, 93.0, 1.5, 10},
-    {10, 87.0, 1.5, 10},
-    {10, 81.0, 1.5, 10},
-};
+inline constexpr std::uint32_t kState14TriggerPeriod = 240;
+inline constexpr std::uint32_t kState14TriggerTicks[] = {10, 20, 30, 40, 50};
+inline constexpr std::size_t kState14TriggerCount = 5;
 
-inline constexpr std::size_t kTna21State14WaveCount =
-    sizeof(kTna21State14Waves) / sizeof(kTna21State14Waves[0]);
+// 每个 gate 18 个 offset 角（度），6° 等间隔；4 gate 共 72。
+struct State14Gate { double start_offset_deg; double step_deg; };
+inline constexpr State14Gate kState14Gates[] = {
+    {    3.0,   -6.0},
+    {   -3.0,    6.0},
+    {  177.0,   -6.0},
+    { -177.0,    6.0},
+};
+inline constexpr std::size_t kState14GateCount = 4;
+inline constexpr int kState14ItersPerGate = 18;
 
 std::vector<ChainNode> MakeState14Nodes() {
     std::vector<ChainNode> nodes;
-    nodes.reserve(kTna21State14WaveCount);
+    nodes.reserve(kState14TriggerCount * kState14GateCount * kState14ItersPerGate);
     std::uint32_t salt = 0;
-    for (const Tna21State14Wave& wave : kTna21State14Waves) {
-        ChainNode node;
-        node.trigger_period = wave.period;
-        node.trigger_tick = 0;
-        node.spawn_command.bullet_type = 28;   // 实测：state 14 全部波次
-        node.spawn_command.count = 1;          // 实测
-        node.spawn_command.spread_or_speed = 0.0f;
-        node.spawn_command.base_angle_deg = 270.0f;  // 名义值，运行期 ±10 覆盖
-        node.spawn_command.spawn_x = -1.0f;    // 名义哨兵，运行期环形偏移覆盖
-        node.spawn_command.spawn_y = -1.0f;
-        node.motion_override.bullet_func_no = 45;   // type 28 -> (45,180)
-        node.motion_override.bullet_kind = 180;
-        node.motion_override.speed = wave.speed_base;  // 运行期按 f40 分布覆盖
-        node.runtime.enabled = true;
-        // ★ 原版实测 `270 + random(-10,10)`（cocos2d，y 向上 ⇒ 朝屏幕下方）。
-        //   本项目用屏幕系（y 向下），这里换成等价角 90（±10 的抖动对称，
-        //   分布不变）。
-        node.runtime.angle_nominal_deg = 90.0;
-        node.runtime.angle_jitter_deg = 10;
-        node.runtime.speed_base = wave.speed_base;
-        node.runtime.speed_step = 0.1;
-        node.runtime.speed_rand_max = wave.speed_rand_max;
-        node.runtime.spawn_offset_angle_deg = wave.offset_angle_deg;
-        node.runtime.spawn_radius_x_base = 80.0;   // 20c+80
-        node.runtime.spawn_radius_y_base = 100.0;  // 20c+100
-        node.runtime.spawn_radius_step = 20.0;
-        node.runtime.rng_salt = salt++;
-        node.provenance = "boss21_nodes_full.csv state14 [实测]；"
-                          "base_angle/f40/spawn 偏移由运行期 RNG 还原";
-        nodes.push_back(std::move(node));
+    for (std::uint32_t trigger : kState14TriggerTicks) {
+        for (const State14Gate& gate : kState14Gates) {
+            for (int it = 0; it < kState14ItersPerGate; ++it) {
+                ChainNode node;
+                node.trigger_period = kState14TriggerPeriod;
+                node.trigger_tick = trigger;
+                node.spawn_command.bullet_type = 28;
+                node.spawn_command.count = 1;
+                node.spawn_command.spread_or_speed = 0.0f;
+                node.spawn_command.base_angle_deg = 270.0f;
+                node.spawn_command.spawn_x = -1.0f;
+                node.spawn_command.spawn_y = -1.0f;
+                node.motion_override.bullet_func_no = 45;
+                node.motion_override.bullet_kind = 180;
+                node.motion_override.speed = 1.5;
+                node.runtime.enabled = true;
+                node.runtime.angle_nominal_deg = 270.0;
+                node.runtime.angle_jitter_deg = 10;
+                node.runtime.speed_base = 1.5;
+                node.runtime.speed_step = 0.1;
+                node.runtime.speed_rand_max = 10;
+                node.runtime.spawn_offset_angle_deg = gate.start_offset_deg + gate.step_deg * it;
+                node.runtime.spawn_radius_x_base = 80.0;
+                node.runtime.spawn_radius_y_base = 100.0;
+                node.runtime.spawn_radius_step = 0.0;  // c 发射时清零 → 固定半径
+                node.runtime.rng_salt = salt++;
+                node.provenance = "setBossBullet21 整段模拟真值 2026-11-17";
+                nodes.push_back(std::move(node));
+            }
+        }
     }
     return nodes;
 }
@@ -669,19 +494,17 @@ ChainNodeExpansion ExpandChainNode(
             tmpl.speed = r.speed_base + r.speed_step * rng.RandomInt(0, r.speed_rand_max);
         }
         if (r.spawn_radius_x_base != 0.0 || r.spawn_radius_y_base != 0.0) {
-            // 原版 c=[x19,#0x68c] 是「波次计数」，但取值域未在逆向表里解开。
-            // 若直接取 tick/period，7200 tick 时半径会涨到 14000px（弹全出屏）。
-            // 按 state14 的四段子循环把 c 钳到 [0,3]：半径 80~140 / 100~160 px，
-            // 与原版的环形扩散形状一致。这里标为**推断**，待逆向确认后修正。
-            const double wave = static_cast<double>((tick / period) % 4);
-            // ★ 环形 spawn 的 offset_angle 同样取自原版静态表（y 向上语义），
-            //   换成 y 向下后再算 sin/cos，环才落在原版的那个方向上。
-            const double radians =
-                FromOriginalAngleDeg(r.spawn_offset_angle_deg) * 3.14159265358979323846 / 180.0;
+            // ★ 2026-11-17：原版 c=[x19,#0x68c] 整段模拟闭合——发射前清零、
+            //   c=0，故 rx=80 / ry=100 **固定**，不存在「半径逐波扩散」。
+            //   offset_angle 由整段模拟 dump 的 spawn 坐标**在项目坐标系下**
+            //   反推得到（椭圆反推：atan2((y-ey)/100,(x-ex)/80)），已是本项目
+            //   屏幕系语义，**不能再走 FromOriginalAngleDeg 翻转**（那会让环
+            //   镜像到错误方向）。旧实现的 wave=(tick/period)%4 + 翻转是错的。
+            const double radians = r.spawn_offset_angle_deg * 3.14159265358979323846 / 180.0;
             cmd.spawn_x = static_cast<float>(ctx.emitter_x +
-                std::cos(radians) * (r.spawn_radius_x_base + r.spawn_radius_step * wave));
+                std::cos(radians) * (r.spawn_radius_x_base + r.spawn_radius_step));
             cmd.spawn_y = static_cast<float>(ctx.emitter_y +
-                std::sin(radians) * (r.spawn_radius_y_base + r.spawn_radius_step * wave));
+                std::sin(radians) * (r.spawn_radius_y_base + r.spawn_radius_step));
         }
     }
     out.bullets = EmitRadial(cmd, tmpl, ctx, difficulty);

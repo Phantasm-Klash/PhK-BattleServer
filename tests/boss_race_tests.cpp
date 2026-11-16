@@ -804,9 +804,11 @@ void TestDifficultyAndChainTables() {
     phk::battle::BossRaceSimulation chain_sim(chain_cfg);
     chain_sim.AddPlayer("player_a", 0, 60000);
     chain_sim.AddPlayer("player_b", 0, 60000);
-    tick_to(chain_sim, 300);
+    // ★ 2026-11-17：按 .so 整段模拟真值，state14 触发帧为 tick%240 ∈ {10,20,30,40,50}。
+    //   300%240=60 不是触发帧；tick 290 才是本窗口最后一次触发。
+    tick_to(chain_sim, 290);
     const auto chain_snapshot = chain_sim.Snapshot();
-    Check(!chain_snapshot.chains.empty(), "chain tables: block A fires at tick 300");
+    Check(!chain_snapshot.chains.empty(), "chain tables: so-truth tick 290 emits chain nodes");
     bool real_node_id = false;
     for (const auto& chain : chain_snapshot.chains) {
         if (chain.node_id != 0 || chain.rng_cursor != 0) {
